@@ -5,13 +5,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { contactsApi } from "@/lib/api";
 import { Contact } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
-import { Plus, Upload, Search, Users } from "lucide-react";
+import { Plus, Upload, Search, Users, RefreshCw } from "lucide-react";
+import { syncApi } from "@/lib/api";
 import Link from "next/link";
 
 export default function ContactsPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["contacts", search],
@@ -23,6 +25,14 @@ export default function ContactsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["contacts"] });
       setImporting(false);
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () => syncApi.run(),
+    onSuccess: (res) => {
+      setSyncResult(res.data);
+      qc.invalidateQueries({ queryKey: ["contacts"] });
     },
   });
 
@@ -39,6 +49,14 @@ export default function ContactsPage() {
           <p className="text-gray-500 mt-1 text-sm">{contacts.length.toLocaleString()} contactos</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw size={15} className={syncMutation.isPending ? "animate-spin" : ""} />
+            {syncMutation.isPending ? "Sincronizando..." : "Sincronizar HotBoat"}
+          </button>
           <label className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer transition-colors">
             <Upload size={15} />
             Importar CSV
@@ -54,6 +72,17 @@ export default function ContactsPage() {
         </div>
       </div>
 
+      {syncMutation.isError && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+          Error al sincronizar. Verifica que el backend tenga acceso a las tablas de HotBoat.
+        </div>
+      )}
+      {syncResult && (
+        <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-3 flex items-center justify-between">
+          <span>Sincronizacion completada: <strong>{syncResult.created}</strong> nuevos · <strong>{syncResult.updated}</strong> actualizados · <strong>{syncResult.skipped}</strong> omitidos</span>
+          <button onClick={() => setSyncResult(null)} className="text-green-500 hover:text-green-700 ml-4 text-xs">Cerrar</button>
+        </div>
+      )}
       {importMutation.data && (
         <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-3">
           Importados: {importMutation.data.data.created} nuevos · {importMutation.data.data.skipped} omitidos
