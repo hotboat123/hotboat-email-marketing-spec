@@ -12,7 +12,7 @@ from app.models.contact import Contact, ContactCreate, ContactRead, ContactUpdat
 router = APIRouter()
 
 
-@router.get("/", response_model=List[ContactRead])
+@router.get("", response_model=List[ContactRead])
 def list_contacts(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=200),
@@ -37,7 +37,7 @@ def count_contacts(session: Session = Depends(get_session), _: User = Depends(ge
     return {"count": session.exec(select(Contact)).all().__len__()}
 
 
-@router.post("/", response_model=ContactRead, status_code=201)
+@router.post("", response_model=ContactRead, status_code=201)
 def create_contact(
     payload: ContactCreate,
     session: Session = Depends(get_session),

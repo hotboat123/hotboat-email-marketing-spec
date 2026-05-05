@@ -10,12 +10,12 @@ from app.models.template import Template, TemplateCreate, TemplateRead, Template
 router = APIRouter()
 
 
-@router.get("/", response_model=List[TemplateRead])
+@router.get("", response_model=List[TemplateRead])
 def list_templates(session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     return session.exec(select(Template)).all()
 
 
-@router.post("/", response_model=TemplateRead, status_code=201)
+@router.post("", response_model=TemplateRead, status_code=201)
 def create_template(
     payload: TemplateCreate,
     session: Session = Depends(get_session),

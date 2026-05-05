@@ -17,12 +17,12 @@ from app.services.email_sender import send_campaign_sync
 router = APIRouter()
 
 
-@router.get("/", response_model=List[CampaignRead])
+@router.get("", response_model=List[CampaignRead])
 def list_campaigns(session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     return session.exec(select(Campaign).order_by(Campaign.created_at.desc())).all()
 
 
-@router.post("/", response_model=CampaignRead, status_code=201)
+@router.post("", response_model=CampaignRead, status_code=201)
 def create_campaign(
     payload: CampaignCreate,
     session: Session = Depends(get_session),

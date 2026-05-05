@@ -12,7 +12,7 @@ from app.models.contact import ContactRead
 router = APIRouter()
 
 
-@router.get("/", response_model=List[SegmentRead])
+@router.get("", response_model=List[SegmentRead])
 def list_segments(session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     segments = session.exec(select(Segment)).all()
     # Run counts in parallel threads to avoid N serial DB round-trips.
@@ -35,7 +35,7 @@ def list_segments(session: Session = Depends(get_session), _: User = Depends(get
     return result
 
 
-@router.post("/", response_model=SegmentRead, status_code=201)
+@router.post("", response_model=SegmentRead, status_code=201)
 def create_segment(
     payload: SegmentCreate,
     session: Session = Depends(get_session),

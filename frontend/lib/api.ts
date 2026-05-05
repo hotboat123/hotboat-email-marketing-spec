@@ -43,9 +43,9 @@ export const authApi = {
 // Contacts
 export const contactsApi = {
   list: (params?: { skip?: number; limit?: number; search?: string; opted_in?: boolean }) =>
-    api.get("/contacts/", { params }),
+    api.get("/contacts", { params }),
   get: (id: number) => api.get(`/contacts/${id}`),
-  create: (data: unknown) => api.post("/contacts/", data),
+  create: (data: unknown) => api.post("/contacts", data),
   update: (id: number, data: unknown) => api.patch(`/contacts/${id}`, data),
   delete: (id: number) => api.delete(`/contacts/${id}`),
   importCsv: (file: File) => {
@@ -57,9 +57,9 @@ export const contactsApi = {
 
 // Segments
 export const segmentsApi = {
-  list: () => api.get("/segments/"),
+  list: () => api.get("/segments"),
   get: (id: number) => api.get(`/segments/${id}`),
-  create: (data: unknown) => api.post("/segments/", data),
+  create: (data: unknown) => api.post("/segments", data),
   update: (id: number, data: unknown) => api.patch(`/segments/${id}`, data),
   delete: (id: number) => api.delete(`/segments/${id}`),
   preview: (id: number) => api.get(`/segments/${id}/preview`),
@@ -67,9 +67,9 @@ export const segmentsApi = {
 
 // Templates
 export const templatesApi = {
-  list: () => api.get("/templates/"),
+  list: () => api.get("/templates"),
   get: (id: number) => api.get(`/templates/${id}`),
-  create: (data: unknown) => api.post("/templates/", data),
+  create: (data: unknown) => api.post("/templates", data),
   update: (id: number, data: unknown) => api.patch(`/templates/${id}`, data),
   delete: (id: number) => api.delete(`/templates/${id}`),
   duplicate: (id: number) => api.post(`/templates/${id}/duplicate`),
@@ -77,9 +77,9 @@ export const templatesApi = {
 
 // Campaigns
 export const campaignsApi = {
-  list: () => api.get("/campaigns/"),
+  list: () => api.get("/campaigns"),
   get: (id: number) => api.get(`/campaigns/${id}`),
-  create: (data: unknown) => api.post("/campaigns/", data),
+  create: (data: unknown) => api.post("/campaigns", data),
   update: (id: number, data: unknown) => api.patch(`/campaigns/${id}`, data),
   delete: (id: number) => api.delete(`/campaigns/${id}`),
   send: (id: number) => api.post(`/campaigns/${id}/send`),
