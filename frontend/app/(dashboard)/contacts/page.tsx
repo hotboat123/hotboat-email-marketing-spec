@@ -15,10 +15,11 @@ export default function ContactsPage() {
   const [importing, setImporting] = useState(false);
   const [syncResult, setSyncResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
 
-  const { data: contacts = [], isLoading, isError } = useQuery<Contact[]>({
+  const { data: contacts = [], isLoading, isError, refetch } = useQuery<Contact[]>({
     queryKey: ["contacts", search],
     queryFn: () => contactsApi.list({ search: search || undefined, limit: 100 }).then((r) => r.data),
     staleTime: 2 * 60_000,
+    retry: 1,
   });
 
   const importMutation = useMutation({
@@ -74,8 +75,11 @@ export default function ContactsPage() {
       </div>
 
       {isError && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
-          Error al cargar contactos.
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center justify-between">
+          <span>Error al cargar contactos.</span>
+          <button onClick={() => refetch()} className="ml-4 text-xs font-medium underline hover:no-underline">
+            Reintentar
+          </button>
         </div>
       )}
 
