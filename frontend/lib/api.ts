@@ -15,9 +15,15 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    // Only force-logout if the token itself is rejected, not on any random 401.
+    // Avoids logout loops caused by cold-start errors or momentary backend failures.
     if (err.response?.status === 401 && typeof window !== "undefined") {
-      localStorage.removeItem("hb_token");
-      window.location.href = "/login";
+      const url: string = err.config?.url ?? "";
+      const isAuthCheck = url.includes("/auth/");
+      if (isAuthCheck) {
+        localStorage.removeItem("hb_token");
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(err);
   }

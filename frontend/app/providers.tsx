@@ -5,7 +5,14 @@ import { useState, useEffect } from "react";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
-    defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
+    defaultOptions: {
+      queries: {
+        staleTime: 5 * 60_000,
+        retry: 1,
+        refetchOnWindowFocus: false,   // prevents surprise redirects on tab switch
+        refetchOnReconnect: false,
+      },
+    },
   }));
 
   // Ping the backend immediately on app load so Railway wakes it up
