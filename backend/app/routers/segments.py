@@ -15,10 +15,22 @@ router = APIRouter()
 @router.get("/", response_model=List[SegmentRead])
 def list_segments(session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     segments = session.exec(select(Segment)).all()
+    # Run counts in parallel threads to avoid N serial DB round-trips.
+    from concurrent.futures import ThreadPoolExecutor
+    from app.database import engine
+    from sqlmodel import Session as S2
+
+    def _count(seg_id, conditions):
+        with S2(engine) as s:
+            return seg_id, count_segment(conditions, s)
+
+    with ThreadPoolExecutor(max_workers=min(len(segments), 6)) as ex:
+        counts = dict(ex.map(lambda seg: _count(seg.id, seg.conditions), segments))
+
     result = []
     for seg in segments:
         read = SegmentRead.model_validate(seg)
-        read.contact_count = count_segment(seg.conditions, session)
+        read.contact_count = counts.get(seg.id, 0)
         result.append(read)
     return result
 
