@@ -128,13 +128,14 @@ def send_test_email(
 
     resend.api_key = settings.RESEND_API_KEY
     try:
-        resend.Emails.send({
+        result = resend.Emails.send({
             "from": settings.RESEND_FROM_EMAIL,
             "to": [current_user.email],
             "subject": f"[PRUEBA] {c.subject}",
             "html": html,
         })
-        return {"ok": True, "sent_to": current_user.email}
+        email_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+        return {"ok": True, "sent_to": current_user.email, "email_id": email_id}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

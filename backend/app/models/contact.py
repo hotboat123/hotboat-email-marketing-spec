@@ -3,6 +3,7 @@ from datetime import datetime, date
 from sqlmodel import Field, SQLModel, Column
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy import String, Text
+from pydantic import field_validator
 
 
 class Contact(SQLModel, table=True):
@@ -70,10 +71,20 @@ class ContactRead(SQLModel):
     opted_in: bool
     opted_in_at: Optional[datetime]
     opted_out_at: Optional[datetime]
-    veces_hotboat: int
-    ultima_visita: Optional[date]
-    ha_alojamiento: bool
-    extras_favoritos: Optional[List[str]]
-    ticket_medio: Optional[float]
+    veces_hotboat: int = 0
+    ultima_visita: Optional[date] = None
+    ha_alojamiento: bool = False
+    extras_favoritos: Optional[List[str]] = None
+    ticket_medio: Optional[float] = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("veces_hotboat", mode="before")
+    @classmethod
+    def _coerce_veces(cls, v: object) -> int:
+        return int(v) if v is not None else 0
+
+    @field_validator("ha_alojamiento", mode="before")
+    @classmethod
+    def _coerce_alojamiento(cls, v: object) -> bool:
+        return bool(v) if v is not None else False

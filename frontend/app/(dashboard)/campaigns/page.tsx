@@ -22,7 +22,7 @@ function CampaignSkeleton() {
 
 export default function CampaignsPage() {
   const qc = useQueryClient();
-  const [testSent, setTestSent] = useState<number | null>(null);
+  const [testSentTo, setTestSentTo] = useState<string | null>(null);
 
   const { data: campaigns = [], isLoading, isError } = useQuery<Campaign[]>({
     queryKey: ["campaigns"],
@@ -45,9 +45,9 @@ export default function CampaignsPage() {
 
   const testMutation = useMutation({
     mutationFn: (id: number) => campaignsApi.sendTest(id),
-    onSuccess: (_, id) => {
-      setTestSent(id);
-      setTimeout(() => setTestSent(null), 4000);
+    onSuccess: (res) => {
+      setTestSentTo(res.data?.sent_to || "tu correo");
+      setTimeout(() => setTestSentTo(null), 8000);
     },
   });
 
@@ -72,9 +72,10 @@ export default function CampaignsPage() {
         </Link>
       </div>
 
-      {testSent && (
+      {testSentTo && (
         <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
-          <CheckCircle size={15} /> Email de prueba enviado a tu correo.
+          <CheckCircle size={15} />
+          <span>Email de prueba enviado a <strong>{testSentTo}</strong>. Si no aparece en tu bandeja, revisa la carpeta de <strong>Spam</strong>.</span>
         </div>
       )}
 
