@@ -4,7 +4,7 @@ from app.core.config import settings
 from app.database import create_db_and_tables
 from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync
 
-app = FastAPI(title="HotBoat Email Marketing API", version="1.0.0", redirect_slashes=False)
+app = FastAPI(title="HotBoat Email Marketing API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
