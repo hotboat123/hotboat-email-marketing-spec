@@ -1,0 +1,106 @@
+import logging
+import time
+from typing import List
+from datetime import datetime
+import resend
+from jinja2 import Template as Jinja2Template
+from sqlmodel import Session, select
+from app.core.config import settings
+from app.database import engine
+from app.models.contact import Contact
+from app.models.campaign import Campaign, CampaignSend
+from app.models.template import Template
+
+logger = logging.getLogger(__name__)
+
+BATCH_SIZE = 50
+BATCH_DELAY = 1.0  # segundos entre lotes
+
+
+def render_html(html_content: str, contact: Contact) -> str:
+    tpl = Jinja2Template(html_content)
+    return tpl.render(
+        nombre=contact.name or "",
+        email=contact.email,
+        ultima_visita=str(contact.ultima_visita) if contact.ultima_visita else "",
+        veces_hotboat=contact.veces_hotboat,
+        ha_alojamiento="sí" if contact.ha_alojamiento else "no",
+        ticket_medio=contact.ticket_medio or 0,
+        idioma=contact.language or "es",
+    )
+
+
+def _send_one(campaign: Campaign, template: Template, contact: Contact, session: Session) -> None:
+    resend.api_key = settings.RESEND_API_KEY
+    html = render_html(template.html_content, contact)
+    subject = Jinja2Template(campaign.subject).render(nombre=contact.name or "")
+
+    send = session.exec(
+        select(CampaignSend).where(
+            CampaignSend.campaign_id == campaign.id,
+            CampaignSend.contact_id == contact.id,
+        )
+    ).first()
+
+    try:
+        response = resend.Emails.send({
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [contact.email],
+            "subject": subject,
+            "html": html,
+            "tags": [
+                {"name": "campaign_id", "value": str(campaign.id)},
+                {"name": "contact_id",  "value": str(contact.id)},
+            ],
+        })
+        if send:
+            send.resend_id = response["id"]
+            send.status = "sent"
+            send.sent_at = datetime.utcnow()
+            session.add(send)
+            session.commit()
+    except Exception as exc:
+        logger.error("Error enviando a %s: %s", contact.email, exc)
+        if send:
+            send.status = "bounced"
+            session.add(send)
+            session.commit()
+
+
+def send_campaign_sync(campaign_id: int, contact_ids: List[int]) -> None:
+    """Versión síncrona para usar como BackgroundTask de FastAPI (abre su propia sesión)."""
+    with Session(engine) as session:
+        campaign = session.get(Campaign, campaign_id)
+        if not campaign:
+            return
+        template = session.get(Template, campaign.template_id)
+        if not template:
+            return
+
+        contacts = [session.get(Contact, cid) for cid in contact_ids]
+        contacts = [c for c in contacts if c]
+
+        # Crear registros queued
+        for contact in contacts:
+            exists = session.exec(
+                select(CampaignSend).where(
+                    CampaignSend.campaign_id == campaign_id,
+                    CampaignSend.contact_id == contact.id,
+                )
+            ).first()
+            if not exists:
+                session.add(CampaignSend(campaign_id=campaign_id, contact_id=contact.id))
+        session.commit()
+
+        # Enviar en lotes
+        for i in range(0, len(contacts), BATCH_SIZE):
+            batch = contacts[i: i + BATCH_SIZE]
+            for contact in batch:
+                _send_one(campaign, template, contact, session)
+            if i + BATCH_SIZE < len(contacts):
+                time.sleep(BATCH_DELAY)
+
+        campaign.status = "sent"
+        campaign.sent_at = datetime.utcnow()
+        session.add(campaign)
+        session.commit()

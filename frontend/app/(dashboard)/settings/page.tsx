@@ -1,0 +1,97 @@
+"use client";
+
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { authApi, syncApi } from "@/lib/api";
+import { User } from "@/lib/types";
+import { RefreshCw } from "lucide-react";
+
+export default function SettingsPage() {
+  const qc = useQueryClient();
+  const { data: user } = useQuery<User>({
+    queryKey: ["me"],
+    queryFn: () => authApi.me().then((r) => r.data),
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () => syncApi.run(),
+    onSuccess: () => {
+      setTimeout(() => {
+        syncApi.status().then((r) => setSyncResult(r.data));
+        qc.invalidateQueries({ queryKey: ["contacts"] });
+      }, 3000);
+    },
+  });
+
+  const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null);
+
+  return (
+    <div className="p-8 max-w-2xl">
+      <h1 className="text-2xl font-bold text-gray-900 mb-8">Configuración</h1>
+
+      <div className="space-y-6">
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="font-semibold text-gray-900 mb-4">Mi cuenta</h2>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Nombre</span>
+              <span className="font-medium text-gray-900">{user?.name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Email</span>
+              <span className="font-medium text-gray-900">{user?.email}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Rol</span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 capitalize">
+                {user?.role}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="font-semibold text-gray-900 mb-1">Sincronización HotBoat</h2>
+          <p className="text-gray-500 text-sm mb-4">
+            Importa y actualiza contactos desde <code className="bg-gray-100 px-1 rounded text-xs font-mono">all_appointments</code>, <code className="bg-gray-100 px-1 rounded text-xs font-mono">booknetic_customers</code> y <code className="bg-gray-100 px-1 rounded text-xs font-mono">leads</code>.
+            Calcula automáticamente: experiencias, última visita, alojamiento, ticket medio y extras favoritos.
+          </p>
+          <button
+            onClick={() => { setSyncResult(null); syncMutation.mutate(); }}
+            disabled={syncMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-60 transition-colors"
+          >
+            <RefreshCw size={14} className={syncMutation.isPending ? "animate-spin" : ""} />
+            {syncMutation.isPending ? "Sincronizando..." : "Sincronizar ahora"}
+          </button>
+          {syncResult && (
+            <div className={`mt-3 px-4 py-3 rounded-lg text-sm ${syncResult.status === "done" ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+              {syncResult.status === "done"
+                ? `✓ Sync completado — ${syncResult.created} nuevos · ${syncResult.updated} actualizados · ${syncResult.skipped} omitidos`
+                : `Error: ${syncResult.detail}`}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="font-semibold text-gray-900 mb-2">Resend</h2>
+          <p className="text-gray-500 text-sm mb-4">La API key de Resend se configura en el archivo <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">backend/.env</code>.</p>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 font-mono text-xs text-gray-600 space-y-1">
+            <p>RESEND_API_KEY=re_xxxxxxxxxxxx</p>
+            <p>RESEND_FROM_EMAIL=HotBoat &lt;hola@hotboat.cl&gt;</p>
+            <p>RESEND_WEBHOOK_SECRET=tu_secreto</p>
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="font-semibold text-gray-900 mb-2">Webhook Resend</h2>
+          <p className="text-gray-500 text-sm mb-3">Configura este endpoint en el dashboard de Resend para recibir eventos de entrega, apertura y clics:</p>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 font-mono text-sm text-gray-700 break-all">
+            {typeof window !== "undefined" ? window.location.origin.replace("3000", "8000") : "http://tu-api.com"}/api/webhooks/resend
+          </div>
+          <p className="text-xs text-gray-400 mt-2">Eventos recomendados: email.sent, email.delivered, email.opened, email.clicked, email.bounced, email.complained</p>
+        </div>
+      </div>
+    </div>
+  );
+}

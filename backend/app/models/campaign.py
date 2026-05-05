@@ -1,0 +1,83 @@
+from typing import Optional
+from datetime import datetime
+from sqlmodel import Field, SQLModel
+
+
+class Campaign(SQLModel, table=True):
+    __tablename__ = "campaigns"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    subject: str
+    preview_text: Optional[str] = None
+    template_id: int = Field(foreign_key="templates.id")
+    segment_id: int = Field(foreign_key="segments.id")
+    # draft | scheduled | sending | sent | cancelled
+    status: str = Field(default="draft")
+    scheduled_at: Optional[datetime] = None
+    sent_at: Optional[datetime] = None
+    created_by: Optional[int] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CampaignSend(SQLModel, table=True):
+    __tablename__ = "campaign_sends"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    campaign_id: int = Field(foreign_key="campaigns.id", index=True)
+    contact_id: int = Field(foreign_key="contacts.id", index=True)
+    resend_id: Optional[str] = Field(default=None, index=True)
+    # queued | sent | delivered | opened | clicked | bounced | complained
+    status: str = Field(default="queued")
+    sent_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    opened_at: Optional[datetime] = None
+    clicked_at: Optional[datetime] = None
+    bounced_at: Optional[datetime] = None
+
+
+class CampaignCreate(SQLModel):
+    name: str
+    subject: str
+    preview_text: Optional[str] = None
+    template_id: int
+    segment_id: int
+    scheduled_at: Optional[datetime] = None
+
+
+class CampaignUpdate(SQLModel):
+    name: Optional[str] = None
+    subject: Optional[str] = None
+    preview_text: Optional[str] = None
+    template_id: Optional[int] = None
+    segment_id: Optional[int] = None
+    scheduled_at: Optional[datetime] = None
+    status: Optional[str] = None
+
+
+class CampaignRead(SQLModel):
+    id: int
+    name: str
+    subject: str
+    preview_text: Optional[str]
+    template_id: int
+    segment_id: int
+    status: str
+    scheduled_at: Optional[datetime]
+    sent_at: Optional[datetime]
+    created_by: Optional[int]
+    created_at: datetime
+
+
+class CampaignStats(SQLModel):
+    campaign_id: int
+    total: int
+    sent: int
+    delivered: int
+    opened: int
+    clicked: int
+    bounced: int
+    complained: int
+    open_rate: float
+    click_rate: float
+    bounce_rate: float

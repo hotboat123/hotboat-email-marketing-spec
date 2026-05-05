@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone *)",
+      "Bash(PGPASSWORD=mcxQvhpGaatBzcZNCbVqnGWGBjQpCNYJ psql *)",
+      "Bash(python *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
