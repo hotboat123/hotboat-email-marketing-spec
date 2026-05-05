@@ -57,6 +57,7 @@ def sync_contacts(session: Session) -> dict:
                 FROM all_appointments,
                      jsonb_object_keys(extras_json) AS key
                 WHERE email IS NOT NULL AND email <> ''
+                  AND jsonb_typeof(extras_json) = 'object'
                   AND key LIKE 'aloj__%'
             """)).fetchall()
             if r[0]
@@ -70,6 +71,7 @@ def sync_contacts(session: Session) -> dict:
                  jsonb_object_keys(extras_json) AS key
             WHERE email IS NOT NULL AND email <> ''
               AND extras_json IS NOT NULL AND extras_json <> '{}'
+              AND jsonb_typeof(extras_json) = 'object'
               AND key NOT LIKE 'aloj__%'
             GROUP BY email
         """)).fetchall():
