@@ -15,9 +15,10 @@ export default function ContactsPage() {
   const [importing, setImporting] = useState(false);
   const [syncResult, setSyncResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
 
-  const { data: contacts = [], isLoading } = useQuery<Contact[]>({
+  const { data: contacts = [], isLoading, isError } = useQuery<Contact[]>({
     queryKey: ["contacts", search],
     queryFn: () => contactsApi.list({ search: search || undefined, limit: 100 }).then((r) => r.data),
+    staleTime: 2 * 60_000,
   });
 
   const importMutation = useMutation({
@@ -71,6 +72,12 @@ export default function ContactsPage() {
           </Link>
         </div>
       </div>
+
+      {isError && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+          Error al cargar contactos.
+        </div>
+      )}
 
       {syncMutation.isError && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">

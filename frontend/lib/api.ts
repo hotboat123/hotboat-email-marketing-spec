@@ -1,8 +1,8 @@
 import axios from "axios";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-export const api = axios.create({ baseURL: `${BASE}/api` });
+// Relative URL so all requests go through Next.js rewrite proxy → backend.
+// No NEXT_PUBLIC_API_URL needed in the browser; set BACKEND_URL in Railway (frontend service).
+export const api = axios.create({ baseURL: "/api" });
 
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
@@ -77,6 +77,7 @@ export const campaignsApi = {
   update: (id: number, data: unknown) => api.patch(`/campaigns/${id}`, data),
   delete: (id: number) => api.delete(`/campaigns/${id}`),
   send: (id: number) => api.post(`/campaigns/${id}/send`),
+  sendTest: (id: number) => api.post(`/campaigns/${id}/send-test`),
   stats: (id: number) => api.get(`/campaigns/${id}/stats`),
 };
 

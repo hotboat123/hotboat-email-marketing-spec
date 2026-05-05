@@ -9,9 +9,10 @@ import { formatDate } from "@/lib/utils";
 
 export default function SegmentsPage() {
   const qc = useQueryClient();
-  const { data: segments = [], isLoading } = useQuery<Segment[]>({
+  const { data: segments = [], isLoading, isError } = useQuery<Segment[]>({
     queryKey: ["segments"],
     queryFn: () => segmentsApi.list().then((r) => r.data),
+    staleTime: 5 * 60_000,
   });
 
   const deleteMutation = useMutation({
@@ -35,8 +36,23 @@ export default function SegmentsPage() {
         </Link>
       </div>
 
+      {isError && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+          Error al cargar segmentos.
+        </div>
+      )}
+
       {isLoading ? (
-        <div className="text-gray-400 text-sm">Cargando...</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white border border-gray-200 rounded-xl p-5 animate-pulse">
+              <div className="w-9 h-9 bg-gray-200 rounded-lg mb-3" />
+              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
+              <div className="h-3 bg-gray-100 rounded w-full mb-1" />
+              <div className="h-3 bg-gray-100 rounded w-1/2 mt-4" />
+            </div>
+          ))}
+        </div>
       ) : segments.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <Filter size={40} className="mx-auto text-gray-300 mb-3" />

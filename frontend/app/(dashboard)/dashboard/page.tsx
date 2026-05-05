@@ -37,11 +37,13 @@ export default function DashboardPage() {
   const { data: overview, isLoading } = useQuery<OverviewStats>({
     queryKey: ["overview"],
     queryFn: () => analyticsApi.overview().then((r) => r.data),
+    staleTime: 2 * 60_000,
   });
 
   const { data: recent } = useQuery({
     queryKey: ["recent-campaigns"],
     queryFn: () => analyticsApi.recentCampaigns().then((r) => r.data),
+    staleTime: 2 * 60_000,
   });
 
   if (isLoading) {

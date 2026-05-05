@@ -1,5 +1,5 @@
 from typing import List, Optional, Any
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 from sqlmodel import Session, select
 from app.models.contact import Contact
 
@@ -64,4 +64,9 @@ def evaluate_segment(conditions: Optional[dict], session: Session) -> List[Conta
 
 
 def count_segment(conditions: Optional[dict], session: Session) -> int:
-    return len(evaluate_segment(conditions, session))
+    query = select(func.count(Contact.id)).where(Contact.opted_in == True)  # noqa: E712
+    if conditions:
+        clause = _build_clause(conditions)
+        if clause is not None:
+            query = query.where(clause)
+    return session.exec(query).one()

@@ -2,11 +2,15 @@ from datetime import datetime
 from typing import List
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlmodel import Session, select
+from jinja2 import Template as JTemplate
+import resend
 from app.database import get_session, engine
+from app.core.config import settings
 from app.core.deps import get_current_user, require_editor
 from app.models.user import User
 from app.models.campaign import Campaign, CampaignCreate, CampaignRead, CampaignStats, CampaignUpdate, CampaignSend
 from app.models.segment import Segment
+from app.models.template import Template
 from app.services.segment_evaluator import evaluate_segment
 from app.services.email_sender import send_campaign_sync
 
@@ -103,6 +107,36 @@ def send_campaign_now(
     contact_ids = [c.id for c in contacts]
     background_tasks.add_task(send_campaign_sync, campaign_id, contact_ids)
     return c
+
+
+@router.post("/{campaign_id}/send-test")
+def send_test_email(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Envía un email de prueba al usuario autenticado."""
+    c = session.get(Campaign, campaign_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+    tpl = session.get(Template, c.template_id)
+    if not tpl:
+        raise HTTPException(status_code=400, detail="Plantilla no encontrada")
+
+    nombre = current_user.name or current_user.email.split("@")[0]
+    html = JTemplate(tpl.html_content).render(nombre=nombre)
+
+    resend.api_key = settings.RESEND_API_KEY
+    try:
+        resend.Emails.send({
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [current_user.email],
+            "subject": f"[PRUEBA] {c.subject}",
+            "html": html,
+        })
+        return {"ok": True, "sent_to": current_user.email}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/{campaign_id}/stats", response_model=CampaignStats)
