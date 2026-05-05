@@ -12,7 +12,7 @@ from app.models.campaign import Campaign, CampaignCreate, CampaignRead, Campaign
 from app.models.segment import Segment
 from app.models.template import Template
 from app.services.segment_evaluator import evaluate_segment
-from app.services.email_sender import send_campaign_sync
+from app.services.email_sender import send_campaign_sync, _inject_footer, _unsub_headers
 
 router = APIRouter()
 
@@ -124,7 +124,7 @@ def send_test_email(
         raise HTTPException(status_code=400, detail="Plantilla no encontrada")
 
     nombre = current_user.name or current_user.email.split("@")[0]
-    html = JTemplate(tpl.html_content).render(nombre=nombre)
+    html = _inject_footer(JTemplate(tpl.html_content).render(nombre=nombre), current_user.email)
 
     resend.api_key = settings.RESEND_API_KEY
     try:
@@ -133,6 +133,7 @@ def send_test_email(
             "to": [current_user.email],
             "subject": f"[PRUEBA] {c.subject}",
             "html": html,
+            "headers": _unsub_headers(current_user.email),
         })
         email_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
         return {"ok": True, "sent_to": current_user.email, "email_id": email_id}

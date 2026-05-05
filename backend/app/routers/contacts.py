@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlmodel import Session, select
 from app.database import get_session
 from app.core.deps import get_current_user, require_editor
+from app.core.unsub_token import verify_unsub_token
 from app.models.user import User
 from app.models.contact import Contact, ContactCreate, ContactRead, ContactUpdate
 
@@ -35,6 +36,33 @@ def list_contacts(
 @router.get("/count")
 def count_contacts(session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     return {"count": session.exec(select(Contact)).all().__len__()}
+
+
+def _do_unsubscribe(email: str, session: Session) -> None:
+    contact = session.exec(select(Contact).where(Contact.email == email.lower())).first()
+    if contact and contact.opted_in:
+        contact.opted_in = False
+        contact.opted_out_at = datetime.utcnow()
+        session.add(contact)
+        session.commit()
+
+
+@router.get("/unsubscribe")
+def unsubscribe_get(email: str = Query(...), token: str = Query(...), session: Session = Depends(get_session)):
+    """Enlace de baja desde el cuerpo del email (click del usuario)."""
+    if not verify_unsub_token(email, token):
+        raise HTTPException(status_code=400, detail="Token inválido o expirado")
+    _do_unsubscribe(email, session)
+    return {"ok": True}
+
+
+@router.post("/unsubscribe")
+def unsubscribe_one_click(email: str = Query(...), token: str = Query(...), session: Session = Depends(get_session)):
+    """One-click unsubscribe para clientes de email (Gmail List-Unsubscribe-Post)."""
+    if not verify_unsub_token(email, token):
+        raise HTTPException(status_code=400, detail="Token inválido o expirado")
+    _do_unsubscribe(email, session)
+    return {"ok": True}
 
 
 @router.post("", response_model=ContactRead, status_code=201)

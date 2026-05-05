@@ -6,6 +6,7 @@ import resend
 from jinja2 import Template as Jinja2Template
 from sqlmodel import Session, select
 from app.core.config import settings
+from app.core.unsub_token import unsub_url
 from app.database import engine
 from app.models.contact import Contact
 from app.models.campaign import Campaign, CampaignSend
@@ -15,6 +16,32 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 50
 BATCH_DELAY = 1.0  # segundos entre lotes
+
+_FOOTER = """<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;
+text-align:center;font-size:12px;color:#9ca3af;
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+Recibiste este correo porque eres cliente de <strong style="color:#6b7280">HotBoat</strong>.
+&nbsp;&middot;&nbsp;
+<a href="{url}" style="color:#9ca3af;text-decoration:underline;">Cancelar suscripción</a>
+</div>"""
+
+
+def _inject_footer(html: str, email: str) -> str:
+    url = unsub_url(email)
+    footer = _FOOTER.format(url=url)
+    lower = html.lower()
+    idx = lower.rfind("</body>")
+    if idx != -1:
+        return html[:idx] + footer + html[idx:]
+    return html + footer
+
+
+def _unsub_headers(email: str) -> dict:
+    url = unsub_url(email)
+    return {
+        "List-Unsubscribe": f"<{url}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
 
 
 def render_html(html_content: str, contact: Contact) -> str:
@@ -32,7 +59,7 @@ def render_html(html_content: str, contact: Contact) -> str:
 
 def _send_one(campaign: Campaign, template: Template, contact: Contact, session: Session) -> None:
     resend.api_key = settings.RESEND_API_KEY
-    html = render_html(template.html_content, contact)
+    html = _inject_footer(render_html(template.html_content, contact), contact.email)
     subject = Jinja2Template(campaign.subject).render(nombre=contact.name or "")
 
     send = session.exec(
@@ -48,6 +75,7 @@ def _send_one(campaign: Campaign, template: Template, contact: Contact, session:
             "to": [contact.email],
             "subject": subject,
             "html": html,
+            "headers": _unsub_headers(contact.email),
             "tags": [
                 {"name": "campaign_id", "value": str(campaign.id)},
                 {"name": "contact_id",  "value": str(contact.id)},
