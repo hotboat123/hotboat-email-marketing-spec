@@ -1,9 +1,8 @@
 import axios from "axios";
 
-// Use NEXT_PUBLIC_API_URL (set in Railway frontend service Variables at build time).
-// Falls back to relative /api for local dev (proxied via next.config.mjs rewrite).
-const BASE = process.env.NEXT_PUBLIC_API_URL || "";
-export const api = axios.create({ baseURL: `${BASE}/api` });
+// Always use relative /api — the Next.js proxy route at app/api/[...path]/route.ts
+// forwards to BACKEND_URL at runtime. No build-time env vars needed in the browser.
+export const api = axios.create({ baseURL: "/api" });
 
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
