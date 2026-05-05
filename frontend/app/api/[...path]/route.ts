@@ -26,7 +26,28 @@ async function proxy(req: NextRequest): Promise<NextResponse> {
       body: hasBody ? req.body : undefined,
       // @ts-expect-error duplex needed for streaming request body in Node 18+
       duplex: hasBody ? "half" : undefined,
+      redirect: "manual",   // handle redirects ourselves so auth headers are never dropped
     });
+
+    // If backend sends a redirect (e.g. trailing-slash 307), follow it manually with headers intact
+    if (upstream.status >= 300 && upstream.status < 400) {
+      const location = upstream.headers.get("location");
+      if (location) {
+        const redirectTarget = location.startsWith("http") ? location : `${BACKEND}${location}`;
+        const redirected = await fetch(redirectTarget, {
+          method: req.method,
+          headers: forward,
+          body: hasBody ? req.body : undefined,
+          // @ts-expect-error
+          duplex: hasBody ? "half" : undefined,
+        });
+        const rHeaders = new Headers();
+        for (const [k, v] of redirected.headers.entries()) {
+          if (!["transfer-encoding", "connection"].includes(k.toLowerCase())) rHeaders.set(k, v);
+        }
+        return new NextResponse(redirected.body, { status: redirected.status, headers: rHeaders });
+      }
+    }
 
     const resHeaders = new Headers();
     for (const [k, v] of upstream.headers.entries()) {
