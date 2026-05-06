@@ -6,7 +6,7 @@ import { campaignsApi, segmentsApi } from "@/lib/api";
 import { Campaign, CampaignConversions, CampaignStats, Segment } from "@/lib/types";
 import {
   Plus, Send, Trash2, FlaskConical, MoreHorizontal, Mail,
-  Search, CheckCircle, Pencil, ChevronDown,
+  Search, CheckCircle, Pencil, ChevronDown, Eye,
 } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
@@ -438,16 +438,41 @@ export default function CampaignsPage() {
 
                     {/* Actions */}
                     <td className="px-5 py-3.5">
-                      <ActionsMenu
-                        campaign={c}
-                        onTest={() => testMutation.mutate(c.id)}
-                        onSend={() => {
-                          if (confirm(`¿Enviar "${c.name}" ahora?`)) sendMutation.mutate(c.id);
-                        }}
-                        onDelete={() => {
-                          if (confirm("¿Eliminar esta campaña?")) delMutation.mutate(c.id);
-                        }}
-                      />
+                      <div className="flex items-center gap-1.5">
+                        {(c.status === "draft" || c.status === "scheduled") && (
+                          <>
+                            <button
+                              onClick={() => testMutation.mutate(c.id)}
+                              disabled={testMutation.isPending}
+                              title="Enviar prueba a mi email"
+                              className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                            >
+                              <FlaskConical size={11} /> Prueba
+                            </button>
+                            <button
+                              onClick={() => { if (confirm(`¿Enviar "${c.name}" ahora?`)) sendMutation.mutate(c.id); }}
+                              disabled={sendMutation.isPending}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-medium hover:bg-gray-800 disabled:opacity-60 transition-colors"
+                            >
+                              <Send size={11} /> Enviar
+                            </button>
+                          </>
+                        )}
+                        {c.status === "sent" && (
+                          <Link
+                            href={`/campaigns/${c.id}`}
+                            className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
+                          >
+                            <Eye size={11} /> Stats
+                          </Link>
+                        )}
+                        <ActionsMenu
+                          campaign={c}
+                          onTest={() => testMutation.mutate(c.id)}
+                          onSend={() => { if (confirm(`¿Enviar "${c.name}" ahora?`)) sendMutation.mutate(c.id); }}
+                          onDelete={() => { if (confirm("¿Eliminar esta campaña?")) delMutation.mutate(c.id); }}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );
