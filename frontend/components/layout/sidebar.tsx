@@ -8,6 +8,7 @@ import {
   Filter,
   FileText,
   Send,
+  Zap,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -15,11 +16,12 @@ import { clearToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { href: "/dashboard",   label: "Dashboard",  icon: LayoutDashboard },
-  { href: "/contacts",    label: "Contactos",  icon: Users },
-  { href: "/segments",    label: "Segmentos",  icon: Filter },
-  { href: "/templates",   label: "Plantillas", icon: FileText },
-  { href: "/campaigns",   label: "Campañas",   icon: Send },
+  { href: "/dashboard",    label: "Dashboard",     icon: LayoutDashboard },
+  { href: "/contacts",     label: "Contactos",     icon: Users },
+  { href: "/segments",     label: "Segmentos",     icon: Filter },
+  { href: "/templates",    label: "Plantillas",    icon: FileText },
+  { href: "/campaigns",    label: "Campañas",      icon: Send },
+  { href: "/automations",  label: "Automatizaciones", icon: Zap },
 ];
 
 export function Sidebar() {

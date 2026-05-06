@@ -93,6 +93,18 @@ export const analyticsApi = {
   recentCampaigns: () => api.get("/analytics/campaigns/recent"),
 };
 
+// Automations
+export const automationsApi = {
+  list: () => api.get("/automations"),
+  get: (id: number) => api.get(`/automations/${id}`),
+  create: (data: unknown) => api.post("/automations", data),
+  update: (id: number, data: unknown) => api.patch(`/automations/${id}`, data),
+  delete: (id: number) => api.delete(`/automations/${id}`),
+  toggle: (id: number) => api.post(`/automations/${id}/toggle`),
+  runs: (id: number) => api.get(`/automations/${id}/runs`),
+  stats: (id: number) => api.get(`/automations/${id}/stats`),
+};
+
 // Sync
 export const syncApi = {
   run: () => api.post("/sync/run"),

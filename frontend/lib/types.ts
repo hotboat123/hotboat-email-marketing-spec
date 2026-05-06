@@ -89,6 +89,42 @@ export interface CampaignStats {
   bounce_rate: number;
 }
 
+export type AutomationTrigger = "abandoned_booking" | "welcome" | "post_visit" | "reactivation";
+export type AutomationStatus = "active" | "paused";
+
+export interface Automation {
+  id: number;
+  name: string;
+  trigger_type: AutomationTrigger;
+  trigger_config: Record<string, number> | null;
+  template_id: number;
+  subject: string;
+  status: AutomationStatus;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationRun {
+  id: number;
+  automation_id: number;
+  contact_id: number | null;
+  contact_email: string;
+  trigger_key: string;
+  status: "sent" | "failed" | "skipped";
+  triggered_at: string;
+  executed_at: string | null;
+  resend_id: string | null;
+  error: string | null;
+}
+
+export interface AutomationStats {
+  total: number;
+  sent: number;
+  failed: number;
+  last_run: string | null;
+}
+
 export interface OverviewStats {
   contacts: { total: number; opted_in: number };
   campaigns: { total: number; sent: number };
