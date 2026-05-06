@@ -13,6 +13,7 @@ export interface Contact {
   phone: string | null;
   language: string | null;
   origin_utm: string | null;
+  location: string | null;
   opted_in: boolean;
   opted_in_at: string | null;
   opted_out_at: string | null;

@@ -15,6 +15,7 @@ migrations = [
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS birthday DATE",
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS notes TEXT",
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS custom_fields JSONB",
+    "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS location VARCHAR",
     # signup_forms — custom fields + html override
     "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS custom_form_fields JSONB",
     "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS html_override TEXT",

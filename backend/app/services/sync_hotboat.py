@@ -91,6 +91,26 @@ def sync_contacts(session: Session) -> dict:
             if em not in extra_contacts:
                 extra_contacts[em] = {"name": r[1], "phone": r[2]}
 
+        # ── 5. Ubicación desde booknetic_customers (si la columna existe) ────────
+        location_by_email: dict[str, str] = {}
+        try:
+            loc_rows = conn.execute(text("""
+                SELECT email,
+                       COALESCE(city, '') || CASE WHEN city IS NOT NULL AND state IS NOT NULL THEN ', ' ELSE '' END
+                       || COALESCE(state, '') AS location
+                FROM booknetic_customers
+                WHERE email IS NOT NULL AND email <> ''
+                  AND (city IS NOT NULL OR state IS NOT NULL)
+            """)).fetchall()
+            for r in loc_rows:
+                em = r[0].lower().strip()
+                loc = (r[1] or "").strip()
+                if loc:
+                    location_by_email[em] = loc
+        except Exception:
+            # booknetic_customers doesn't have city/state columns — skip silently
+            pass
+
     # ── Upsert en nuestra tabla contacts ────────────────────────────────────────
     created = updated = skipped = 0
 
@@ -106,12 +126,14 @@ def sync_contacts(session: Session) -> dict:
         language = _normalize_language(row.language)
         ha_aloj  = email in accom_emails
         extras   = extras_by_email.get(email) or None
+        location = location_by_email.get(email) or None
 
         if existing:
             existing.name             = name or existing.name
             existing.phone            = phone or existing.phone
             existing.language         = language or existing.language
             existing.origin_utm       = row.origin_utm or existing.origin_utm
+            existing.location         = location or existing.location
             existing.veces_hotboat    = int(row.veces_hotboat)
             existing.ultima_visita    = row.ultima_visita
             existing.ha_alojamiento   = ha_aloj
@@ -127,6 +149,7 @@ def sync_contacts(session: Session) -> dict:
                 phone             = phone,
                 language          = language,
                 origin_utm        = row.origin_utm,
+                location          = location,
                 opted_in          = True,
                 opted_in_at       = datetime.utcnow(),
                 veces_hotboat     = int(row.veces_hotboat),

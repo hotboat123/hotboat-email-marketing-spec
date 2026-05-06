@@ -19,6 +19,7 @@ function SkeletonRow() {
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-32 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-32 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-28 animate-pulse" /></td>
     </tr>
   );
 }
@@ -157,6 +158,7 @@ export default function ContactsPage() {
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Creado</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actualizado</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última visita</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Ubicación</th>
             </tr>
           </thead>
           <tbody>
@@ -164,7 +166,7 @@ export default function ContactsPage() {
               [...Array(8)].map((_, i) => <SkeletonRow key={i} />)
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-16 text-center">
+                <td colSpan={7} className="px-5 py-16 text-center">
                   <Users size={36} className="mx-auto text-gray-300 mb-3" />
                   <p className="text-gray-500 font-medium">
                     {debouncedSearch ? "Sin resultados" : "No hay clientes"}
@@ -219,6 +221,11 @@ export default function ContactsPage() {
                     ) : (
                       <span className="text-gray-300">—</span>
                     )}
+                  </td>
+
+                  {/* Ubicación */}
+                  <td className="px-5 py-3 text-gray-500 text-xs">
+                    {c.location || <span className="text-gray-300">—</span>}
                   </td>
                 </tr>
               ))

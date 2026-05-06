@@ -30,6 +30,9 @@ class Contact(SQLModel, table=True):
     )
     ticket_medio: Optional[float] = None
 
+    # ubicación
+    location: Optional[str] = None             # ciudad / región libre
+
     # perfil ampliado
     birthday: Optional[date] = None
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
@@ -45,6 +48,7 @@ class ContactCreate(SQLModel):
     phone: Optional[str] = None
     language: Optional[str] = None
     origin_utm: Optional[str] = None
+    location: Optional[str] = None
     opted_in: bool = True
     veces_hotboat: int = 0
     ultima_visita: Optional[date] = None
@@ -61,6 +65,7 @@ class ContactUpdate(SQLModel):
     phone: Optional[str] = None
     language: Optional[str] = None
     origin_utm: Optional[str] = None
+    location: Optional[str] = None
     opted_in: Optional[bool] = None
     veces_hotboat: Optional[int] = None
     ultima_visita: Optional[date] = None
@@ -79,6 +84,7 @@ class ContactRead(SQLModel):
     phone: Optional[str]
     language: Optional[str]
     origin_utm: Optional[str]
+    location: Optional[str] = None
     opted_in: bool
     opted_in_at: Optional[datetime]
     opted_out_at: Optional[datetime]
