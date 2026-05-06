@@ -35,6 +35,7 @@ def sync_contacts(session: Session) -> dict:
                 MAX(aa.telefono)                                AS phone,
                 MAX(aa.customer_language)                       AS language,
                 MAX(aa.como_supieron)                           AS origin_utm,
+                MAX(aa.ciudad_origen)                           AS location,
                 COUNT(*)                                        AS veces_hotboat,
                 MAX(aa.fecha)                                   AS ultima_visita,
                 ROUND(AVG(aa.ingreso_total)::numeric, 0)        AS ticket_medio
@@ -126,7 +127,7 @@ def sync_contacts(session: Session) -> dict:
         language = _normalize_language(row.language)
         ha_aloj  = email in accom_emails
         extras   = extras_by_email.get(email) or None
-        location = location_by_email.get(email) or None
+        location = (row.location or "").strip() or location_by_email.get(email) or None
 
         if existing:
             existing.name             = name or existing.name
