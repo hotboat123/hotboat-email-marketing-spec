@@ -48,6 +48,8 @@ export const contactsApi = {
   create: (data: unknown) => api.post("/contacts", data),
   update: (id: number, data: unknown) => api.patch(`/contacts/${id}`, data),
   delete: (id: number) => api.delete(`/contacts/${id}`),
+  segments: (id: number) => api.get(`/contacts/${id}/segments`),
+  bookings: (id: number) => api.get(`/contacts/${id}/bookings`),
   importCsv: (file: File) => {
     const form = new FormData();
     form.append("file", file);

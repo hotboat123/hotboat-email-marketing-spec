@@ -21,8 +21,19 @@ export interface Contact {
   ha_alojamiento: boolean;
   extras_favoritos: string[] | null;
   ticket_medio: number | null;
+  birthday: string | null;
+  notes: string | null;
+  custom_fields: Record<string, string> | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ContactBooking {
+  fecha: string;
+  status: string;
+  ingreso_total: number | null;
+  como_supieron: string | null;
+  extras: Record<string, unknown>;
 }
 
 export interface SegmentRule {

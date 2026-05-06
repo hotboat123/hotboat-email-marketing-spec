@@ -3,12 +3,16 @@ import io
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 from app.database import get_session
+from app.core.config import settings
 from app.core.deps import get_current_user, require_editor
 from app.core.unsub_token import verify_unsub_token
 from app.models.user import User
 from app.models.contact import Contact, ContactCreate, ContactRead, ContactUpdate
+from app.models.segment import Segment
+from app.services.segment_evaluator import _build_clause
 
 router = APIRouter()
 
@@ -126,6 +130,72 @@ def delete_contact(
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
     session.delete(contact)
     session.commit()
+
+
+@router.get("/{contact_id}/segments")
+def contact_segments(
+    contact_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Devuelve los segmentos a los que pertenece el contacto."""
+    contact = session.get(Contact, contact_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    all_segs = session.exec(select(Segment)).all()
+    matching = []
+    for seg in all_segs:
+        q = select(Contact).where(Contact.id == contact_id, Contact.opted_in == True)  # noqa: E712
+        if seg.conditions:
+            clause = _build_clause(seg.conditions)
+            if clause is not None:
+                q = q.where(clause)
+        if session.exec(q).first():
+            matching.append({"id": seg.id, "name": seg.name, "description": seg.description})
+    return matching
+
+
+@router.get("/{contact_id}/bookings")
+def contact_bookings(
+    contact_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Historial de reservas desde la DB fuente de HotBoat."""
+    contact = session.get(Contact, contact_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    try:
+        engine = create_engine(src_url)
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT
+                    fecha,
+                    status,
+                    ingreso_total,
+                    como_supieron,
+                    extras_json
+                FROM all_appointments
+                WHERE email = :email
+                ORDER BY fecha DESC
+                LIMIT 50
+            """), {"email": contact.email}).fetchall()
+        return [
+            {
+                "fecha": str(r.fecha),
+                "status": r.status,
+                "ingreso_total": float(r.ingreso_total) if r.ingreso_total else None,
+                "como_supieron": r.como_supieron,
+                "extras": r.extras_json if r.extras_json else {},
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        # Source DB not available — return empty without crashing
+        return []
 
 
 @router.post("/import/csv", status_code=201)

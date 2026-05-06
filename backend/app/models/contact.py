@@ -1,8 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import datetime, date
 from sqlmodel import Field, SQLModel, Column
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy import String, Text
+from sqlalchemy import String, Text, JSON
 from pydantic import field_validator
 
 
@@ -30,6 +30,11 @@ class Contact(SQLModel, table=True):
     )
     ticket_medio: Optional[float] = None
 
+    # perfil ampliado
+    birthday: Optional[date] = None
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    custom_fields: Optional[Any] = Field(default=None, sa_column=Column(JSON))
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -46,6 +51,9 @@ class ContactCreate(SQLModel):
     ha_alojamiento: bool = False
     extras_favoritos: Optional[List[str]] = None
     ticket_medio: Optional[float] = None
+    birthday: Optional[date] = None
+    notes: Optional[str] = None
+    custom_fields: Optional[dict] = None
 
 
 class ContactUpdate(SQLModel):
@@ -59,6 +67,9 @@ class ContactUpdate(SQLModel):
     ha_alojamiento: Optional[bool] = None
     extras_favoritos: Optional[List[str]] = None
     ticket_medio: Optional[float] = None
+    birthday: Optional[date] = None
+    notes: Optional[str] = None
+    custom_fields: Optional[dict] = None
 
 
 class ContactRead(SQLModel):
@@ -76,6 +87,9 @@ class ContactRead(SQLModel):
     ha_alojamiento: bool = False
     extras_favoritos: Optional[List[str]] = None
     ticket_medio: Optional[float] = None
+    birthday: Optional[date] = None
+    notes: Optional[str] = None
+    custom_fields: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
