@@ -10,6 +10,7 @@ import {
   ArrowLeft, Mail, Phone, Globe, MapPin, Calendar, Clock,
   ShoppingBag, StickyNote, Save, Plus, Trash2, Search,
   MousePointerClick, Send, CheckCircle, AlertTriangle, TrendingUp,
+  ChevronDown, ChevronUp, Anchor,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -513,13 +514,138 @@ function SegmentsTab({ contactId }: { contactId: number }) {
   );
 }
 
+// ─── Tab 4: Objetos (reservas detalladas) ────────────────────────────────────
+function ObjectsTab({ contactId }: { contactId: number }) {
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+
+  const { data: bookings = [], isLoading } = useQuery<ContactBooking[]>({
+    queryKey: ["contact-bookings", contactId],
+    queryFn:  () => contactsApi.bookings(contactId).then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+
+  function toggle(i: number) {
+    setExpanded((prev) => ({ ...prev, [i]: !prev[i] }));
+  }
+
+  if (isLoading) return (
+    <div className="space-y-3">
+      {[...Array(3)].map((_, i) => (
+        <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+      ))}
+    </div>
+  );
+
+  if (bookings.length === 0) return (
+    <div className="bg-white border border-gray-200 rounded-xl p-16 text-center">
+      <div className="flex justify-center mb-4 opacity-20">
+        <Anchor size={48} className="text-gray-400" />
+      </div>
+      <p className="text-sm font-medium text-gray-600">Este cliente no tiene reservas registradas</p>
+      <p className="text-xs text-gray-400 mt-1">Las reservas de HotBoat aparecerán aquí automáticamente al sincronizar</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs text-gray-400">{bookings.length} reserva{bookings.length !== 1 ? "s" : ""} encontradas en HotBoat</p>
+        <button
+          onClick={() => {
+            const anyOpen = bookings.some((_, i) => expanded[i]);
+            const next: Record<number, boolean> = {};
+            bookings.forEach((_, i) => { next[i] = !anyOpen; });
+            setExpanded(next);
+          }}
+          className="text-xs text-gray-400 hover:text-gray-600"
+        >
+          {bookings.some((_, i) => expanded[i]) ? "Colapsar todo" : "Expandir todo"}
+        </button>
+      </div>
+
+      {bookings.map((b, i) => {
+        const extras = Object.entries(b.extras ?? {}).filter(([k]) => !k.startsWith("aloj__"));
+        const isOpen = !!expanded[i];
+        const statusColor = BOOKING_STATUS_COLOR[b.status] ?? "bg-gray-100 text-gray-600";
+
+        return (
+          <div key={i} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            {/* Row header */}
+            <button
+              onClick={() => toggle(i)}
+              className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left"
+            >
+              <div className="w-9 h-9 rounded-lg bg-sky-50 flex items-center justify-center shrink-0">
+                <Anchor size={15} className="text-sky-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Reserva · {b.fecha}</p>
+                {b.como_supieron && (
+                  <p className="text-xs text-gray-400 mt-0.5">Vía: {b.como_supieron}</p>
+                )}
+              </div>
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${statusColor}`}>
+                {b.status}
+              </span>
+              {b.ingreso_total != null && (
+                <span className="text-sm font-bold text-gray-900 shrink-0">
+                  CLP {b.ingreso_total.toLocaleString("es-CL")}
+                </span>
+              )}
+              {isOpen
+                ? <ChevronUp size={14} className="text-gray-400 shrink-0" />
+                : <ChevronDown size={14} className="text-gray-400 shrink-0" />
+              }
+            </button>
+
+            {/* Expanded detail */}
+            {isOpen && (
+              <div className="border-t border-gray-100 px-5 py-4 bg-gray-50">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                  {[
+                    ["Fecha",          b.fecha],
+                    ["Estado",         b.status],
+                    ["Ingreso total",  b.ingreso_total != null ? `CLP ${b.ingreso_total.toLocaleString("es-CL")}` : null],
+                    ["Cómo supieron",  b.como_supieron],
+                  ].map(([label, value]) => value ? (
+                    <div key={label}>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+                      <p className="text-sm text-gray-800">{value}</p>
+                    </div>
+                  ) : null)}
+                </div>
+
+                {extras.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Extras contratados</p>
+                    <div className="flex flex-wrap gap-2">
+                      {extras.map(([key, val]) => (
+                        <span key={key} className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
+                          <span className="font-medium">{key}</span>
+                          {val && val !== true && val !== "true" && (
+                            <span className="text-gray-400"> · {String(val)}</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ContactDetailPage() {
   const { id }      = useParams<{ id: string }>();
   const router      = useRouter();
   const qc          = useQueryClient();
   const contactId   = Number(id);
-  const [tab, setTab] = useState<"details" | "metrics" | "segments">("details");
+  const [tab, setTab] = useState<"details" | "metrics" | "segments" | "objects">("details");
 
   const { data: contact, isLoading } = useQuery<Contact>({
     queryKey: ["contact", contactId],
@@ -595,9 +721,10 @@ export default function ContactDetailPage() {
 
         {/* Tabs */}
         <div className="flex gap-0 border-b border-gray-200 mt-4 mb-6">
-          <Tab label="Detalles"          active={tab === "details"}  onClick={() => setTab("details")} />
+          <Tab label="Detalles"            active={tab === "details"}  onClick={() => setTab("details")} />
           <Tab label="Métricas e insights" active={tab === "metrics"}  onClick={() => setTab("metrics")} />
-          <Tab label="Listas y segmentos" active={tab === "segments"} onClick={() => setTab("segments")} />
+          <Tab label="Listas y segmentos"  active={tab === "segments"} onClick={() => setTab("segments")} />
+          <Tab label="Objetos"             active={tab === "objects"}  onClick={() => setTab("objects")} />
         </div>
       </div>
 
@@ -613,6 +740,7 @@ export default function ContactDetailPage() {
       )}
       {tab === "metrics"  && <MetricsTab  contact={contact} />}
       {tab === "segments" && <SegmentsTab contactId={contactId} />}
+      {tab === "objects"  && <ObjectsTab  contactId={contactId} />}
     </div>
   );
 }
