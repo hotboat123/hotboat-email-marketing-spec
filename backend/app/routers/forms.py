@@ -130,6 +130,8 @@ def submit_form(
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="Email inválido")
 
+    origin = payload.source_url or f"Formulario #{form_id}"
+
     contact = session.exec(select(Contact).where(Contact.email == email)).first()
     if contact:
         if not contact.opted_in:
@@ -140,6 +142,8 @@ def submit_form(
             contact.name = payload.name.strip() or None
         if payload.phone and not contact.phone:
             contact.phone = payload.phone.strip() or None
+        if not contact.origin_utm:
+            contact.origin_utm = origin
         contact.updated_at = datetime.utcnow()
         session.add(contact)
     else:
@@ -147,6 +151,7 @@ def submit_form(
             email=email,
             name=(payload.name or "").strip() or None,
             phone=(payload.phone or "").strip() or None,
+            origin_utm=origin,
             opted_in=True,
             opted_in_at=datetime.utcnow(),
         ))
