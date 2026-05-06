@@ -4,491 +4,615 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { contactsApi } from "@/lib/api";
-import { Contact, ContactBooking } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import { Contact, ContactBooking, ContactEmailEvent } from "@/lib/types";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import {
   ArrowLeft, Mail, Phone, Globe, MapPin, Calendar, Clock,
-  ShoppingBag, Filter, StickyNote, Save, Plus, Trash2, ChevronDown, ChevronUp,
+  ShoppingBag, StickyNote, Save, Plus, Trash2, Search,
+  MousePointerClick, Send, CheckCircle, AlertTriangle, TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 
-// ── Predefined custom-field questions ────────────────────────────────────────
-const PREDEFINED: { key: string; label: string; placeholder: string }[] = [
-  { key: "acompanantes",        label: "Nombres de acompañantes",     placeholder: "ej. Ana García, Pedro García" },
-  { key: "hijos",               label: "Nombres de hijos",            placeholder: "ej. Sofía (8), Mateo (5)" },
-  { key: "cumple_acompanantes", label: "Cumpleaños de acompañantes",  placeholder: "ej. Ana 15/03, Pedro 22/07" },
-  { key: "cumple_hijos",        label: "Cumpleaños de hijos",         placeholder: "ej. Sofía 10/04, Mateo 01/09" },
-  { key: "actividades",         label: "Actividades favoritas",       placeholder: "ej. wakeboard, snorkel" },
-  { key: "alergias",            label: "Alergias / restricciones",    placeholder: "ej. sin gluten" },
-];
-
-const STATUS_COLORS: Record<string, string> = {
-  completed:  "bg-green-100 text-green-700",
-  confirmed:  "bg-blue-100 text-blue-700",
-  pending:    "bg-yellow-100 text-yellow-700",
-  cancelled:  "bg-red-100 text-red-700",
-  no_show:    "bg-gray-100 text-gray-500",
-};
-
+// ─── helpers ─────────────────────────────────────────────────────────────────
 function initials(name: string | null, email: string) {
   if (name) return name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   return email[0].toUpperCase();
 }
 
-// ── Custom fields editor ──────────────────────────────────────────────────────
-function CustomFieldsCard({
-  contact,
-  onSave,
-  saving,
-}: {
+const BOOKING_STATUS_COLOR: Record<string, string> = {
+  completed: "bg-green-100 text-green-700",
+  confirmed: "bg-blue-100 text-blue-700",
+  pending:   "bg-yellow-100 text-yellow-700",
+  cancelled: "bg-red-100 text-red-700",
+  no_show:   "bg-gray-100 text-gray-500",
+};
+
+const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+  opened:    { label: "Abrió email",      icon: Mail,              color: "text-brand-600 bg-brand-50" },
+  clicked:   { label: "Hizo clic",        icon: MousePointerClick, color: "text-green-600 bg-green-50" },
+  delivered: { label: "Recibió email",    icon: CheckCircle,       color: "text-gray-500 bg-gray-100" },
+  sent:      { label: "Enviado",          icon: Send,              color: "text-gray-400 bg-gray-50" },
+  bounced:   { label: "Rebotó",           icon: AlertTriangle,     color: "text-red-500 bg-red-50" },
+};
+
+const PREDEFINED = [
+  { key: "acompanantes",        label: "Nombres de acompañantes",    placeholder: "ej. Ana García, Pedro García" },
+  { key: "hijos",               label: "Nombres de hijos",           placeholder: "ej. Sofía (8), Mateo (5)" },
+  { key: "cumple_acompanantes", label: "Cumpleaños acompañantes",    placeholder: "ej. Ana 15/03" },
+  { key: "cumple_hijos",        label: "Cumpleaños hijos",           placeholder: "ej. Sofía 10/04" },
+  { key: "actividades",         label: "Actividades favoritas",      placeholder: "ej. wakeboard, snorkel" },
+  { key: "alergias",            label: "Alergias / restricciones",   placeholder: "ej. sin gluten" },
+];
+
+// ─── Tab button ───────────────────────────────────────────────────────────────
+function Tab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+        active
+          ? "border-gray-900 text-gray-900"
+          : "border-transparent text-gray-500 hover:text-gray-700"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ─── Custom fields editor ─────────────────────────────────────────────────────
+function CustomPropertiesCard({ contact, onSave, saving }: {
   contact: Contact;
   onSave: (fields: Record<string, string>, notes: string, birthday: string) => void;
   saving: boolean;
 }) {
-  const [fields, setFields] = useState<Record<string, string>>(contact.custom_fields ?? {});
-  const [notes, setNotes] = useState(contact.notes ?? "");
+  const [fields,   setFields]   = useState<Record<string, string>>(contact.custom_fields ?? {});
+  const [notes,    setNotes]    = useState(contact.notes ?? "");
   const [birthday, setBirthday] = useState(contact.birthday ?? "");
-  const [newKey, setNewKey] = useState("");
-  const [showCustom, setShowCustom] = useState(false);
+  const [newKey,   setNewKey]   = useState("");
 
-  const allPredefined = PREDEFINED.map((p) => p.key);
-  const customKeys = Object.keys(fields).filter((k) => !allPredefined.includes(k));
+  const predefinedKeys = PREDEFINED.map((p) => p.key);
+  const customKeys = Object.keys(fields).filter((k) => !predefinedKeys.includes(k));
   const dirty =
     JSON.stringify(fields) !== JSON.stringify(contact.custom_fields ?? {}) ||
     notes !== (contact.notes ?? "") ||
     birthday !== (contact.birthday ?? "");
 
-  function setField(key: string, val: string) {
-    setFields((prev) => ({ ...prev, [key]: val }));
-  }
-  function removeCustomKey(key: string) {
-    setFields((prev) => { const n = { ...prev }; delete n[key]; return n; });
-  }
-  function addCustomKey() {
+  const set = (key: string, val: string) => setFields((p) => ({ ...p, [key]: val }));
+  const remove = (key: string) => setFields((p) => { const n = { ...p }; delete n[key]; return n; });
+  const addKey = () => {
     const k = newKey.trim().toLowerCase().replace(/\s+/g, "_");
     if (!k || fields[k] !== undefined) return;
-    setFields((prev) => ({ ...prev, [k]: "" }));
+    setFields((p) => ({ ...p, [k]: "" }));
     setNewKey("");
-  }
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <StickyNote size={15} className="text-gray-400" /> Perfil ampliado
-        </div>
+      <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+        <span className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <StickyNote size={14} className="text-gray-400" /> Propiedades personalizadas
+        </span>
         {dirty && (
           <button
             onClick={() => onSave(fields, notes, birthday)}
             disabled={saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 disabled:opacity-60 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 disabled:opacity-60"
           >
-            <Save size={12} /> {saving ? "Guardando…" : "Guardar"}
+            <Save size={11} /> {saving ? "Guardando…" : "Guardar"}
           </button>
         )}
       </div>
-
-      <div className="p-5 space-y-4">
-        {/* Birthday */}
+      <div className="p-5 space-y-3.5">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">
-            Cumpleaños del cliente
-          </label>
-          <input
-            type="date"
-            value={birthday}
-            onChange={(e) => setBirthday(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
+          <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">Cumpleaños</label>
+          <input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
-
-        {/* Predefined fields */}
         {PREDEFINED.map(({ key, label, placeholder }) => (
           <div key={key}>
-            <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">
-              {label}
-            </label>
-            <input
-              type="text"
-              value={fields[key] ?? ""}
-              onChange={(e) => setField(key, e.target.value)}
+            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">{label}</label>
+            <input type="text" value={fields[key] ?? ""} onChange={(e) => set(key, e.target.value)}
               placeholder={placeholder}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
         ))}
-
-        {/* Custom extra keys */}
-        {customKeys.length > 0 && (
-          <div className="space-y-3 pt-2 border-t border-gray-100">
-            {customKeys.map((key) => (
-              <div key={key}>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">{key}</label>
-                  <button onClick={() => removeCustomKey(key)} className="text-red-400 hover:text-red-600">
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  value={fields[key]}
-                  onChange={(e) => setField(key, e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-            ))}
+        {customKeys.map((key) => (
+          <div key={key}>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-gray-400 uppercase tracking-wider">{key}</label>
+              <button onClick={() => remove(key)}><Trash2 size={11} className="text-red-400 hover:text-red-600" /></button>
+            </div>
+            <input type="text" value={fields[key]} onChange={(e) => set(key, e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
-        )}
-
-        {/* Add custom field */}
-        <button
-          onClick={() => setShowCustom((v) => !v)}
-          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-brand-600 transition-colors"
-        >
-          <Plus size={12} /> Añadir campo personalizado
-        </button>
-        {showCustom && (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newKey}
-              onChange={(e) => setNewKey(e.target.value)}
-              placeholder="nombre del campo"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
-              onKeyDown={(e) => e.key === "Enter" && addCustomKey()}
-            />
-            <button
-              onClick={addCustomKey}
-              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 transition-colors"
-            >
-              Añadir
+        ))}
+        <div className="flex gap-2">
+          <input type="text" value={newKey} onChange={(e) => setNewKey(e.target.value)}
+            placeholder="+ Añadir campo personalizado"
+            onKeyDown={(e) => e.key === "Enter" && addKey()}
+            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          {newKey && (
+            <button onClick={addKey}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700">
+              <Plus size={12} />
             </button>
-          </div>
-        )}
-
-        {/* Notes */}
+          )}
+        </div>
         <div className="pt-2 border-t border-gray-100">
-          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">
-            Notas internas
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            placeholder="Notas privadas sobre el cliente (no se envían en emails)"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
+          <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1">Notas internas</label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+            placeholder="Notas privadas (no se envían en emails)"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
       </div>
     </div>
   );
 }
 
-// ── Bookings panel ────────────────────────────────────────────────────────────
-function BookingsCard({ contactId }: { contactId: number }) {
-  const [expanded, setExpanded] = useState(true);
-  const { data: bookings = [], isLoading } = useQuery<ContactBooking[]>({
-    queryKey: ["contact-bookings", contactId],
-    queryFn: () => contactsApi.bookings(contactId).then((r) => r.data),
+// ─── Tab 1: Detalles ──────────────────────────────────────────────────────────
+function DetailsTab({ contact, onSave, saving }: {
+  contact: Contact;
+  onSave: (fields: Record<string, string>, notes: string, birthday: string) => void;
+  saving: boolean;
+}) {
+  const { data: events = [], isLoading: eventsLoading } = useQuery<ContactEmailEvent[]>({
+    queryKey: ["contact-email-activity", contact.id],
+    queryFn: () => contactsApi.emailActivity(contact.id).then((r) => r.data),
     staleTime: 5 * 60_000,
   });
 
-  const total = bookings.reduce((s, b) => s + (b.ingreso_total ?? 0), 0);
+  return (
+    <div className="grid grid-cols-5 gap-5">
+      {/* Left — info cards */}
+      <div className="col-span-3 space-y-4">
+
+        {/* Information */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Información</p>
+
+          <p className="text-xs font-semibold text-gray-500 mb-2">Detalles del perfil</p>
+          <div className="space-y-2 mb-5">
+            {[
+              ["ID único",    String(contact.id)],
+              ["Idioma",      contact.language === "es" ? "es-CL" : contact.language ?? null],
+              ["Ubicación",   contact.location],
+              ["Zona horaria","America/Santiago"],
+            ].map(([label, value]) => value ? (
+              <div key={label} className="flex gap-3 text-sm">
+                <span className="w-28 text-gray-400 shrink-0">{label}</span>
+                <span className="text-gray-700">{value}</span>
+              </div>
+            ) : null)}
+          </div>
+
+          <p className="text-xs font-semibold text-gray-500 mb-2">Cómo te encontró</p>
+          <div className="space-y-2 mb-5">
+            {[
+              ["Fuente",    contact.origin_utm],
+              ["Campaña",   null],
+              ["Medio",     null],
+            ].map(([label, value]) => (
+              <div key={label} className="flex gap-3 text-sm">
+                <span className="w-28 text-gray-400 shrink-0">{label}</span>
+                <span className="text-gray-500">{value ?? "—"}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs font-semibold text-gray-500 mb-2">Actividad</p>
+          <div className="space-y-2">
+            {[
+              ["Perfil creado",   formatDateTime(contact.created_at)],
+              ["Perfil actualizado", formatDateTime(contact.updated_at)],
+              ["Primer opt-in",  contact.opted_in_at  ? formatDateTime(contact.opted_in_at)  : null],
+              ["Última visita",  contact.ultima_visita ? formatDate(contact.ultima_visita) : null],
+            ].map(([label, value]) => value ? (
+              <div key={label} className="flex gap-3 text-sm">
+                <span className="w-36 text-gray-400 shrink-0">{label}</span>
+                <span className="text-gray-700">{value}</span>
+              </div>
+            ) : null)}
+          </div>
+        </div>
+
+        {/* Custom properties */}
+        <CustomPropertiesCard contact={contact} onSave={onSave} saving={saving} />
+      </div>
+
+      {/* Right — email activity feed */}
+      <div className="col-span-2">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden sticky top-4">
+          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Todos los eventos</span>
+          </div>
+          {eventsLoading ? (
+            <div className="p-6 space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="w-7 h-7 rounded-full bg-gray-100 animate-pulse shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3.5 bg-gray-200 rounded w-3/4 animate-pulse" />
+                    <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : events.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-400">
+              <Mail size={28} className="mx-auto text-gray-300 mb-2" />
+              Sin actividad de email registrada
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50 max-h-[600px] overflow-y-auto">
+              {events.map((ev, i) => {
+                const meta = EVENT_META[ev.type] ?? EVENT_META.sent;
+                const Icon = meta.icon;
+                return (
+                  <div key={i} className="px-5 py-3 flex items-start gap-3">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${meta.color}`}>
+                      <Icon size={13} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-700">{meta.label} <span className="font-normal text-gray-400">"{ev.campaign_name}"</span></p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDateTime(ev.timestamp)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 2: Métricas ──────────────────────────────────────────────────────────
+function MetricsTab({ contact }: { contact: Contact }) {
+  const [period, setPeriod] = useState<"30" | "all">("all");
+
+  const { data: bookings = [], isLoading } = useQuery<ContactBooking[]>({
+    queryKey: ["contact-bookings", contact.id],
+    queryFn: () => contactsApi.bookings(contact.id).then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+
+  const cutoff = period === "30"
+    ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    : null;
+
+  const filtered = cutoff
+    ? bookings.filter((b) => new Date(b.fecha) >= cutoff)
+    : bookings;
+
+  const confirmedFiltered = filtered.filter((b) =>
+    !["cancelled", "no_show", "pending"].includes(b.status)
+  );
+
+  const totalRevenue = confirmedFiltered.reduce((s, b) => s + (b.ingreso_total ?? 0), 0);
+  const avgTicket    = confirmedFiltered.length
+    ? totalRevenue / confirmedFiltered.length
+    : (contact.ticket_medio ?? 0);
+
+  // Predictive analytics (computed from available data)
+  const historicCLV   = contact.veces_hotboat * (contact.ticket_medio ?? 0);
+  const daysSinceVisit = contact.ultima_visita
+    ? Math.floor((Date.now() - new Date(contact.ultima_visita).getTime()) / 86_400_000)
+    : null;
+
+  const churnRisk = daysSinceVisit === null ? null
+    : daysSinceVisit <= 30  ? { label: "Bajo",     pct: 5,  color: "bg-green-500" }
+    : daysSinceVisit <= 60  ? { label: "Medio",    pct: 30, color: "bg-yellow-400" }
+    : daysSinceVisit <= 90  ? { label: "Alto",     pct: 60, color: "bg-orange-500" }
+    : daysSinceVisit <= 180 ? { label: "Muy alto", pct: 80, color: "bg-red-500" }
+    :                         { label: "Crítico",  pct: 95, color: "bg-red-700" };
+
+  // Expected next visit: ultima_visita + avg interval (approx 365/veces days)
+  const expectedNext = contact.ultima_visita && contact.veces_hotboat > 0
+    ? new Date(new Date(contact.ultima_visita).getTime() + (365 / Math.max(contact.veces_hotboat, 1)) * 86_400_000)
+    : null;
+
+  const predictedCLV = contact.ticket_medio && contact.veces_hotboat > 0
+    ? historicCLV + contact.ticket_medio * Math.max(1, Math.round(contact.veces_hotboat * 0.3))
+    : null;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full px-5 py-4 flex items-center justify-between border-b border-gray-100 hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <ShoppingBag size={15} className="text-gray-400" />
-          Historial de reservas
-          {bookings.length > 0 && (
-            <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">
-              {bookings.length}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {bookings.length > 0 && (
-            <span className="text-sm font-bold text-gray-900">
-              ${total.toLocaleString("es-CL")} total
-            </span>
-          )}
-          {expanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
-        </div>
-      </button>
-
-      {expanded && (
-        isLoading ? (
-          <div className="p-6 text-center text-sm text-gray-400">Cargando reservas…</div>
-        ) : bookings.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-400">
-            No se encontraron reservas en la base de datos de HotBoat.
+    <div className="space-y-5">
+      {/* Métricas header */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <span className="text-sm font-semibold text-gray-700">Métricas</span>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+            {(["30", "all"] as const).map((p) => (
+              <button key={p} onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 transition-colors ${period === p ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                {p === "30" ? "30 días" : "Todo"}
+              </button>
+            ))}
           </div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {bookings.map((b, i) => {
-              const extras = Object.keys(b.extras ?? {}).filter((k) => !k.startsWith("aloj__"));
-              return (
-                <div key={i} className="px-5 py-3.5 flex items-center gap-4">
-                  <div className="w-9 h-9 rounded-lg bg-sky-50 flex items-center justify-center shrink-0">
-                    <Calendar size={15} className="text-sky-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{b.fecha}</p>
-                    {extras.length > 0 && (
-                      <p className="text-xs text-gray-400 truncate mt-0.5">{extras.join(", ")}</p>
-                    )}
-                    {b.como_supieron && (
-                      <p className="text-xs text-gray-400">Vía: {b.como_supieron}</p>
-                    )}
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${STATUS_COLORS[b.status] ?? "bg-gray-100 text-gray-600"}`}>
+        </div>
+
+        <div className="p-5">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Métricas destacadas</p>
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {[
+              { label: "Reservas",      value: confirmedFiltered.length,                              sub: "confirmadas" },
+              { label: "Revenue",       value: `CLP ${Math.round(totalRevenue).toLocaleString("es-CL")}`, sub: "ingresos totales" },
+              { label: "Ticket medio",  value: avgTicket ? `CLP ${Math.round(avgTicket).toLocaleString("es-CL")}` : "—", sub: "por reserva" },
+            ].map(({ label, value, sub }) => (
+              <div key={label} className="border border-gray-200 rounded-xl p-4">
+                <p className="text-xl font-bold text-gray-900">{value}</p>
+                <p className="text-xs text-gray-500 mt-1">{label}</p>
+                <p className="text-xs text-gray-400">{sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Bookings list */}
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Historial de reservas</p>
+          {isLoading ? (
+            <div className="text-xs text-gray-400 py-4">Cargando…</div>
+          ) : filtered.length === 0 ? (
+            <div className="text-xs text-gray-400 py-4">
+              {period === "30" ? "Sin reservas en los últimos 30 días." : "Sin reservas registradas."}
+            </div>
+          ) : (
+            <div className="border border-gray-100 rounded-lg divide-y divide-gray-50">
+              {filtered.map((b, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  <Calendar size={14} className="text-gray-300 shrink-0" />
+                  <span className="text-sm text-gray-700 flex-1">{b.fecha}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${BOOKING_STATUS_COLOR[b.status] ?? "bg-gray-100 text-gray-600"}`}>
                     {b.status}
                   </span>
                   {b.ingreso_total != null && (
-                    <span className="text-sm font-semibold text-gray-800 shrink-0">
-                      ${b.ingreso_total.toLocaleString("es-CL")}
+                    <span className="text-sm font-semibold text-gray-800">
+                      CLP {b.ingreso_total.toLocaleString("es-CL")}
                     </span>
                   )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Predictive analytics */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+          <TrendingUp size={15} className="text-brand-600" />
+          <span className="text-sm font-semibold text-gray-700">Análisis predictivo</span>
+          <span className="ml-1 px-2 py-0.5 bg-brand-50 text-brand-700 text-xs rounded-full font-medium">Estimado</span>
+        </div>
+        <div className="p-5">
+          {/* CLV */}
+          <div className="mb-5">
+            <p className="text-3xl font-bold text-gray-900">
+              {predictedCLV ? `CLP ${Math.round(predictedCLV).toLocaleString("es-CL")}` : "—"}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">Customer Lifetime Value (CLV)</p>
+            {historicCLV > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    className="bg-brand-600 h-2 rounded-full"
+                    style={{ width: predictedCLV ? `${Math.min(100, (historicCLV / predictedCLV) * 100)}%` : "100%" }}
+                  />
+                </div>
+                <div className="flex gap-4 text-xs text-gray-500">
+                  <span>✓ CLV histórico (CLP {Math.round(historicCLV).toLocaleString("es-CL")}, {contact.veces_hotboat} reservas)</span>
+                </div>
+                {predictedCLV && predictedCLV > historicCLV && (
+                  <div className="text-xs text-gray-400">
+                    ✓ CLV proyectado (CLP {Math.round(predictedCLV - historicCLV).toLocaleString("es-CL")} adicional estimado)
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )
+
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              ["Próxima visita estimada", expectedNext ? formatDate(expectedNext.toISOString()) : "—"],
+              ["Ticket promedio",         contact.ticket_medio ? `CLP ${Math.round(contact.ticket_medio).toLocaleString("es-CL")}` : "—"],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+                <p className="text-sm font-semibold text-gray-800">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Churn risk */}
+          {churnRisk && (
+            <div className="mt-5 pt-4 border-t border-gray-100">
+              <p className="text-xs text-gray-400 mb-2">Riesgo de churn</p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 bg-gray-100 rounded-full h-2">
+                  <div className={`h-2 rounded-full ${churnRisk.color}`} style={{ width: `${churnRisk.pct}%` }} />
+                </div>
+                <span className="text-sm font-semibold text-gray-700 w-20 text-right">
+                  {churnRisk.label} ({churnRisk.pct}%)
+                </span>
+              </div>
+              {daysSinceVisit !== null && (
+                <p className="text-xs text-gray-400 mt-1">{daysSinceVisit} días desde última visita</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 3: Segmentos ─────────────────────────────────────────────────────────
+function SegmentsTab({ contactId }: { contactId: number }) {
+  const [search, setSearch] = useState("");
+
+  const { data: segments = [], isLoading } = useQuery<{ id: number; name: string; description: string | null }[]>({
+    queryKey: ["contact-segments", contactId],
+    queryFn: () => contactsApi.segments(contactId).then((r) => r.data),
+    staleTime: 2 * 60_000,
+  });
+
+  const filtered = segments.filter((s) =>
+    !search || s.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <span className="text-sm font-semibold text-gray-700">Listas y segmentos</span>
+      </div>
+      <div className="px-5 py-3 border-b border-gray-100">
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar segmento..."
+            className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="p-6 space-y-2">
+          {[...Array(3)].map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg animate-pulse" />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="p-10 text-center text-sm text-gray-400">
+          {search ? "Sin resultados" : "No pertenece a ningún segmento activo"}
+        </div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50">
+              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Nombre</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Descripción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((s) => (
+              <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                <td className="px-5 py-3.5">
+                  <Link href={`/segments/${s.id}`} className="font-medium text-brand-600 hover:underline flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-brand-400 shrink-0" />
+                    {s.name}
+                  </Link>
+                </td>
+                <td className="px-5 py-3.5 text-gray-400 text-xs">{s.description ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function ContactDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const qc = useQueryClient();
-  const contactId = Number(id);
+  const { id }      = useParams<{ id: string }>();
+  const router      = useRouter();
+  const qc          = useQueryClient();
+  const contactId   = Number(id);
+  const [tab, setTab] = useState<"details" | "metrics" | "segments">("details");
 
   const { data: contact, isLoading } = useQuery<Contact>({
     queryKey: ["contact", contactId],
-    queryFn: () => contactsApi.get(contactId).then((r) => r.data),
+    queryFn:  () => contactsApi.get(contactId).then((r) => r.data),
     staleTime: 60_000,
-  });
-
-  const { data: segments = [] } = useQuery<{ id: number; name: string; description: string | null }[]>({
-    queryKey: ["contact-segments", contactId],
-    queryFn: () => contactsApi.segments(contactId).then((r) => r.data),
-    staleTime: 2 * 60_000,
-    enabled: !!contactId,
   });
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<Contact>) => contactsApi.update(contactId, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["contact", contactId] }),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ["contact", contactId] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => contactsApi.delete(contactId),
-    onSuccess: () => router.push("/contacts"),
+    onSuccess:  () => router.push("/contacts"),
   });
 
-  if (isLoading) {
-    return (
-      <div className="p-8">
-        <div className="h-5 bg-gray-200 rounded w-32 animate-pulse mb-6" />
-        <div className="h-20 bg-gray-100 rounded-xl animate-pulse mb-4" />
-        <div className="grid grid-cols-4 gap-3">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />)}
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return (
+    <div className="p-8 max-w-5xl">
+      <div className="h-4 bg-gray-200 rounded w-28 animate-pulse mb-6" />
+      <div className="h-24 bg-gray-100 rounded-xl animate-pulse mb-4" />
+      <div className="h-10 bg-gray-100 rounded animate-pulse mb-6" />
+      <div className="h-64 bg-gray-100 rounded-xl animate-pulse" />
+    </div>
+  );
 
-  if (!contact) {
-    return (
-      <div className="p-8">
-        <Link href="/contacts" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-4">
-          <ArrowLeft size={15} /> Volver
-        </Link>
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
-          Contacto no encontrado.
-        </div>
+  if (!contact) return (
+    <div className="p-8">
+      <Link href="/contacts" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-4">
+        <ArrowLeft size={15} /> Volver
+      </Link>
+      <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+        Contacto no encontrado.
       </div>
-    );
-  }
-
-  const avatarColor = contact.opted_in ? "bg-brand-600" : "bg-gray-400";
-  const totalGasto = null; // computed in BookingsCard from real data
+    </div>
+  );
 
   return (
     <div className="p-8 max-w-5xl">
-      <Link href="/contacts" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-6">
-        <ArrowLeft size={15} /> Volver a contactos
+      <Link href="/contacts" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-5">
+        <ArrowLeft size={14} /> Volver a clientes
       </Link>
 
       {/* ── Header ── */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-5 flex items-start gap-5">
-        <div className={`w-16 h-16 ${avatarColor} rounded-2xl flex items-center justify-center shrink-0`}>
-          <span className="text-white text-2xl font-bold">{initials(contact.name, contact.email)}</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{contact.name || "Sin nombre"}</h1>
-              <p className="text-gray-500 text-sm mt-0.5 flex items-center gap-1.5">
-                <Mail size={13} /> {contact.email}
-              </p>
-              {contact.phone && (
-                <p className="text-gray-500 text-sm mt-0.5 flex items-center gap-1.5">
-                  <Phone size={13} /> {contact.phone}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${contact.opted_in ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                {contact.opted_in ? "Suscrito" : "Dado de baja"}
-              </span>
-              <button
-                onClick={() => updateMutation.mutate({ opted_in: !contact.opted_in })}
-                className="px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
-              >
-                {contact.opted_in ? "Dar de baja" : "Reactivar"}
-              </button>
-              <button
-                onClick={() => { if (confirm(`¿Eliminar contacto ${contact.email}?`)) deleteMutation.mutate(); }}
-                className="px-3 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors"
-              >
-                Eliminar
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Stats row ── */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
-        {[
-          { label: "Experiencias", value: `${contact.veces_hotboat}x`, icon: ShoppingBag, color: "text-sky-600 bg-sky-50" },
-          { label: "Ticket medio", value: contact.ticket_medio ? `$${Math.round(contact.ticket_medio).toLocaleString("es-CL")}` : "—", icon: MapPin, color: "text-green-600 bg-green-50" },
-          { label: "Última visita", value: contact.ultima_visita ? formatDate(contact.ultima_visita) : "—", icon: Calendar, color: "text-purple-600 bg-purple-50" },
-          { label: "Con alojamiento", value: contact.ha_alojamiento ? "Sí" : "No", icon: Globe, color: "text-orange-600 bg-orange-50" },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className={`w-8 h-8 rounded-lg ${color} flex items-center justify-center mb-2`}>
-              <Icon size={15} />
-            </div>
-            <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">{label}</p>
-            <p className="text-lg font-bold text-gray-900 mt-0.5">{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* ── 2-column layout ── */}
-      <div className="grid grid-cols-3 gap-5 mb-5">
-
-        {/* Left: datos + actividad */}
-        <div className="col-span-2 space-y-4">
-
-          {/* Datos de contacto */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Datos de contacto</p>
-            <div className="space-y-3">
-              {[
-                { icon: Mail,    label: "Email",    value: contact.email },
-                { icon: Phone,   label: "Teléfono", value: contact.phone },
-                { icon: Globe,   label: "Idioma",   value: contact.language === "es" ? "Español" : contact.language === "en" ? "English" : contact.language },
-                { icon: MapPin,  label: "Origen",   value: contact.origin_utm },
-                { icon: Calendar,label: "Cumpleaños", value: contact.birthday ? formatDate(contact.birthday) : null },
-              ].map(({ icon: Icon, label, value }) => (
-                value ? (
-                  <div key={label} className="flex items-center gap-3">
-                    <Icon size={14} className="text-gray-300 shrink-0" />
-                    <span className="text-xs text-gray-400 w-20 shrink-0">{label}</span>
-                    <span className="text-sm text-gray-800">{value}</span>
-                  </div>
-                ) : null
-              ))}
-              {contact.extras_favoritos && contact.extras_favoritos.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <ShoppingBag size={14} className="text-gray-300 shrink-0 mt-0.5" />
-                  <span className="text-xs text-gray-400 w-20 shrink-0">Extras</span>
-                  <div className="flex flex-wrap gap-1">
-                    {contact.extras_favoritos.map((e) => (
-                      <span key={e} className="px-2 py-0.5 bg-sky-50 text-sky-700 rounded-full text-xs">{e}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Actividad */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Actividad</p>
-            <div className="space-y-3">
-              {[
-                { label: "Creado",          value: formatDate(contact.created_at) },
-                { label: "Actualizado",     value: formatDate(contact.updated_at) },
-                { label: "Opt-in desde",    value: contact.opted_in_at  ? formatDate(contact.opted_in_at)  : null },
-                { label: "Dado de baja el", value: contact.opted_out_at ? formatDate(contact.opted_out_at) : null },
-              ].filter((r) => r.value).map(({ label, value }) => (
-                <div key={label} className="flex items-center gap-3">
-                  <Clock size={14} className="text-gray-300 shrink-0" />
-                  <span className="text-xs text-gray-400 w-28 shrink-0">{label}</span>
-                  <span className="text-sm text-gray-700">{value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: segmentos */}
-        <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Filter size={14} className="text-gray-400" />
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Segmentos</p>
-          </div>
-          {segments.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-4">
-              {contact.opted_in ? "No pertenece a ningún segmento activo." : "Sin suscripción activa."}
+      <div className="mb-0">
+        <div className="flex items-start justify-between gap-4 mb-1">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">{contact.name || "Sin nombre"}</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {contact.email}
+              {contact.phone && <> · {contact.phone}</>}
+              {contact.location && <> · {contact.location}</>}
             </p>
-          ) : (
-            <div className="space-y-2">
-              {segments.map((s) => (
-                <Link
-                  key={s.id}
-                  href={`/segments/${s.id}`}
-                  className="block p-3 bg-purple-50 hover:bg-purple-100 border border-purple-100 rounded-lg transition-colors"
-                >
-                  <p className="text-sm font-medium text-purple-800">{s.name}</p>
-                  {s.description && (
-                    <p className="text-xs text-purple-500 mt-0.5 truncate">{s.description}</p>
-                  )}
-                </Link>
-              ))}
-            </div>
-          )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${contact.opted_in ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+              {contact.opted_in ? "Suscrito" : "Dado de baja"}
+            </span>
+            <button
+              onClick={() => updateMutation.mutate({ opted_in: !contact.opted_in })}
+              className="px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50"
+            >
+              {contact.opted_in ? "Dar de baja" : "Reactivar"}
+            </button>
+            <button
+              onClick={() => { if (confirm(`¿Eliminar ${contact.email}?`)) deleteMutation.mutate(); }}
+              className="px-3 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50"
+            >
+              Eliminar
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-0 border-b border-gray-200 mt-4 mb-6">
+          <Tab label="Detalles"          active={tab === "details"}  onClick={() => setTab("details")} />
+          <Tab label="Métricas e insights" active={tab === "metrics"}  onClick={() => setTab("metrics")} />
+          <Tab label="Listas y segmentos" active={tab === "segments"} onClick={() => setTab("segments")} />
         </div>
       </div>
 
-      {/* ── Booking history ── */}
-      <div className="mb-5">
-        <BookingsCard contactId={contactId} />
-      </div>
-
-      {/* ── Custom fields / profile ── */}
-      <CustomFieldsCard
-        contact={contact}
-        saving={updateMutation.isPending}
-        onSave={(fields, notes, birthday) =>
-          updateMutation.mutate({
-            custom_fields: fields,
-            notes: notes || null,
-            birthday: birthday || null,
-          } as Partial<Contact>)
-        }
-      />
+      {/* ── Tab content ── */}
+      {tab === "details" && (
+        <DetailsTab
+          contact={contact}
+          saving={updateMutation.isPending}
+          onSave={(fields, notes, birthday) =>
+            updateMutation.mutate({ custom_fields: fields, notes: notes || null, birthday: birthday || null } as Partial<Contact>)
+          }
+        />
+      )}
+      {tab === "metrics"  && <MetricsTab  contact={contact} />}
+      {tab === "segments" && <SegmentsTab contactId={contactId} />}
     </div>
   );
 }

@@ -50,6 +50,7 @@ export const contactsApi = {
   delete: (id: number) => api.delete(`/contacts/${id}`),
   segments: (id: number) => api.get(`/contacts/${id}/segments`),
   bookings: (id: number) => api.get(`/contacts/${id}/bookings`),
+  emailActivity: (id: number) => api.get(`/contacts/${id}/email_activity`),
   importCsv: (file: File) => {
     const form = new FormData();
     form.append("file", file);

@@ -37,6 +37,13 @@ export interface ContactBooking {
   extras: Record<string, unknown>;
 }
 
+export interface ContactEmailEvent {
+  type: "sent" | "delivered" | "opened" | "clicked" | "bounced";
+  campaign_id: number;
+  campaign_name: string;
+  timestamp: string;
+}
+
 export interface SegmentRule {
   field: string;
   op: string;

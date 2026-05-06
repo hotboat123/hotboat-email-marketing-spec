@@ -11,6 +11,7 @@ from app.core.deps import get_current_user, require_editor
 from app.core.unsub_token import verify_unsub_token
 from app.models.user import User
 from app.models.contact import Contact, ContactCreate, ContactRead, ContactUpdate
+from app.models.campaign import Campaign, CampaignSend
 from app.models.segment import Segment
 from app.services.segment_evaluator import _build_clause
 
@@ -196,6 +197,50 @@ def contact_bookings(
     except Exception as exc:
         # Source DB not available — return empty without crashing
         return []
+
+
+@router.get("/{contact_id}/email_activity")
+def contact_email_activity(
+    contact_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Feed de eventos de email para el contacto (enviados, abiertos, clics)."""
+    contact = session.get(Contact, contact_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    sends = session.exec(
+        select(CampaignSend)
+        .where(CampaignSend.contact_id == contact_id)
+        .order_by(CampaignSend.sent_at.desc())
+    ).all()
+    if not sends:
+        return []
+
+    campaign_ids = list({s.campaign_id for s in sends})
+    camps = {c.id: c for c in session.exec(select(Campaign).where(Campaign.id.in_(campaign_ids))).all()}
+
+    events = []
+    for s in sends:
+        camp = camps.get(s.campaign_id)
+        base = {
+            "campaign_id": s.campaign_id,
+            "campaign_name": camp.name if camp else f"Campaña #{s.campaign_id}",
+        }
+        if s.clicked_at:
+            events.append({**base, "type": "clicked",   "timestamp": s.clicked_at.isoformat()})
+        if s.opened_at:
+            events.append({**base, "type": "opened",    "timestamp": s.opened_at.isoformat()})
+        if s.delivered_at:
+            events.append({**base, "type": "delivered", "timestamp": s.delivered_at.isoformat()})
+        if s.bounced_at:
+            events.append({**base, "type": "bounced",   "timestamp": s.bounced_at.isoformat()})
+        if s.sent_at:
+            events.append({**base, "type": "sent",      "timestamp": s.sent_at.isoformat()})
+
+    events.sort(key=lambda x: x["timestamp"], reverse=True)
+    return events[:60]
 
 
 @router.post("/import/csv", status_code=201)
