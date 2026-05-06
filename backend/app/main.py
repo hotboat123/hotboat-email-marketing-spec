@@ -2,14 +2,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database import create_db_and_tables
-from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync, automations
+from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync, automations, forms
 
 app = FastAPI(title="HotBoat Email Marketing API", version="1.0.0", redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
-    allow_credentials=True,
+    # "*" needed so embed.js can submit forms from any website (e.g. hotboat.cl).
+    # Auth-protected routes still require a Bearer token, so this is safe.
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -23,6 +25,7 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(automations.router, prefix="/api/automations", tags=["automations"])
+app.include_router(forms.router, prefix="/api/forms", tags=["forms"])
 
 
 @app.on_event("startup")

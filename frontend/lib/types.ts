@@ -89,6 +89,36 @@ export interface CampaignStats {
   bounce_rate: number;
 }
 
+export type FormTrigger = "delay" | "exit_intent" | "scroll";
+
+export interface SignupForm {
+  id: number;
+  name: string;
+  title: string;
+  description: string | null;
+  button_text: string;
+  success_message: string;
+  collect_name: boolean;
+  collect_phone: boolean;
+  popup_trigger: FormTrigger;
+  popup_delay_seconds: number;
+  popup_scroll_pct: number;
+  status: "active" | "paused";
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormSubmission {
+  id: number;
+  form_id: number;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  source_url: string | null;
+  created_at: string;
+}
+
 export type AutomationTrigger = "abandoned_booking" | "welcome" | "post_visit" | "reactivation";
 export type AutomationStatus = "active" | "paused";
 

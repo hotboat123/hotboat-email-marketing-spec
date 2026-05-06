@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     RESEND_FROM_EMAIL: str = "HotBoat <hola@hotboat.cl>"
     RESEND_WEBHOOK_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:3000"
+    # Public URL of THIS backend — used in embed.js to point the form submit call
+    BACKEND_PUBLIC_URL: str = "http://localhost:8000"
     # Si los datos fuente están en otra DB, ponla aquí; si no, usa la misma DATABASE_URL
     HOTBOAT_DATABASE_URL: str = ""
 

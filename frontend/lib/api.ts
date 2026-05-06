@@ -93,6 +93,16 @@ export const analyticsApi = {
   recentCampaigns: () => api.get("/analytics/campaigns/recent"),
 };
 
+// Signup Forms
+export const formsApi = {
+  list: () => api.get("/forms"),
+  get: (id: number) => api.get(`/forms/${id}`),
+  create: (data: unknown) => api.post("/forms", data),
+  update: (id: number, data: unknown) => api.patch(`/forms/${id}`, data),
+  delete: (id: number) => api.delete(`/forms/${id}`),
+  submissions: (id: number) => api.get(`/forms/${id}/submissions`),
+};
+
 // Automations
 export const automationsApi = {
   list: () => api.get("/automations"),

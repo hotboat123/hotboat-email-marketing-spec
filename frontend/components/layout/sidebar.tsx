@@ -9,6 +9,7 @@ import {
   FileText,
   Send,
   Zap,
+  MousePointerClick,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -21,7 +22,8 @@ const nav = [
   { href: "/segments",     label: "Segmentos",     icon: Filter },
   { href: "/templates",    label: "Plantillas",    icon: FileText },
   { href: "/campaigns",    label: "Campañas",      icon: Send },
-  { href: "/automations",  label: "Automatizaciones", icon: Zap },
+  { href: "/automations",  label: "Automatizaciones",  icon: Zap },
+  { href: "/forms",        label: "Formularios",       icon: MousePointerClick },
 ];
 
 export function Sidebar() {
