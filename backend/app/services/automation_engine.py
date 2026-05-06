@@ -230,14 +230,14 @@ def run_automations() -> None:
 def start_scheduler() -> None:
     def loop():
         # Small delay to let the app fully start
-        time.sleep(30)
+        time.sleep(10)
         while True:
             try:
                 run_automations()
             except Exception as exc:
                 logger.exception("Automation scheduler error: %s", exc)
-            time.sleep(15 * 60)  # 15 minutes
+            time.sleep(60)  # 1 minute
 
     t = threading.Thread(target=loop, daemon=True, name="automation-scheduler")
     t.start()
-    logger.info("Automation scheduler started (interval: 15 min)")
+    logger.info("Automation scheduler started (interval: 1 min)")
