@@ -15,7 +15,7 @@ import Link from "next/link";
 const BACKEND_URL =
   typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "http://localhost:8000"
-    : "https://hotboat-backend-email-marketing-staging.up.railway.app";
+    : (process.env.NEXT_PUBLIC_API_URL ?? "https://hotboat-email-marketing-spec-staging.up.railway.app");
 
 const FIELD_TYPES = [
   { value: "text",     label: "Texto" },
