@@ -102,6 +102,15 @@ export interface CampaignStats {
 
 export type FormTrigger = "delay" | "exit_intent" | "scroll";
 
+export interface FormField {
+  key: string;
+  label: string;
+  type: "text" | "email" | "tel" | "date" | "number" | "textarea" | "select";
+  required: boolean;
+  placeholder?: string;
+  options?: string[];
+}
+
 export interface SignupForm {
   id: number;
   name: string;
@@ -114,6 +123,8 @@ export interface SignupForm {
   popup_trigger: FormTrigger;
   popup_delay_seconds: number;
   popup_scroll_pct: number;
+  custom_form_fields: FormField[] | null;
+  html_override: string | null;
   status: "active" | "paused";
   created_by: number | null;
   created_at: string;
@@ -127,6 +138,7 @@ export interface FormSubmission {
   name: string | null;
   phone: string | null;
   source_url: string | null;
+  extra_data: Record<string, string> | null;
   created_at: string;
 }
 
