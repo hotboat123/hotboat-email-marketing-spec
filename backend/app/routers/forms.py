@@ -400,7 +400,7 @@ def _build_embed_js(cfg: dict) -> str:
             if (f2) f2.style.display = 'none';
             if (s2) s2.style.display = 'block';
             sessionStorage.setItem(STORE_KEY, 'submitted');
-            setTimeout(closePopup, 3500);
+            setTimeout(closePopup, 6000);
           }})
           .catch(function() {{
             if (btn) {{
