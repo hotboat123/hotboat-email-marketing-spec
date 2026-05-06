@@ -100,6 +100,14 @@ export interface CampaignStats {
   bounce_rate: number;
 }
 
+export interface CampaignConversions {
+  campaign_id: number;
+  window_days: number;
+  bookings: number;
+  revenue: number;
+  converted_contacts: number;
+}
+
 export type FormTrigger = "delay" | "exit_intent" | "scroll";
 
 export interface FormField {

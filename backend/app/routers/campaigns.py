@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 from jinja2 import Template as JTemplate
 import resend
@@ -9,6 +10,7 @@ from app.core.config import settings
 from app.core.deps import get_current_user, require_editor
 from app.models.user import User
 from app.models.campaign import Campaign, CampaignCreate, CampaignRead, CampaignStats, CampaignUpdate, CampaignSend
+from app.models.contact import Contact
 from app.models.segment import Segment
 from app.models.template import Template
 from app.services.segment_evaluator import evaluate_segment
@@ -170,3 +172,72 @@ def campaign_stats(campaign_id: int, session: Session = Depends(get_session), _:
         click_rate=round(clicked / base * 100, 1),
         bounce_rate=round(bounced / (sent or 1) * 100, 1),
     )
+
+
+@router.get("/{campaign_id}/conversions")
+def campaign_conversions(
+    campaign_id: int,
+    days: int = Query(default=60, ge=1, le=365),
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """
+    Atribución de reservas: contactos que recibieron esta campaña y
+    tuvieron una visita confirmada en HotBoat dentro de `days` días
+    posteriores al envío. Cruce por email con all_appointments.
+    """
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+
+    empty = {"campaign_id": campaign_id, "window_days": days, "bookings": 0, "revenue": 0.0, "converted_contacts": 0}
+
+    if not campaign.sent_at:
+        return empty
+
+    sends = session.exec(
+        select(CampaignSend).where(CampaignSend.campaign_id == campaign_id)
+    ).all()
+    if not sends:
+        return empty
+
+    contact_ids = list({s.contact_id for s in sends})
+    contacts_q = session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all()
+    emails = [ct.email for ct in contacts_q]
+    if not emails:
+        return empty
+
+    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    try:
+        src_engine = create_engine(src_url)
+        with src_engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT
+                    email,
+                    COUNT(*)                              AS bookings,
+                    COALESCE(SUM(ingreso_total), 0)       AS revenue
+                FROM all_appointments
+                WHERE email = ANY(:emails)
+                  AND fecha >= :start_date
+                  AND fecha <= :end_date
+                  AND status NOT IN ('cancelled', 'no_show', 'pending')
+                GROUP BY email
+            """), {
+                "emails": emails,
+                "start_date": campaign.sent_at,
+                "end_date": campaign.sent_at + timedelta(days=days),
+            }).fetchall()
+    except Exception:
+        return empty
+
+    total_bookings = sum(int(r.bookings) for r in rows)
+    total_revenue = sum(float(r.revenue) for r in rows)
+    converted_contacts = len(rows)
+
+    return {
+        "campaign_id": campaign_id,
+        "window_days": days,
+        "bookings": total_bookings,
+        "revenue": total_revenue,
+        "converted_contacts": converted_contacts,
+    }

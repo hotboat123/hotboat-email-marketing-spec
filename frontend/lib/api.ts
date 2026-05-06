@@ -87,6 +87,7 @@ export const campaignsApi = {
   send: (id: number) => api.post(`/campaigns/${id}/send`),
   sendTest: (id: number) => api.post(`/campaigns/${id}/send-test`),
   stats: (id: number) => api.get(`/campaigns/${id}/stats`),
+  conversions: (id: number, days = 60) => api.get(`/campaigns/${id}/conversions?days=${days}`),
 };
 
 // Analytics

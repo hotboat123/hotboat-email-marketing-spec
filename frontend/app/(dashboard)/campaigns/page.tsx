@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi, segmentsApi } from "@/lib/api";
-import { Campaign, CampaignStats, Segment } from "@/lib/types";
+import { Campaign, CampaignConversions, CampaignStats, Segment } from "@/lib/types";
 import {
   Plus, Send, Trash2, FlaskConical, MoreHorizontal, Mail,
   Search, CheckCircle, Pencil, ChevronDown,
@@ -127,6 +127,7 @@ function SkeletonRow() {
       <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-28 animate-pulse" /></td>
       <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16 animate-pulse" /></td>
       <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16 animate-pulse" /></td>
+      <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20 animate-pulse" /></td>
       <td className="px-5 py-3.5" />
     </tr>
   );
@@ -178,7 +179,7 @@ export default function CampaignsPage() {
 
   const segMap = Object.fromEntries(segments.map((s) => [s.id, s]));
 
-  // Fetch stats for sent campaigns only
+  // Fetch stats + conversions for sent campaigns only
   const sentCampaigns = campaigns.filter((c) => c.status === "sent");
   const statsQueries = useQueries({
     queries: sentCampaigns.map((c) => ({
@@ -190,6 +191,18 @@ export default function CampaignsPage() {
   const statsMap: Record<number, CampaignStats> = {};
   statsQueries.forEach((q) => {
     if (q.data) statsMap[q.data.campaign_id] = q.data;
+  });
+
+  const convQueries = useQueries({
+    queries: sentCampaigns.map((c) => ({
+      queryKey: ["campaign-conversions", c.id],
+      queryFn: () => campaignsApi.conversions(c.id).then((r) => r.data as CampaignConversions),
+      staleTime: 15 * 60_000,
+    })),
+  });
+  const convMap: Record<number, CampaignConversions> = {};
+  convQueries.forEach((q) => {
+    if (q.data) convMap[q.data.campaign_id] = q.data;
   });
 
   const sendMutation = useMutation({
@@ -315,6 +328,7 @@ export default function CampaignsPage() {
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha envío</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Tasa apertura</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Tasa clics</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reservas <span className="normal-case font-normal text-gray-400">(60 días)</span></th>
               <th className="px-5 py-3" />
             </tr>
           </thead>
@@ -323,7 +337,7 @@ export default function CampaignsPage() {
               [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-5 py-16 text-center">
+                <td colSpan={8} className="px-5 py-16 text-center">
                   <Send size={36} className="mx-auto text-gray-300 mb-3" />
                   <p className="text-gray-500 font-medium">
                     {search || statusFilter ? "Sin resultados" : "No hay campañas"}
@@ -345,6 +359,7 @@ export default function CampaignsPage() {
               filtered.map((c) => {
                 const seg = segMap[c.segment_id];
                 const stats = statsMap[c.id];
+                const conv = convMap[c.id];
                 const hasSent = c.status === "sent";
                 return (
                   <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
@@ -397,6 +412,25 @@ export default function CampaignsPage() {
                         />
                       ) : hasSent ? (
                         <span className="text-gray-300 text-xs">—</span>
+                      ) : (
+                        <span className="text-gray-300 text-sm">—</span>
+                      )}
+                    </td>
+
+                    {/* Conversions / Reservas */}
+                    <td className="px-5 py-3.5">
+                      {hasSent && conv ? (
+                        conv.bookings > 0 ? (
+                          <StatCell
+                            pct={`${conv.bookings} reserva${conv.bookings !== 1 ? "s" : ""}`}
+                            sub={`CLP ${Math.round(conv.revenue).toLocaleString("es-CL")}`}
+                            highlight
+                          />
+                        ) : (
+                          <span className="text-gray-300 text-xs">0</span>
+                        )
+                      ) : hasSent ? (
+                        <span className="text-gray-200 text-xs animate-pulse">···</span>
                       ) : (
                         <span className="text-gray-300 text-sm">—</span>
                       )}
