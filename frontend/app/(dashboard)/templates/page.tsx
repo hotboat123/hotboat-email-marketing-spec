@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { templatesApi } from "@/lib/api";
 import { Template } from "@/lib/types";
-import { Plus, Copy, Trash2, Eye, X } from "lucide-react";
+import { Plus, Copy, Trash2, Eye, X, Search } from "lucide-react";
 import Link from "next/link";
 import { formatDate } from "@/lib/utils";
 
@@ -55,6 +55,7 @@ function PreviewModal({ tpl, onClose }: { tpl: Template; onClose: () => void }) 
 export default function TemplatesPage() {
   const qc = useQueryClient();
   const [preview, setPreview] = useState<Template | null>(null);
+  const [search, setSearch]   = useState("");
 
   const { data: templates = [], isLoading, isError } = useQuery<Template[]>({
     queryKey: ["templates"],
@@ -76,7 +77,7 @@ export default function TemplatesPage() {
     <div className="p-8">
       {preview && <PreviewModal tpl={preview} onClose={() => setPreview(null)} />}
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Plantillas</h1>
           <p className="text-gray-500 mt-1 text-sm">{templates.length} plantillas disponibles</p>
@@ -90,6 +91,23 @@ export default function TemplatesPage() {
         </Link>
       </div>
 
+      {/* Buscador */}
+      <div className="relative mb-6 max-w-sm">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar plantilla..."
+          className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        {search && (
+          <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
       {isError && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
           Error al cargar plantillas. Verifica tu conexion.
@@ -100,20 +118,36 @@ export default function TemplatesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(6)].map((_, i) => <TemplateSkeleton key={i} />)}
         </div>
-      ) : templates.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-            <Plus size={20} className="text-gray-400" />
+      ) : (() => {
+        const filtered = search.trim()
+          ? templates.filter(t =>
+              t.name.toLowerCase().includes(search.toLowerCase()) ||
+              t.subject_default.toLowerCase().includes(search.toLowerCase())
+            )
+          : templates;
+        return filtered.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+              <Search size={20} className="text-gray-400" />
+            </div>
+            {search ? (
+              <>
+                <p className="text-gray-500 font-medium">Sin resultados para "{search}"</p>
+                <button onClick={() => setSearch("")} className="mt-3 text-sm text-brand-600 hover:underline">Limpiar búsqueda</button>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-500 font-medium">No hay plantillas</p>
+                <p className="text-gray-400 text-sm mt-1">Crea tu primera plantilla de email</p>
+                <Link href="/templates/new" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors">
+                  <Plus size={14} /> Crear plantilla
+                </Link>
+              </>
+            )}
           </div>
-          <p className="text-gray-500 font-medium">No hay plantillas</p>
-          <p className="text-gray-400 text-sm mt-1">Crea tu primera plantilla de email</p>
-          <Link href="/templates/new" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors">
-            <Plus size={14} /> Crear plantilla
-          </Link>
-        </div>
-      ) : (
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {templates.map((tpl) => (
+          {filtered.map((tpl) => (
             <div key={tpl.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow group">
               {/* HTML preview thumbnail */}
               <div
@@ -173,7 +207,8 @@ export default function TemplatesPage() {
             </div>
           ))}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
