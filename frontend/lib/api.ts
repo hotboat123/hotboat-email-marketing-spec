@@ -91,6 +91,7 @@ export const campaignsApi = {
   sendProgress: (id: number) => api.get(`/campaigns/${id}/send-progress`),
   stats: (id: number) => api.get(`/campaigns/${id}/stats`),
   conversions: (id: number, days = 60) => api.get(`/campaigns/${id}/conversions?days=${days}`),
+  sends: (id: number) => api.get(`/campaigns/${id}/sends`),
 };
 
 // Analytics

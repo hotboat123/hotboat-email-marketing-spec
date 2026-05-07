@@ -274,3 +274,37 @@ def campaign_conversions(
         "revenue": total_revenue,
         "converted_contacts": converted_contacts,
     }
+
+
+@router.get("/{campaign_id}/sends")
+def campaign_sends(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Lista de contactos a los que se envió la campaña con su estado individual."""
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+
+    sends = session.exec(
+        select(CampaignSend).where(CampaignSend.campaign_id == campaign_id)
+    ).all()
+
+    contact_ids = [s.contact_id for s in sends]
+    contacts = {c.id: c for c in session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all()}
+
+    return [
+        {
+            "contact_id": s.contact_id,
+            "name":       contacts[s.contact_id].name if s.contact_id in contacts else "—",
+            "email":      contacts[s.contact_id].email if s.contact_id in contacts else "—",
+            "status":     s.status,
+            "sent_at":    s.sent_at,
+            "delivered_at": s.delivered_at,
+            "opened_at":  s.opened_at,
+            "clicked_at": s.clicked_at,
+            "bounced_at": s.bounced_at,
+        }
+        for s in sends
+    ]

@@ -4,9 +4,28 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi } from "@/lib/api";
 import { Campaign, CampaignStats } from "@/lib/types";
-import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users } from "lucide-react";
+import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, CheckCircle, Clock, XCircle } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
+
+interface CampaignSendRow {
+  contact_id: number;
+  name: string;
+  email: string;
+  status: string;
+  sent_at: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  bounced_at: string | null;
+}
+
+function Tick({ date, label }: { date: string | null; label: string }) {
+  if (!date) return <span title={`Sin ${label}`} className="text-gray-200">—</span>;
+  return (
+    <span title={`${label}: ${formatDateTime(date)}`} className="text-green-500 font-semibold">✓</span>
+  );
+}
 
 interface SendProgress {
   total_in_segment: number;
@@ -44,6 +63,12 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
     queryKey: ["campaign-stats", id],
     queryFn: () => campaignsApi.stats(id).then((r) => r.data),
     enabled: campaign?.status === "sent" || campaign?.status === "sending",
+  });
+
+  const { data: sends = [] } = useQuery<CampaignSendRow[]>({
+    queryKey: ["campaign-sends", id],
+    queryFn: () => campaignsApi.sends(id).then((r) => r.data),
+    staleTime: 30_000,
   });
 
   const { data: progress } = useQuery<SendProgress>({
@@ -177,6 +202,51 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
               ✓ Todos los contactos del segmento ya recibieron esta campaña.
             </p>
           )}
+        </div>
+      )}
+
+      {/* ── Lista de contactos enviados ──────────────────────────────────── */}
+      {sends.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Contactos</h2>
+            <span className="text-xs text-gray-400">{sends.length} enviados</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left">Contacto</th>
+                  <th className="px-4 py-3 text-center">Enviado</th>
+                  <th className="px-4 py-3 text-center">Entregado</th>
+                  <th className="px-4 py-3 text-center">Abrió</th>
+                  <th className="px-4 py-3 text-center">Clic</th>
+                  <th className="px-4 py-3 text-center">Rebote</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sends.map((s) => (
+                  <tr key={s.contact_id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3">
+                      <Link href={`/contacts/${s.contact_id}`} className="hover:text-brand-600 transition-colors">
+                        <p className="font-medium text-gray-900">{s.name}</p>
+                        <p className="text-xs text-gray-400">{s.email}</p>
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-center"><Tick date={s.sent_at} label="enviado" /></td>
+                    <td className="px-4 py-3 text-center"><Tick date={s.delivered_at} label="entregado" /></td>
+                    <td className="px-4 py-3 text-center"><Tick date={s.opened_at} label="abierto" /></td>
+                    <td className="px-4 py-3 text-center"><Tick date={s.clicked_at} label="clic" /></td>
+                    <td className="px-4 py-3 text-center">
+                      {s.bounced_at
+                        ? <span title={`Rebotó: ${formatDateTime(s.bounced_at)}`} className="text-red-400 font-semibold">✕</span>
+                        : <span className="text-gray-200">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
