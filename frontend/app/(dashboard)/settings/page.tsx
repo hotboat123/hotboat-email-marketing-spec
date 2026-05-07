@@ -136,11 +136,18 @@ export default function SettingsPage() {
 
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <h2 className="font-semibold text-gray-900 mb-2">Webhook Resend</h2>
-          <p className="text-gray-500 text-sm mb-3">Configura este endpoint en el dashboard de Resend para recibir eventos de entrega, apertura y clics:</p>
-          <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 font-mono text-sm text-gray-700 break-all">
-            {typeof window !== "undefined" ? window.location.origin.replace("3000", "8000") : "http://tu-api.com"}/api/webhooks/resend
+          <p className="text-gray-500 text-sm mb-3">Copia este URL y pégalo en el dashboard de Resend → Webhooks → Add Endpoint:</p>
+          <div
+            className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 font-mono text-sm text-gray-700 break-all cursor-pointer hover:bg-gray-100 transition-colors"
+            onClick={() => {
+              const url = `${window.location.origin}/api/webhooks/resend`;
+              navigator.clipboard.writeText(url);
+            }}
+            title="Click para copiar"
+          >
+            {typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/resend` : "https://tu-dominio.up.railway.app/api/webhooks/resend"}
           </div>
-          <p className="text-xs text-gray-400 mt-2">Eventos recomendados: email.sent, email.delivered, email.opened, email.clicked, email.bounced, email.complained</p>
+          <p className="text-xs text-gray-400 mt-2">Eventos a activar en Resend: <strong>email.sent · email.delivered · email.opened · email.clicked · email.bounced · email.complained</strong></p>
         </div>
       </div>
     </div>
