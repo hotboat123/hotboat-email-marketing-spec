@@ -37,7 +37,7 @@ TPL_HTML = """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;mar
 
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:56px;width:auto;margin-bottom:18px;display:block;margin-left:auto;margin-right:auto;" />
+    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;filter:brightness(0) invert(1);" />
     <h1 style="color:#fff;font-size:28px;font-weight:800;margin:0 0 10px;line-height:1.2;">
       Bienvenido/a a HotBoat, {{nombre}}
     </h1>

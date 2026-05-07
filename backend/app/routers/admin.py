@@ -27,8 +27,8 @@ SEED_TEMPLATES = [
         "segment": "Todos los suscriptores",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
   <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:56px;width:auto;margin-bottom:18px;display:block;margin-left:auto;margin-right:auto;" />
-    <h1 style="color:#fff;font-size:28px;font-weight:800;margin:0 0 10px;line-height:1.2;">Bienvenido/a a HotBoat, {{nombre}}</h1>
+    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;filter:brightness(0) invert(1);" />
+    <h1 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 10px;line-height:1.3;">Bienvenido/a a HotBoat, {{nombre}}</h1>
     <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">Nos alegra tenerte en nuestra comunidad</p>
   </div>
   <p style="font-size:16px;color:#333;line-height:1.75;margin-bottom:24px;">
@@ -76,8 +76,8 @@ SEED_TEMPLATES = [
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
   <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:52px;width:auto;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;" />
-    <h1 style="color:#fff;font-size:28px;font-weight:800;margin:0 0 8px;">¡Hola, {{nombre}}! 🌸</h1>
+    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;filter:brightness(0) invert(1);" />
+    <h1 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 8px;">¡Hola, {{nombre}}! 🌸</h1>
     <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">Nos alegra tenerte en la familia HotBoat</p>
   </div>
   <p style="font-size:16px;color:#333;line-height:1.7;">En HotBoat creamos experiencias únicas en el agua para que disfrutes momentos inolvidables junto a las personas que más quieres.</p>
@@ -102,8 +102,8 @@ SEED_TEMPLATES = [
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
   <div style="background:linear-gradient(135deg,#ff6b9d,#2563eb);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:52px;width:auto;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;" />
-    <h1 style="color:#fff;font-size:26px;font-weight:800;margin:0 0 8px;">Feliz Día de la Madre 🌸</h1>
+    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;filter:brightness(0) invert(1);" />
+    <h1 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 8px;">Feliz Día de la Madre 🌸</h1>
     <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">{{nombre}}, este día es tuyo. Te lo merecés todo.</p>
   </div>
   <p style="font-size:16px;color:#333;line-height:1.7;text-align:center;">Para celebrarte, preparamos un regalo especial cuando reserves tu experiencia HotBoat:</p>
