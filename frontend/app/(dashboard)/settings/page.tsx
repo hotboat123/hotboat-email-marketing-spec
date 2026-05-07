@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { authApi, syncApi } from "@/lib/api";
+import { authApi, syncApi, api } from "@/lib/api";
 import { User } from "@/lib/types";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, PackagePlus } from "lucide-react";
 
 export default function SettingsPage() {
   const qc = useQueryClient();
@@ -24,6 +24,21 @@ export default function SettingsPage() {
   });
 
   const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null);
+  const [seedResult, setSeedResult] = useState<{ ok: boolean; created: Record<string, string[]> } | null>(null);
+  const [seeding, setSeeding]       = useState(false);
+
+  async function runSeed() {
+    setSeeding(true);
+    setSeedResult(null);
+    try {
+      const r = await api.post("/admin/seed-templates");
+      setSeedResult(r.data);
+    } catch {
+      setSeedResult({ ok: false, created: {} });
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   return (
     <div className="p-8 max-w-2xl">
@@ -72,6 +87,37 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        {user?.role === "admin" && (
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <h2 className="font-semibold text-gray-900 mb-1">Plantillas y campañas de ejemplo</h2>
+            <p className="text-gray-500 text-sm mb-4">
+              Instala las plantillas de bienvenida y Día de la Madre con sus segmentos y campañas en borrador.
+              Es seguro correrlo varias veces — no duplica nada que ya exista.
+            </p>
+            <button
+              onClick={runSeed}
+              disabled={seeding}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-60 transition-colors"
+            >
+              <PackagePlus size={14} className={seeding ? "animate-pulse" : ""} />
+              {seeding ? "Instalando..." : "Instalar plantillas"}
+            </button>
+            {seedResult && (
+              <div className={`mt-3 px-4 py-3 rounded-lg text-sm ${seedResult.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                {seedResult.ok ? (
+                  <>
+                    ✓ Listo.
+                    {Object.entries(seedResult.created).map(([k, v]) =>
+                      v.length > 0 ? <span key={k}> · {v.length} {k} nuevos</span> : null
+                    )}
+                    {Object.values(seedResult.created).every(v => v.length === 0) && " Todo ya estaba instalado."}
+                  </>
+                ) : "Error al instalar. Revisá los logs del backend."}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <h2 className="font-semibold text-gray-900 mb-2">Resend</h2>
