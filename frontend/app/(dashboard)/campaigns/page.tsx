@@ -169,6 +169,10 @@ export default function CampaignsPage() {
     queryKey: ["campaigns"],
     queryFn: () => campaignsApi.list().then((r) => r.data),
     staleTime: 2 * 60_000,
+    refetchInterval: (query) => {
+      const data = query.state.data as Campaign[] | undefined;
+      return data?.some((c) => c.status === "sending") ? 3000 : false;
+    },
   });
 
   const { data: segments = [] } = useQuery<Segment[]>({
@@ -207,7 +211,10 @@ export default function CampaignsPage() {
 
   const sendMutation = useMutation({
     mutationFn: (id: number) => campaignsApi.send(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      setTimeout(() => qc.invalidateQueries({ queryKey: ["campaigns"] }), 5000);
+    },
   });
 
   const testMutation = useMutation({
