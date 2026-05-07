@@ -11,9 +11,12 @@ from app.models.segment import Segment
 router = APIRouter()
 
 FOOTER = """
-<div style="border-top:1px solid #eee;margin-top:36px;padding-top:24px;text-align:center;">
+<div style="border-top:1px solid #eee;margin-top:40px;padding-top:24px;text-align:center;">
   <p style="font-size:13px;font-weight:700;color:#111;margin:0 0 4px;">HotBoat</p>
   <p style="font-size:12px;color:#999;margin:4px 0;">Experiencias en el agua &middot; Chile</p>
+  <p style="font-size:12px;color:#bbb;margin:8px 0;">
+    <a href="#" style="color:#bbb;">Cancelar suscripci&oacute;n</a>
+  </p>
 </div>"""
 
 SEED_TEMPLATES = [
@@ -176,6 +179,9 @@ def seed_templates(
     for t in SEED_TEMPLATES:
         existing_tpl = session.exec(select(Template).where(Template.name == t["name"])).first()
         if existing_tpl:
+            existing_tpl.html_content = t["html"]
+            existing_tpl.updated_at   = now
+            session.add(existing_tpl)
             tpl_id = existing_tpl.id
         else:
             tpl = Template(name=t["name"], subject_default=t["subject"], preview_text=t["preview"],
