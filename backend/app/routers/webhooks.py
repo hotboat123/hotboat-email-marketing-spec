@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -22,25 +23,47 @@ STATUS_MAP = {
 }
 
 
-def _verify_signature(payload: bytes, signature: str) -> bool:
-    if not settings.RESEND_WEBHOOK_SECRET:
+def _verify_svix(payload: bytes, svix_id: str, svix_timestamp: str, svix_signature: str) -> bool:
+    """Verifica la firma Svix que usa Resend para sus webhooks."""
+    secret = settings.RESEND_WEBHOOK_SECRET
+    if not secret:
         return True
-    expected = hmac.new(
-        settings.RESEND_WEBHOOK_SECRET.encode(),
-        payload,
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
+
+    # El secret de Resend/Svix empieza con "whsec_" — hay que decodificar el resto en base64
+    if secret.startswith("whsec_"):
+        secret = secret[6:]
+    try:
+        secret_bytes = base64.b64decode(secret)
+    except Exception:
+        return False
+
+    # Contenido firmado: "{svix-id}.{svix-timestamp}.{body}"
+    signed = f"{svix_id}.{svix_timestamp}.".encode() + payload
+
+    expected = base64.b64encode(
+        hmac.new(secret_bytes, signed, hashlib.sha256).digest()
+    ).decode()
+
+    # svix-signature puede contener varias firmas separadas por espacio: "v1,abc123 v1,xyz..."
+    for sig in svix_signature.split(" "):
+        if sig.startswith("v1,"):
+            if hmac.compare_digest(expected, sig[3:]):
+                return True
+    return False
 
 
 @router.post("/resend")
 async def resend_webhook(
     request: Request,
-    resend_signature: str = Header(default="", alias="resend-signature"),
+    svix_id: str = Header(default="", alias="svix-id"),
+    svix_timestamp: str = Header(default="", alias="svix-timestamp"),
+    svix_signature: str = Header(default="", alias="svix-signature"),
     session: Session = Depends(get_session),
 ):
     body = await request.body()
-    if not _verify_signature(body, resend_signature):
+
+    if not _verify_svix(body, svix_id, svix_timestamp, svix_signature):
+        logger.warning("Webhook con firma Svix inválida — rechazado")
         raise HTTPException(status_code=401, detail="Firma inválida")
 
     try:
@@ -51,6 +74,8 @@ async def resend_webhook(
     event_type = event.get("type", "")
     data = event.get("data", {})
     resend_id = data.get("email_id") or data.get("id")
+
+    logger.info("Webhook recibido: type=%s resend_id=%s", event_type, resend_id)
 
     new_status = STATUS_MAP.get(event_type)
     if not new_status or not resend_id:
@@ -74,4 +99,5 @@ async def resend_webhook(
 
     session.add(send)
     session.commit()
+    logger.info("CampaignSend actualizado: id=%s status=%s", send.id, new_status)
     return {"ok": True}
