@@ -243,6 +243,43 @@ def contact_email_activity(
     return events[:60]
 
 
+@router.get("/{contact_id}/email_sends")
+def contact_email_sends(
+    contact_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Resumen por campaña: qué le enviamos, si abrió, si hizo clic."""
+    contact = session.get(Contact, contact_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    sends = session.exec(
+        select(CampaignSend)
+        .where(CampaignSend.contact_id == contact_id)
+        .order_by(CampaignSend.sent_at.desc())
+    ).all()
+    if not sends:
+        return []
+
+    campaign_ids = list({s.campaign_id for s in sends})
+    camps = {c.id: c for c in session.exec(select(Campaign).where(Campaign.id.in_(campaign_ids))).all()}
+
+    return [
+        {
+            "campaign_id":   s.campaign_id,
+            "campaign_name": camps[s.campaign_id].name if s.campaign_id in camps else f"Campaña #{s.campaign_id}",
+            "status":        s.status,
+            "sent_at":       s.sent_at.isoformat()       if s.sent_at       else None,
+            "delivered_at":  s.delivered_at.isoformat()  if s.delivered_at  else None,
+            "opened_at":     s.opened_at.isoformat()     if s.opened_at     else None,
+            "clicked_at":    s.clicked_at.isoformat()    if s.clicked_at    else None,
+            "bounced_at":    s.bounced_at.isoformat()    if s.bounced_at    else None,
+        }
+        for s in sends
+    ]
+
+
 @router.post("/import/csv", status_code=201)
 def import_csv(
     file: UploadFile = File(...),

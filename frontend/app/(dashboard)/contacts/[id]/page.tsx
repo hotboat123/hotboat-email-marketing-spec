@@ -4,13 +4,12 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { contactsApi } from "@/lib/api";
-import { Contact, ContactBooking, ContactEmailEvent } from "@/lib/types";
+import { Contact, ContactBooking, CampaignEmailSend } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
-  ArrowLeft, Mail, Phone, Globe, MapPin, Calendar, Clock,
-  ShoppingBag, StickyNote, Save, Plus, Trash2, Search,
-  MousePointerClick, Send, CheckCircle, AlertTriangle, TrendingUp,
-  ChevronDown, ChevronUp, Anchor,
+  ArrowLeft, Mail, Calendar, StickyNote, Save, Plus, Trash2, Search,
+  MousePointerClick, CheckCircle, AlertTriangle, TrendingUp,
+  ChevronDown, ChevronUp, Anchor, XCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -28,13 +27,14 @@ const BOOKING_STATUS_COLOR: Record<string, string> = {
   no_show:   "bg-gray-100 text-gray-500",
 };
 
-const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  opened:    { label: "Abrió email",      icon: Mail,              color: "text-brand-600 bg-brand-50" },
-  clicked:   { label: "Hizo clic",        icon: MousePointerClick, color: "text-green-600 bg-green-50" },
-  delivered: { label: "Recibió email",    icon: CheckCircle,       color: "text-gray-500 bg-gray-100" },
-  sent:      { label: "Enviado",          icon: Send,              color: "text-gray-400 bg-gray-50" },
-  bounced:   { label: "Rebotó",           icon: AlertTriangle,     color: "text-red-500 bg-red-50" },
-};
+function Tick({ yes, date }: { yes: boolean; date?: string | null }) {
+  if (yes) return (
+    <span title={date ?? undefined} className="inline-flex items-center gap-1 text-green-600 font-medium text-xs">
+      <CheckCircle size={13} /> Sí
+    </span>
+  );
+  return <span className="inline-flex items-center gap-1 text-gray-300 text-xs"><XCircle size={13} /> —</span>;
+}
 
 const PREDEFINED = [
   { key: "acompanantes",        label: "Nombres de acompañantes",    placeholder: "ej. Ana García, Pedro García" },
@@ -157,9 +157,9 @@ function DetailsTab({ contact, onSave, saving }: {
   onSave: (fields: Record<string, string>, notes: string, birthday: string) => void;
   saving: boolean;
 }) {
-  const { data: events = [], isLoading: eventsLoading } = useQuery<ContactEmailEvent[]>({
-    queryKey: ["contact-email-activity", contact.id],
-    queryFn: () => contactsApi.emailActivity(contact.id).then((r) => r.data),
+  const { data: sends = [], isLoading: sendsLoading } = useQuery<CampaignEmailSend[]>({
+    queryKey: ["contact-email-sends", contact.id],
+    queryFn: () => contactsApi.emailSends(contact.id).then((r) => r.data),
     staleTime: 5 * 60_000,
   });
 
@@ -221,46 +221,77 @@ function DetailsTab({ contact, onSave, saving }: {
         <CustomPropertiesCard contact={contact} onSave={onSave} saving={saving} />
       </div>
 
-      {/* Right — email activity feed */}
+      {/* Right — email sends table */}
       <div className="col-span-2">
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden sticky top-4">
           <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
-            <span className="text-sm font-semibold text-gray-700">Todos los eventos</span>
+            <span className="text-sm font-semibold text-gray-700">Emails enviados</span>
+            {sends.length > 0 && (
+              <span className="text-xs text-gray-400">{sends.length} campaña{sends.length !== 1 ? "s" : ""}</span>
+            )}
           </div>
-          {eventsLoading ? (
+
+          {sendsLoading ? (
             <div className="p-6 space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-gray-100 animate-pulse shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3.5 bg-gray-200 rounded w-3/4 animate-pulse" />
-                    <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse" />
-                  </div>
-                </div>
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />
               ))}
             </div>
-          ) : events.length === 0 ? (
+          ) : sends.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">
               <Mail size={28} className="mx-auto text-gray-300 mb-2" />
-              Sin actividad de email registrada
+              Aún no se ha enviado ningún email a este contacto
             </div>
           ) : (
-            <div className="divide-y divide-gray-50 max-h-[600px] overflow-y-auto">
-              {events.map((ev, i) => {
-                const meta = EVENT_META[ev.type] ?? EVENT_META.sent;
-                const Icon = meta.icon;
-                return (
-                  <div key={i} className="px-5 py-3 flex items-start gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${meta.color}`}>
-                      <Icon size={13} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-700">{meta.label} <span className="font-normal text-gray-400">"{ev.campaign_name}"</span></p>
-                      <p className="text-xs text-gray-400 mt-0.5">{formatDateTime(ev.timestamp)}</p>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wider">Campaña</th>
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-500 uppercase tracking-wider">
+                      <span title="¿Llegó al inbox?"><CheckCircle size={12} className="mx-auto" /></span>
+                    </th>
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-500 uppercase tracking-wider">
+                      <span title="¿Abrió el email?"><Mail size={12} className="mx-auto" /></span>
+                    </th>
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-500 uppercase tracking-wider">
+                      <span title="¿Hizo clic?"><MousePointerClick size={12} className="mx-auto" /></span>
+                    </th>
+                    <th className="px-3 py-2.5 text-center font-semibold text-gray-500 uppercase tracking-wider">
+                      <span title="¿Rebotó?"><AlertTriangle size={12} className="mx-auto" /></span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {sends.map((s, i) => (
+                    <tr key={i} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-800 truncate max-w-[140px]" title={s.campaign_name}>
+                          {s.campaign_name}
+                        </p>
+                        {s.sent_at && (
+                          <p className="text-gray-400 mt-0.5">{formatDateTime(s.sent_at)}</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <Tick yes={!!s.delivered_at} date={s.delivered_at} />
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <Tick yes={!!s.opened_at} date={s.opened_at} />
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <Tick yes={!!s.clicked_at} date={s.clicked_at} />
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {s.bounced_at
+                          ? <span className="inline-flex items-center gap-1 text-red-500 text-xs"><AlertTriangle size={12} /> Sí</span>
+                          : <span className="text-gray-300 text-xs">—</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

@@ -44,6 +44,17 @@ export interface ContactEmailEvent {
   timestamp: string;
 }
 
+export interface CampaignEmailSend {
+  campaign_id: number;
+  campaign_name: string;
+  status: string;
+  sent_at: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  bounced_at: string | null;
+}
+
 export interface SegmentRule {
   field: string;
   op: string;
