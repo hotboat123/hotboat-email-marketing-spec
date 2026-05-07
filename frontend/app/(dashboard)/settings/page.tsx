@@ -24,7 +24,7 @@ export default function SettingsPage() {
   });
 
   const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null);
-  const [seedResult, setSeedResult] = useState<{ ok: boolean; created: Record<string, string[]> } | null>(null);
+  const [seedResult, setSeedResult] = useState<{ ok: boolean; created: Record<string, string[]>; updated?: Record<string, string[]> } | null>(null);
   const [seeding, setSeeding]       = useState(false);
 
   async function runSeed() {
@@ -111,7 +111,12 @@ export default function SettingsPage() {
                     {Object.entries(seedResult.created).map(([k, v]) =>
                       v.length > 0 ? <span key={k}> · {v.length} {k} nuevos</span> : null
                     )}
-                    {Object.values(seedResult.created).every(v => v.length === 0) && " Todo ya estaba instalado."}
+                    {seedResult.updated && Object.entries(seedResult.updated).map(([k, v]) =>
+                      v.length > 0 ? <span key={`upd-${k}`}> · {v.length} {k} actualizadas</span> : null
+                    )}
+                    {Object.values(seedResult.created).every(v => v.length === 0) &&
+                     (!seedResult.updated || Object.values(seedResult.updated).every(v => v.length === 0)) &&
+                     " Todo ya estaba al día."}
                   </>
                 ) : "Error al instalar. Revisá los logs del backend."}
               </div>

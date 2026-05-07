@@ -156,9 +156,10 @@ def seed_templates(
     session: Session = Depends(get_session),
     current_user: User = Depends(require_admin),
 ):
-    """Crea plantillas y campañas de ejemplo. Solo admins. Idempotente."""
+    """Crea o actualiza plantillas y campañas de ejemplo. Solo admins. Idempotente."""
     now = datetime.utcnow()
     created = {"segments": [], "templates": [], "campaigns": []}
+    updated = {"templates": []}
 
     # Segmentos
     seg_map: dict[str, int] = {}
@@ -179,10 +180,13 @@ def seed_templates(
     for t in SEED_TEMPLATES:
         existing_tpl = session.exec(select(Template).where(Template.name == t["name"])).first()
         if existing_tpl:
-            existing_tpl.html_content = t["html"]
-            existing_tpl.updated_at   = now
+            existing_tpl.html_content    = t["html"]
+            existing_tpl.subject_default = t["subject"]
+            existing_tpl.preview_text    = t["preview"]
+            existing_tpl.updated_at      = now
             session.add(existing_tpl)
             tpl_id = existing_tpl.id
+            updated["templates"].append(t["name"])
         else:
             tpl = Template(name=t["name"], subject_default=t["subject"], preview_text=t["preview"],
                            html_content=t["html"], created_by=current_user.id,
@@ -203,4 +207,4 @@ def seed_templates(
                 created["campaigns"].append(t["name"])
 
     session.commit()
-    return {"ok": True, "created": created}
+    return {"ok": True, "created": created, "updated": updated}
