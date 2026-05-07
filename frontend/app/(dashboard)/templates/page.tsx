@@ -38,13 +38,13 @@ function PreviewModal({ tpl, onClose }: { tpl: Template; onClose: () => void }) 
             <X size={20} />
           </button>
         </div>
-        <div className="flex-1 overflow-hidden p-4">
+        <div className="flex-1 overflow-y-auto p-4">
           <iframe
             srcDoc={tpl.html_content}
             sandbox="allow-same-origin"
             title={tpl.name}
-            className="w-full h-full rounded-lg border border-gray-100"
-            style={{ minHeight: "520px" }}
+            className="w-full rounded-lg border border-gray-100"
+            style={{ height: "900px" }}
           />
         </div>
       </div>
@@ -151,7 +151,7 @@ export default function TemplatesPage() {
             <div key={tpl.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow group">
               {/* HTML preview thumbnail */}
               <div
-                className="bg-gray-50 h-40 relative overflow-hidden border-b border-gray-100 cursor-pointer"
+                className="bg-gray-50 h-52 relative overflow-hidden border-b border-gray-100 cursor-pointer"
                 onClick={() => setPreview(tpl)}
               >
                 <iframe
@@ -159,7 +159,7 @@ export default function TemplatesPage() {
                   sandbox="allow-same-origin"
                   title={tpl.name}
                   className="absolute top-0 left-0 border-0 pointer-events-none"
-                  style={{ width: "600px", height: "500px", transform: "scale(0.37)", transformOrigin: "top left" }}
+                  style={{ width: "600px", height: "800px", transform: "scale(0.37)", transformOrigin: "top left" }}
                 />
                 <div className="absolute inset-0 bg-transparent group-hover:bg-black/5 transition-colors flex items-center justify-center">
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 flex items-center gap-1.5">
