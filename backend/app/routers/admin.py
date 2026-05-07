@@ -26,7 +26,7 @@ SEED_TEMPLATES = [
         "preview": "Nos alegra tenerte aquí. Descubre lo que tenemos preparado para ti.",
         "segment": "Todos los suscriptores",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
-  <div style="background:linear-gradient(135deg,#e51e0e,#ff6b5b);border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;">
+  <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;">
     <div style="font-size:52px;margin-bottom:14px;">🚤</div>
     <h1 style="color:#fff;font-size:28px;font-weight:800;margin:0 0 10px;line-height:1.2;">Bienvenido/a a HotBoat, {{nombre}}</h1>
     <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">Nos alegra tenerte en nuestra comunidad</p>
@@ -63,7 +63,7 @@ SEED_TEMPLATES = [
     </div>
   </div>
   <div style="text-align:center;margin:32px 0;">
-    <a href="https://hotboat.cl" style="background:#e51e0e;color:#fff;font-weight:700;padding:15px 44px;border-radius:11px;text-decoration:none;font-size:16px;display:inline-block;">Ver experiencias disponibles</a>
+    <a href="https://hotboat.cl" style="background:#2563eb;color:#fff;font-weight:700;padding:15px 44px;border-radius:11px;text-decoration:none;font-size:16px;display:inline-block;">Ver experiencias disponibles</a>
   </div>
   <p style="font-size:13px;color:#aaa;text-align:center;line-height:1.6;margin-top:32px;">
     Si no quieres recibir nuestros correos, puedes darte de baja en cualquier momento desde el enlace al pie de este mensaje.
@@ -75,7 +75,7 @@ SEED_TEMPLATES = [
         "preview": "Nos alegra tenerte aquí. Descubre lo que tenemos preparado para ti.",
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
-  <div style="background:linear-gradient(135deg,#e51e0e,#ff6b5b);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
+  <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
     <div style="font-size:48px;margin-bottom:12px;">🌸</div>
     <h1 style="color:#fff;font-size:28px;font-weight:800;margin:0 0 8px;">¡Hola, {{nombre}}!</h1>
     <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">Nos alegra tenerte en la familia HotBoat</p>
@@ -91,7 +91,7 @@ SEED_TEMPLATES = [
     </ul>
   </div>
   <div style="text-align:center;margin:32px 0;">
-    <a href="https://hotboat.cl" style="background:#e51e0e;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Conocer HotBoat</a>
+    <a href="https://hotboat.cl" style="background:#2563eb;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Conocer HotBoat</a>
   </div>
   <p style="font-size:14px;color:#666;text-align:center;">Pronto recibirás algo muy especial por el Día de la Madre. ¡Estáte atenta! 🌸</p>""" + FOOTER + "</div>",
     },
@@ -101,7 +101,7 @@ SEED_TEMPLATES = [
         "preview": "Video profesional gratis + jugo natural 1L. Solo para ti, con el cupón MAMÁ.",
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
-  <div style="background:linear-gradient(135deg,#ff6b9d,#e51e0e);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
+  <div style="background:linear-gradient(135deg,#ff6b9d,#2563eb);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
     <div style="font-size:52px;margin-bottom:12px;">🌸</div>
     <h1 style="color:#fff;font-size:26px;font-weight:800;margin:0 0 8px;">Feliz Día de la Madre</h1>
     <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">{{nombre}}, este día es tuyo. Te lo merecés todo.</p>
@@ -111,7 +111,7 @@ SEED_TEMPLATES = [
     <div style="flex:1;min-width:220px;background:#fff8f0;border:1px solid #ffd6a0;border-radius:12px;padding:20px;text-align:center;">
       <div style="font-size:40px;margin-bottom:8px;">🎬</div>
       <p style="font-weight:700;color:#111;font-size:15px;margin:0 0 4px;">Video profesional</p>
-      <p style="color:#888;font-size:13px;margin:0;">Tu experiencia filmada en HD — <strong style="color:#e51e0e;">¡GRATIS!</strong></p>
+      <p style="color:#888;font-size:13px;margin:0;">Tu experiencia filmada en HD — <strong style="color:#2563eb;">¡GRATIS!</strong></p>
     </div>
     <div style="flex:1;min-width:220px;background:#f0fff4;border:1px solid #a0f0b8;border-radius:12px;padding:20px;text-align:center;">
       <div style="font-size:40px;margin-bottom:8px;">🥤</div>
@@ -121,16 +121,16 @@ SEED_TEMPLATES = [
   </div>
   <div style="background:#f9fafb;border-radius:16px;padding:28px;text-align:center;margin:28px 0;">
     <p style="font-size:14px;color:#555;margin:0 0 12px;">Ingresa este cupón al reservar:</p>
-    <div style="display:inline-block;background:#e51e0e;color:#fff;border-radius:12px;padding:16px 40px;">
+    <div style="display:inline-block;background:#2563eb;color:#fff;border-radius:12px;padding:16px 40px;">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:2px;opacity:0.85;margin-bottom:4px;">Código de reserva</div>
       <div style="font-size:42px;font-weight:900;letter-spacing:4px;line-height:1.1;">MAMÁ</div>
     </div>
     <p style="font-size:12px;color:#999;margin-top:12px;">Válido hasta el 11 de mayo de 2026</p>
   </div>
   <div style="text-align:center;margin:32px 0 16px;">
-    <a href="https://whatsapp.hotboat.cl/booking" style="background:#e51e0e;color:#fff;font-weight:800;padding:16px 44px;border-radius:12px;text-decoration:none;font-size:16px;display:inline-block;">Reservar ahora 🌊</a>
+    <a href="https://whatsapp.hotboat.cl/booking" style="background:#2563eb;color:#fff;font-weight:800;padding:16px 44px;border-radius:12px;text-decoration:none;font-size:16px;display:inline-block;">Reservar ahora 🌊</a>
   </div>
-  <p style="text-align:center;font-size:14px;color:#888;margin:0;">¿Quieres saber más? <a href="https://hotboat.cl" style="color:#e51e0e;font-weight:600;text-decoration:none;">Ver toda la experiencia</a></p>""" + FOOTER + "</div>",
+  <p style="text-align:center;font-size:14px;color:#888;margin:0;">¿Quieres saber más? <a href="https://hotboat.cl" style="color:#2563eb;font-weight:600;text-decoration:none;">Ver toda la experiencia</a></p>""" + FOOTER + "</div>",
     },
 ]
 

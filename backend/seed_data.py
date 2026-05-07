@@ -68,7 +68,7 @@ TEMPLATES = [
         "subject": "¡Bienvenido/a a HotBoat, {{nombre}}! 🚤",
         "preview": "Tu experiencia en el agua te espera. Aquí todo lo que necesitas saber.",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
-  <div style="background:linear-gradient(135deg,#e51e0e,#ff6b5b);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
+  <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
     <h1 style="color:#fff;font-size:28px;font-weight:800;margin:0 0 8px;">¡Bienvenido/a a HotBoat!</h1>
     <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">Nos alegra tenerte a bordo, {{nombre}}</p>
   </div>
@@ -83,7 +83,7 @@ TEMPLATES = [
     </ul>
   </div>
   <div style="text-align:center;margin:32px 0;">
-    <a href="https://hotboat.cl" style="background:#e51e0e;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Ver mi reserva</a>
+    <a href="https://hotboat.cl" style="background:#2563eb;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Ver mi reserva</a>
   </div>
   <p style="font-size:14px;color:#666;">¿Tienes preguntas? Responde este email o escríbenos por WhatsApp.</p>
   """ + FOOTER + """
@@ -96,8 +96,8 @@ TEMPLATES = [
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
   <h1 style="font-size:26px;font-weight:800;color:#111;margin:0 0 8px;">Hola, {{nombre}} 👋</h1>
   <p style="font-size:15px;color:#555;line-height:1.7;margin-bottom:32px;">Este mes tenemos novedades que no te puedes perder.</p>
-  <div style="border-left:4px solid #e51e0e;padding:16px 20px;background:#fff8f7;border-radius:0 8px 8px 0;margin-bottom:20px;">
-    <h3 style="margin:0 0 6px;font-size:16px;color:#e51e0e;">🗓 Nuevas fechas disponibles</h3>
+  <div style="border-left:4px solid #2563eb;padding:16px 20px;background:#fff8f7;border-radius:0 8px 8px 0;margin-bottom:20px;">
+    <h3 style="margin:0 0 6px;font-size:16px;color:#2563eb;">🗓 Nuevas fechas disponibles</h3>
     <p style="margin:0;color:#555;font-size:14px;">Reserva antes de que se agoten los cupos.</p>
   </div>
   <div style="border-left:4px solid #3b82f6;padding:16px 20px;background:#f0f7ff;border-radius:0 8px 8px 0;margin-bottom:20px;">
@@ -105,7 +105,7 @@ TEMPLATES = [
     <p style="margin:0;color:#555;font-size:14px;">Nuestra ruta al atardecer agotó cupos en 48 horas el mes pasado.</p>
   </div>
   <div style="text-align:center;margin:32px 0;">
-    <a href="https://hotboat.cl" style="background:#e51e0e;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Ver todas las fechas</a>
+    <a href="https://hotboat.cl" style="background:#2563eb;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Ver todas las fechas</a>
   </div>
   """ + FOOTER + """
 </div>""",
@@ -126,21 +126,21 @@ TEMPLATES = [
       <span style="font-size:24px;">🌹</span>
       <strong style="display:block;color:#111;margin-top:4px;">Pack Romántico</strong>
       <span style="color:#666;font-size:13px;">Flores, velas y champagne</span>
-      <span style="display:block;font-weight:700;color:#e51e0e;margin-top:4px;">+$25.000</span>
+      <span style="display:block;font-weight:700;color:#2563eb;margin-top:4px;">+$25.000</span>
     </td></tr>
     <tr><td style="padding:4px;"></td></tr>
     <tr><td style="padding:16px;border:1px solid #e0eeff;border-radius:8px;">
       <span style="font-size:24px;">📸</span>
       <strong style="display:block;color:#111;margin-top:4px;">Sesión de Fotos</strong>
       <span style="color:#666;font-size:13px;">Fotógrafo profesional a bordo</span>
-      <span style="display:block;font-weight:700;color:#e51e0e;margin-top:4px;">+$35.000</span>
+      <span style="display:block;font-weight:700;color:#2563eb;margin-top:4px;">+$35.000</span>
     </td></tr>
     <tr><td style="padding:4px;"></td></tr>
     <tr><td style="padding:16px;border:1px solid #fff0e0;border-radius:8px;">
       <span style="font-size:24px;">🎂</span>
       <strong style="display:block;color:#111;margin-top:4px;">Cumpleaños a bordo</strong>
       <span style="color:#666;font-size:13px;">Torta, decoración y sorpresa</span>
-      <span style="display:block;font-weight:700;color:#e51e0e;margin-top:4px;">+$20.000</span>
+      <span style="display:block;font-weight:700;color:#2563eb;margin-top:4px;">+$20.000</span>
     </td></tr>
   </table>
   <div style="text-align:center;margin:32px 0;">
@@ -161,7 +161,7 @@ TEMPLATES = [
   </div>
   <div style="background:#f9fafb;border-radius:16px;padding:28px;text-align:center;margin:24px 0;">
     <p style="font-size:15px;color:#444;margin:0 0 20px;">Como cliente especial, tenemos algo para ti:</p>
-    <div style="background:#e51e0e;color:#fff;border-radius:12px;padding:20px 32px;display:inline-block;">
+    <div style="background:#2563eb;color:#fff;border-radius:12px;padding:20px 32px;display:inline-block;">
       <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;opacity:0.85;">Descuento exclusivo</div>
       <div style="font-size:48px;font-weight:900;line-height:1.1;">10% OFF</div>
       <div style="font-size:13px;opacity:0.85;">en tu próxima reserva</div>
@@ -169,7 +169,7 @@ TEMPLATES = [
     <p style="font-size:12px;color:#999;margin-top:12px;">Válido por 15 días</p>
   </div>
   <div style="text-align:center;margin:32px 0;">
-    <a href="https://hotboat.cl" style="background:#e51e0e;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Volver a reservar</a>
+    <a href="https://hotboat.cl" style="background:#2563eb;color:#fff;font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none;font-size:15px;">Volver a reservar</a>
   </div>
   """ + FOOTER + """
 </div>""",

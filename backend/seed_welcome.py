@@ -36,7 +36,7 @@ TPL_NAME = "Bienvenida — Lista HotBoat"
 TPL_HTML = """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
 
   <!-- Header -->
-  <div style="background:linear-gradient(135deg,#e51e0e,#ff6b5b);border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;">
+  <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;">
     <div style="font-size:52px;margin-bottom:14px;">🚤</div>
     <h1 style="color:#fff;font-size:28px;font-weight:800;margin:0 0 10px;line-height:1.2;">
       Bienvenido/a a HotBoat, {{nombre}}
@@ -86,7 +86,7 @@ TPL_HTML = """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;mar
   <!-- CTA -->
   <div style="text-align:center;margin:32px 0;">
     <a href="https://hotboat.cl"
-       style="background:#e51e0e;color:#fff;font-weight:700;padding:15px 44px;border-radius:11px;text-decoration:none;font-size:16px;display:inline-block;">
+       style="background:#2563eb;color:#fff;font-weight:700;padding:15px 44px;border-radius:11px;text-decoration:none;font-size:16px;display:inline-block;">
       Ver experiencias disponibles
     </a>
   </div>
