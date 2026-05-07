@@ -45,6 +45,18 @@ def _build_clause(node: dict) -> Optional[Any]:
     op = node.get("op")
     value = node.get("value")
 
+    # Soporte para custom_fields.{clave} — p. ej. custom_fields.es_mama
+    if field and field.startswith("custom_fields."):
+        key = field[len("custom_fields."):]
+        col = Contact.custom_fields[key].astext
+        fn = OPS.get(op)
+        if fn is None:
+            return None
+        # Los booleanos se almacenan como texto en JSON ("true"/"false")
+        if isinstance(value, bool):
+            value = "true" if value else "false"
+        return fn(col, value)
+
     col = FIELD_MAP.get(field)
     fn = OPS.get(op)
     if col is None or fn is None:
