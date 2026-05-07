@@ -85,8 +85,9 @@ export const campaignsApi = {
   create: (data: unknown) => api.post("/campaigns", data),
   update: (id: number, data: unknown) => api.patch(`/campaigns/${id}`, data),
   delete: (id: number) => api.delete(`/campaigns/${id}`),
-  send: (id: number) => api.post(`/campaigns/${id}/send`),
+  send: (id: number, limit?: number) => api.post(`/campaigns/${id}/send`, limit ? { limit } : {}),
   sendTest: (id: number) => api.post(`/campaigns/${id}/send-test`),
+  sendProgress: (id: number) => api.get(`/campaigns/${id}/send-progress`),
   stats: (id: number) => api.get(`/campaigns/${id}/stats`),
   conversions: (id: number, days = 60) => api.get(`/campaigns/${id}/conversions?days=${days}`),
 };

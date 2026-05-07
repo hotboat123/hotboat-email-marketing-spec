@@ -1,11 +1,17 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi } from "@/lib/api";
 import { Campaign, CampaignStats } from "@/lib/types";
-import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle } from "lucide-react";
+import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
+
+interface SendProgress {
+  total_in_segment: number;
+  already_sent: number;
+}
 
 function StatBar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
@@ -24,6 +30,10 @@ function StatBar({ label, value, total, color }: { label: string; value: number;
 
 export default function CampaignDetailPage({ params }: { params: { id: string } }) {
   const id = parseInt(params.id);
+  const queryClient = useQueryClient();
+  const [limit, setLimit] = useState(20);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
 
   const { data: campaign } = useQuery<Campaign>({
     queryKey: ["campaign", id],
@@ -36,7 +46,36 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
     enabled: campaign?.status === "sent" || campaign?.status === "sending",
   });
 
+  const { data: progress } = useQuery<SendProgress>({
+    queryKey: ["campaign-progress", id],
+    queryFn: () => campaignsApi.sendProgress(id).then((r) => r.data),
+    enabled: campaign?.status === "draft",
+    refetchInterval: campaign?.status === "sending" ? 3000 : false,
+  });
+
+  async function handleSend(sendAll: boolean) {
+    setSendError("");
+    setSending(true);
+    try {
+      await campaignsApi.send(id, sendAll ? undefined : limit);
+      await queryClient.invalidateQueries({ queryKey: ["campaign", id] });
+      await queryClient.invalidateQueries({ queryKey: ["campaign-progress", id] });
+      await queryClient.invalidateQueries({ queryKey: ["campaign-stats", id] });
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Error al enviar";
+      setSendError(msg);
+    } finally {
+      setSending(false);
+    }
+  }
+
   if (!campaign) return <div className="p-8 text-gray-400 text-sm">Cargando...</div>;
+
+  const remaining = progress ? progress.total_in_segment - progress.already_sent : 0;
+  const safeLimit = Math.min(limit, remaining);
+  const progressPct = progress && progress.total_in_segment > 0
+    ? (progress.already_sent / progress.total_in_segment) * 100
+    : 0;
 
   return (
     <div className="p-8 max-w-3xl">
@@ -65,6 +104,81 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
           </div>
         ))}
       </div>
+
+      {/* ── Envío por fases ─────────────────────────────────────────────── */}
+      {campaign.status === "draft" && progress && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Users size={16} className="text-gray-400" />
+            <h2 className="font-semibold text-gray-900">Envío por fases</h2>
+          </div>
+
+          {/* Progreso del segmento */}
+          <div className="mb-5">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-gray-600">Contactos enviados</span>
+              <span className="font-semibold text-gray-900">
+                {progress.already_sent.toLocaleString()}
+                <span className="text-gray-400 font-normal"> / {progress.total_in_segment.toLocaleString()}</span>
+              </span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-brand-600 rounded-full transition-all"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            {remaining > 0 && (
+              <p className="text-xs text-gray-400 mt-1.5">{remaining.toLocaleString()} contactos pendientes</p>
+            )}
+          </div>
+
+          {remaining > 0 ? (
+            <>
+              {/* Input de cantidad */}
+              <div className="flex items-center gap-3 mb-4">
+                <label className="text-sm text-gray-600 whitespace-nowrap">Enviar a</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={remaining}
+                  value={limit}
+                  onChange={(e) => setLimit(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <span className="text-sm text-gray-600">contactos</span>
+              </div>
+
+              {sendError && (
+                <p className="text-sm text-red-600 mb-3">{sendError}</p>
+              )}
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => handleSend(false)}
+                  disabled={sending}
+                  className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
+                >
+                  <Send size={14} />
+                  {sending ? "Enviando..." : `Enviar a ${safeLimit} contactos`}
+                </button>
+
+                <button
+                  onClick={() => handleSend(true)}
+                  disabled={sending}
+                  className="text-sm text-gray-500 hover:text-gray-900 underline underline-offset-2 transition-colors disabled:opacity-50"
+                >
+                  Enviar a todos los restantes ({remaining.toLocaleString()})
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-green-700 font-medium">
+              ✓ Todos los contactos del segmento ya recibieron esta campaña.
+            </p>
+          )}
+        </div>
+      )}
 
       {stats && (
         <div className="bg-white border border-gray-200 rounded-xl p-6">

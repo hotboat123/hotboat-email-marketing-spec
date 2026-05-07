@@ -4,7 +4,7 @@ from typing import List
 from datetime import datetime
 import resend
 from jinja2 import Template as Jinja2Template
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from app.core.config import settings
 from app.core.unsub_token import unsub_url
 from app.database import engine
@@ -95,7 +95,7 @@ def _send_one(campaign: Campaign, template: Template, contact: Contact, session:
             session.commit()
 
 
-def send_campaign_sync(campaign_id: int, contact_ids: List[int]) -> None:
+def send_campaign_sync(campaign_id: int, contact_ids: List[int], total_in_segment: int = 0) -> None:
     """Versión síncrona para usar como BackgroundTask de FastAPI (abre su propia sesión)."""
     with Session(engine) as session:
         campaign = session.get(Campaign, campaign_id)
@@ -128,7 +128,14 @@ def send_campaign_sync(campaign_id: int, contact_ids: List[int]) -> None:
             if i + BATCH_SIZE < len(contacts):
                 time.sleep(BATCH_DELAY)
 
-        campaign.status = "sent"
-        campaign.sent_at = datetime.utcnow()
+        # Si quedan contactos del segmento sin enviar, volver a draft para permitir nuevos envíos parciales
+        total_sent = session.exec(
+            select(func.count(CampaignSend.id)).where(CampaignSend.campaign_id == campaign_id)
+        ).one()
+        if total_in_segment > 0 and total_sent < total_in_segment:
+            campaign.status = "draft"
+        else:
+            campaign.status = "sent"
+            campaign.sent_at = datetime.utcnow()
         session.add(campaign)
         session.commit()

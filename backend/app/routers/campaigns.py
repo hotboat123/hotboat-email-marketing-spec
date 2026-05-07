@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
-from typing import List
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from typing import List, Optional
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import create_engine, text
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from jinja2 import Template as JTemplate
 import resend
 from app.database import get_session, engine
@@ -15,6 +16,10 @@ from app.models.segment import Segment
 from app.models.template import Template
 from app.services.segment_evaluator import evaluate_segment
 from app.services.email_sender import send_campaign_sync, _inject_footer, _unsub_headers
+
+
+class SendOptions(BaseModel):
+    limit: Optional[int] = None
 
 router = APIRouter()
 
@@ -84,6 +89,7 @@ def delete_campaign(
 def send_campaign_now(
     campaign_id: int,
     background_tasks: BackgroundTasks,
+    opts: SendOptions = Body(default=SendOptions()),
     session: Session = Depends(get_session),
     current_user: User = Depends(require_editor),
 ):
@@ -101,14 +107,41 @@ def send_campaign_now(
     if not contacts:
         raise HTTPException(status_code=400, detail="El segmento no tiene contactos con opt-in")
 
+    # Excluir contactos que ya recibieron esta campaña
+    already_sent = set(
+        session.exec(
+            select(CampaignSend.contact_id).where(CampaignSend.campaign_id == campaign_id)
+        ).all()
+    )
+    remaining = [ct for ct in contacts if ct.id not in already_sent]
+
+    if not remaining:
+        raise HTTPException(status_code=400, detail="Todos los contactos del segmento ya recibieron esta campaña")
+
+    to_send = remaining[: opts.limit] if opts.limit else remaining
+
     c.status = "sending"
     session.add(c)
     session.commit()
     session.refresh(c)
 
-    contact_ids = [c.id for c in contacts]
-    background_tasks.add_task(send_campaign_sync, campaign_id, contact_ids)
+    contact_ids = [ct.id for ct in to_send]
+    background_tasks.add_task(send_campaign_sync, campaign_id, contact_ids, len(contacts))
     return c
+
+
+@router.get("/{campaign_id}/send-progress")
+def send_progress(campaign_id: int, session: Session = Depends(get_session), _: User = Depends(get_current_user)):
+    """Retorna cuántos contactos tiene el segmento y cuántos ya recibieron la campaña."""
+    c = session.get(Campaign, campaign_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+    seg = session.get(Segment, c.segment_id)
+    total_in_segment = len(evaluate_segment(seg.conditions, session)) if seg else 0
+    already_sent = session.exec(
+        select(func.count(CampaignSend.contact_id)).where(CampaignSend.campaign_id == campaign_id)
+    ).one()
+    return {"total_in_segment": total_in_segment, "already_sent": already_sent}
 
 
 @router.post("/{campaign_id}/send-test")
