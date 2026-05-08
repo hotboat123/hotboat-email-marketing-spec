@@ -8,6 +8,14 @@ import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, 
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
 
+// Convert a UTC datetime string from the backend (may lack Z) to a local
+// time string suitable for a datetime-local input.
+function utcToLocalInput(utcStr: string): string {
+  const s = utcStr.endsWith("Z") ? utcStr : utcStr + "Z";
+  const d = new Date(s);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 interface CampaignSendRow {
   contact_id: number;
   name: string;
@@ -205,7 +213,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                   segment_id: campaign.segment_id,
                   template_id: campaign.template_id,
                   scheduled_at: campaign.scheduled_at
-                    ? new Date(campaign.scheduled_at).toISOString().slice(0, 16)
+                    ? utcToLocalInput(campaign.scheduled_at)
                     : "",
                 });
               }}
