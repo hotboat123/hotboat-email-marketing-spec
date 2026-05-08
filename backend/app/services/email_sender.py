@@ -15,7 +15,7 @@ from app.models.template import Template
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 50
-BATCH_DELAY = 1.0  # segundos entre lotes
+RATE_DELAY = 0.25  # 4 emails/segundo — límite de Resend es 5/segundo
 
 _FOOTER = """<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;
 text-align:center;font-size:12px;color:#9ca3af;
@@ -125,13 +125,11 @@ def send_campaign_sync(campaign_id: int, contact_ids: List[int], total_in_segmen
                 session.add(exists)
         session.commit()
 
-        # Enviar en lotes
-        for i in range(0, len(contacts), BATCH_SIZE):
-            batch = contacts[i: i + BATCH_SIZE]
-            for contact in batch:
-                _send_one(campaign, template, contact, session)
-            if i + BATCH_SIZE < len(contacts):
-                time.sleep(BATCH_DELAY)
+        # Enviar respetando rate limit de Resend (5 req/seg)
+        for i, contact in enumerate(contacts):
+            _send_one(campaign, template, contact, session)
+            if i < len(contacts) - 1:
+                time.sleep(RATE_DELAY)
 
         # "failed" no cuentan como enviados — quedan pendientes para reintento
         total_sent = session.exec(
