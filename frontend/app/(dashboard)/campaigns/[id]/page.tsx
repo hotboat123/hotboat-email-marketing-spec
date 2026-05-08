@@ -54,6 +54,14 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+  type SortCol = "name" | "sent_at" | "delivered_at" | "opened_at" | "clicked_at" | "bounced_at";
+  const [sortCol, setSortCol] = useState<SortCol>("sent_at");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  function toggleSort(col: SortCol) {
+    if (sortCol === col) setSortAsc((v) => !v);
+    else { setSortCol(col); setSortAsc(false); }
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (contactId: number) => contactsApi.delete(contactId),
@@ -118,6 +126,16 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   }
 
   if (!campaign) return <div className="p-8 text-gray-400 text-sm">Cargando...</div>;
+
+  const sortedSends = [...sends].sort((a, b) => {
+    if (sortCol === "name") {
+      const cmp = a.name.localeCompare(b.name, "es");
+      return sortAsc ? cmp : -cmp;
+    }
+    const av = a[sortCol] ? 1 : 0;
+    const bv = b[sortCol] ? 1 : 0;
+    return sortAsc ? av - bv : bv - av;
+  });
 
   const remaining = progress ? progress.total_in_segment - progress.already_sent : 0;
   const safeLimit = Math.min(limit, remaining);
@@ -250,16 +268,27 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="px-5 py-3 text-left">Contacto</th>
-                  <th className="px-4 py-3 text-center">Enviado</th>
-                  <th className="px-4 py-3 text-center">Entregado</th>
-                  <th className="px-4 py-3 text-center">Abrió</th>
-                  <th className="px-4 py-3 text-center">Clic</th>
-                  <th className="px-4 py-3 text-center">Rebote</th>
+                  {([
+                    { col: "name",         label: "Contacto",   align: "left"   },
+                    { col: "sent_at",      label: "Enviado",    align: "center" },
+                    { col: "delivered_at", label: "Entregado",  align: "center" },
+                    { col: "opened_at",    label: "Abrió",      align: "center" },
+                    { col: "clicked_at",   label: "Clic",       align: "center" },
+                    { col: "bounced_at",   label: "Rebote",     align: "center" },
+                  ] as { col: SortCol; label: string; align: string }[]).map(({ col, label, align }) => (
+                    <th
+                      key={col}
+                      onClick={() => toggleSort(col)}
+                      className={`px-4 py-3 text-${align} cursor-pointer select-none hover:text-gray-800 transition-colors`}
+                    >
+                      {label}
+                      {sortCol === col ? (sortAsc ? " ↑" : " ↓") : ""}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {sends.map((s) => (
+                {sortedSends.map((s) => (
                   <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${s.bounced_at ? "bg-red-50/40" : ""}`}>
                     <td className="px-5 py-3">
                       <Link href={`/contacts/${s.contact_id}`} className="hover:text-brand-600 transition-colors">
