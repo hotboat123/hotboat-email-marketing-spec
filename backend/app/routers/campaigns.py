@@ -299,6 +299,7 @@ def campaign_sends(
             "contact_id": s.contact_id,
             "name":       contacts[s.contact_id].name if s.contact_id in contacts else "—",
             "email":      contacts[s.contact_id].email if s.contact_id in contacts else "—",
+            "opted_in":   contacts[s.contact_id].opted_in if s.contact_id in contacts else None,
             "status":     s.status,
             "sent_at":    s.sent_at,
             "delivered_at": s.delivered_at,

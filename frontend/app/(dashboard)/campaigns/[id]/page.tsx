@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { campaignsApi, contactsApi } from "@/lib/api";
 import { Campaign, CampaignStats } from "@/lib/types";
-import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, CheckCircle, Clock, XCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, UserMinus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ interface CampaignSendRow {
   contact_id: number;
   name: string;
   email: string;
+  opted_in: boolean | null;
   status: string;
   sent_at: string | null;
   delivered_at: string | null;
@@ -250,6 +251,38 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
         </div>
       )}
 
+      {/* ── Estadísticas ─────────────────────────────────────────────────── */}
+      {stats && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
+          <h2 className="font-semibold text-gray-900 mb-5">Estadísticas</h2>
+
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            {[
+              { label: "Enviados",      value: stats.sent,             icon: Mail,         color: "text-blue-600" },
+              { label: "Aperturas",     value: `${stats.open_rate}%`,  icon: TrendingUp,   color: "text-green-600" },
+              { label: "Clics",         value: `${stats.click_rate}%`, icon: MousePointer, color: "text-purple-600" },
+              { label: "Rebotes",       value: `${stats.bounce_rate}%`,icon: AlertTriangle, color: "text-red-600" },
+            ].map(({ label, value, icon: Icon, color }) => (
+              <div key={label} className="text-center">
+                <Icon size={20} className={`mx-auto mb-1 ${color}`} />
+                <p className="text-2xl font-bold text-gray-900">{value}</p>
+                <p className="text-xs text-gray-500">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-4">
+            <StatBar label="Entregados"    value={stats.delivered} total={stats.sent}                        color="bg-blue-500" />
+            <StatBar label="Abiertos"      value={stats.opened}    total={stats.delivered || stats.sent}     color="bg-green-500" />
+            <StatBar label="Con clics"     value={stats.clicked}   total={stats.delivered || stats.sent}     color="bg-purple-500" />
+            <StatBar label="Rebotados"     value={stats.bounced}   total={stats.sent}                        color="bg-red-400" />
+            {(() => { const u = sends.filter(s => s.opted_in === false).length; return u > 0 ? (
+              <StatBar label="Desuscriptos" value={u} total={stats.sent} color="bg-orange-400" />
+            ) : null; })()}
+          </div>
+        </div>
+      )}
+
       {/* ── Lista de contactos enviados ──────────────────────────────────── */}
       {sends.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
@@ -296,7 +329,14 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                   <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isBounced(s) ? "bg-red-50/40" : ""}`}>
                     <td className="px-5 py-3">
                       <Link href={`/contacts/${s.contact_id}`} className="hover:text-brand-600 transition-colors">
-                        <p className="font-medium text-gray-900">{s.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">{s.name}</p>
+                          {s.opted_in === false && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                              <UserMinus size={9} /> Desuscripto
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-400">{s.email}</p>
                       </Link>
                     </td>
@@ -327,33 +367,6 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
         </div>
       )}
 
-      {stats && (
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <h2 className="font-semibold text-gray-900 mb-5">Estadísticas</h2>
-
-          <div className="grid grid-cols-4 gap-4 mb-6">
-            {[
-              { label: "Enviados", value: stats.sent, icon: Mail, color: "text-blue-600" },
-              { label: "Aperturas", value: `${stats.open_rate}%`, icon: TrendingUp, color: "text-green-600" },
-              { label: "Clics", value: `${stats.click_rate}%`, icon: MousePointer, color: "text-purple-600" },
-              { label: "Rebotes", value: `${stats.bounce_rate}%`, icon: AlertTriangle, color: "text-red-600" },
-            ].map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="text-center">
-                <Icon size={20} className={`mx-auto mb-1 ${color}`} />
-                <p className="text-2xl font-bold text-gray-900">{value}</p>
-                <p className="text-xs text-gray-500">{label}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="space-y-4">
-            <StatBar label="Entregados" value={stats.delivered} total={stats.sent} color="bg-blue-500" />
-            <StatBar label="Abiertos"   value={stats.opened}    total={stats.delivered || stats.sent} color="bg-green-500" />
-            <StatBar label="Con clics"  value={stats.clicked}   total={stats.delivered || stats.sent} color="bg-purple-500" />
-            <StatBar label="Rebotados"  value={stats.bounced}   total={stats.sent} color="bg-red-400" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
