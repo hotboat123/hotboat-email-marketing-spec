@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const FIELDS = [
+  { value: "email",          label: "Email",                 type: "string" },
   { value: "veces_hotboat",  label: "Experiencias HotBoat",  type: "number" },
   { value: "ha_alojamiento", label: "Con alojamiento",       type: "boolean" },
   { value: "ticket_medio",   label: "Ticket medio ($)",      type: "number" },
