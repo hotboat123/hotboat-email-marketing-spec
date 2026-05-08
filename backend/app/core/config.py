@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     BACKEND_PUBLIC_URL: str = "http://localhost:8000"
     # Si los datos fuente están en otra DB, ponla aquí; si no, usa la misma DATABASE_URL
     HOTBOAT_DATABASE_URL: str = ""
+    NOTIFY_EMAIL: str = ""  # Email del admin que recibe alertas (desuscripciones, etc.)
 
     class Config:
         env_file = ".env"

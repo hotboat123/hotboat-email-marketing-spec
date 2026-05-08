@@ -126,11 +126,12 @@ export default function SettingsPage() {
 
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <h2 className="font-semibold text-gray-900 mb-2">Resend</h2>
-          <p className="text-gray-500 text-sm mb-4">La API key de Resend se configura en el archivo <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">backend/.env</code>.</p>
+          <p className="text-gray-500 text-sm mb-4">La API key de Resend se configura en las variables de entorno de Railway.</p>
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 font-mono text-xs text-gray-600 space-y-1">
             <p>RESEND_API_KEY=re_xxxxxxxxxxxx</p>
             <p>RESEND_FROM_EMAIL=HotBoat &lt;hola@hotboat.cl&gt;</p>
             <p>RESEND_WEBHOOK_SECRET=tu_secreto</p>
+            <p className="text-brand-600 mt-2">NOTIFY_EMAIL=tu@email.com &nbsp;<span className="text-gray-400 font-sans not-italic">← recibe alertas de desuscripciones</span></p>
           </div>
         </div>
 
