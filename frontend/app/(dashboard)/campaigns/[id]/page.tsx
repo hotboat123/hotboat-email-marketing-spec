@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { campaignsApi } from "@/lib/api";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { campaignsApi, contactsApi } from "@/lib/api";
 import { Campaign, CampaignStats } from "@/lib/types";
-import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, CheckCircle, Clock, XCircle } from "lucide-react";
+import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, CheckCircle, Clock, XCircle, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
 
@@ -53,6 +53,29 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   const [limit, setLimit] = useState(20);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+
+  const deleteMutation = useMutation({
+    mutationFn: (contactId: number) => contactsApi.delete(contactId),
+    onSuccess: (_, contactId) => {
+      setDeletingIds((prev) => { const s = new Set(prev); s.delete(contactId); return s; });
+      queryClient.invalidateQueries({ queryKey: ["campaign-sends", id] });
+      queryClient.invalidateQueries({ queryKey: ["campaign-stats", id] });
+    },
+  });
+
+  async function deleteContact(contactId: number) {
+    setDeletingIds((prev) => new Set(prev).add(contactId));
+    deleteMutation.mutate(contactId);
+  }
+
+  async function deleteAllBounced() {
+    const bounced = sends.filter((s) => s.bounced_at);
+    if (!confirm(`¿Eliminar ${bounced.length} contactos rebotados de la base de datos?`)) return;
+    for (const s of bounced) await contactsApi.delete(s.contact_id);
+    queryClient.invalidateQueries({ queryKey: ["campaign-sends", id] });
+    queryClient.invalidateQueries({ queryKey: ["campaign-stats", id] });
+  }
 
   const { data: campaign } = useQuery<Campaign>({
     queryKey: ["campaign", id],
@@ -208,9 +231,20 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
       {/* ── Lista de contactos enviados ──────────────────────────────────── */}
       {sends.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
             <h2 className="font-semibold text-gray-900">Contactos</h2>
-            <span className="text-xs text-gray-400">{sends.length} enviados</span>
+            <div className="flex items-center gap-3">
+              {sends.filter((s) => s.bounced_at).length > 0 && (
+                <button
+                  onClick={deleteAllBounced}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                >
+                  <Trash2 size={12} />
+                  Eliminar {sends.filter((s) => s.bounced_at).length} rebotados
+                </button>
+              )}
+              <span className="text-xs text-gray-400">{sends.length} enviados</span>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -226,7 +260,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
               </thead>
               <tbody>
                 {sends.map((s) => (
-                  <tr key={s.contact_id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${s.bounced_at ? "bg-red-50/40" : ""}`}>
                     <td className="px-5 py-3">
                       <Link href={`/contacts/${s.contact_id}`} className="hover:text-brand-600 transition-colors">
                         <p className="font-medium text-gray-900">{s.name}</p>
@@ -238,9 +272,19 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                     <td className="px-4 py-3 text-center"><Tick date={s.opened_at} label="abierto" /></td>
                     <td className="px-4 py-3 text-center"><Tick date={s.clicked_at} label="clic" /></td>
                     <td className="px-4 py-3 text-center">
-                      {s.bounced_at
-                        ? <span title={`Rebotó: ${formatDateTime(s.bounced_at)}`} className="text-red-400 font-semibold">✕</span>
-                        : <span className="text-gray-200">—</span>}
+                      {s.bounced_at ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <span title={`Rebotó: ${formatDateTime(s.bounced_at)}`} className="text-red-400 font-semibold">✕</span>
+                          <button
+                            onClick={() => deleteContact(s.contact_id)}
+                            disabled={deletingIds.has(s.contact_id)}
+                            title="Eliminar contacto"
+                            className="text-red-300 hover:text-red-600 transition-colors disabled:opacity-40"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ) : <span className="text-gray-200">—</span>}
                     </td>
                   </tr>
                 ))}
