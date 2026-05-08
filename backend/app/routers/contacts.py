@@ -14,6 +14,7 @@ from app.core.unsub_token import verify_unsub_token
 from app.models.user import User
 from app.models.contact import Contact, ContactCreate, ContactRead, ContactUpdate
 from app.models.campaign import Campaign, CampaignSend
+from app.models.automation import AutomationRun
 from app.models.segment import Segment
 from app.services.segment_evaluator import _build_clause
 
@@ -155,6 +156,11 @@ def delete_contact(
     contact = session.get(Contact, contact_id)
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
+    # Delete FK-referencing rows first to avoid constraint violations
+    for row in session.exec(select(CampaignSend).where(CampaignSend.contact_id == contact_id)).all():
+        session.delete(row)
+    for row in session.exec(select(AutomationRun).where(AutomationRun.contact_id == contact_id)).all():
+        session.delete(row)
     session.delete(contact)
     session.commit()
 
