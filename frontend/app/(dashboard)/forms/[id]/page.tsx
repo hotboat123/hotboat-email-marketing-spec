@@ -303,6 +303,8 @@ export default function FormDetailPage() {
   });
 
   const [localFields, setLocalFields] = useState<FormField[] | null>(null);
+  const [previewScreen, setPreviewScreen] = useState<1 | 2>(1);
+  const [localCoupon, setLocalCoupon] = useState<string | null>(null);
 
   const embedCode = `<script src="${BACKEND_URL}/api/forms/${formId}/embed.js" async></script>`;
 
@@ -403,28 +405,76 @@ export default function FormDetailPage() {
             <pre className="text-xs text-green-400 font-mono break-all whitespace-pre-wrap">{embedCode}</pre>
           </div>
 
+          {/* Coupon code */}
+          <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+            <p className="text-sm font-semibold text-gray-700">Código de cupón (Pantalla 2)</p>
+            <p className="text-xs text-gray-400">Si lo rellenas, aparecerá destacado después de que el visitante envíe el formulario.</p>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={localCoupon ?? form.coupon_code ?? ""}
+                onChange={(e) => setLocalCoupon(e.target.value.toUpperCase())}
+                placeholder="Ej: DRON"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <button
+                onClick={() => {
+                  saveMutation.mutate({ coupon_code: localCoupon ?? form.coupon_code ?? null });
+                  setLocalCoupon(null);
+                }}
+                disabled={saveMutation.isPending || localCoupon === null}
+                className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+              >
+                <Save size={13} /> Guardar
+              </button>
+            </div>
+          </div>
+
           {/* Preview */}
           {!form.html_override && (
             <div className="bg-white border border-gray-200 rounded-xl p-5">
-              <p className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2"><Eye size={14} className="text-gray-400" /> Vista previa</p>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye size={14} className="text-gray-400" /> Vista previa</p>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+                  <button onClick={() => setPreviewScreen(1)} className={`px-3 py-1.5 transition-colors ${previewScreen === 1 ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-50"}`}>Pantalla 1</button>
+                  <button onClick={() => setPreviewScreen(2)} className={`px-3 py-1.5 transition-colors ${previewScreen === 2 ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-50"}`}>Pantalla 2</button>
+                </div>
+              </div>
               <div className="bg-gradient-to-b from-sky-50 to-gray-100 rounded-xl p-6 flex justify-center">
                 <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-sm w-full border border-gray-200">
-                  <div className="bg-gradient-to-r from-sky-700 to-sky-500 px-6 py-5 relative">
-                    <p className="text-xs text-sky-200 font-bold tracking-widest uppercase mb-1">HotBoat</p>
-                    <h3 className="text-white font-bold text-lg">{form.title}</h3>
-                  </div>
-                  <div className="px-6 py-5 space-y-2">
-                    {form.description && <p className="text-gray-500 text-sm mb-2">{form.description}</p>}
-                    {form.collect_name && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu nombre</div>}
-                    <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu email *</div>
-                    {form.collect_phone && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu teléfono</div>}
-                    {currentFields.map((f) => (
-                      <div key={f.key} className="rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400" style={{ height: f.type === "textarea" ? 64 : 36 }}>
-                        {f.label}{f.required ? " *" : ""}
+                  {previewScreen === 1 ? (
+                    <>
+                      <div className="bg-gradient-to-r from-sky-700 to-sky-500 px-6 py-5 relative">
+                        <p className="text-xs text-sky-200 font-bold tracking-widest uppercase mb-1">HotBoat</p>
+                        <h3 className="text-white font-bold text-lg">{form.title}</h3>
                       </div>
-                    ))}
-                    <div className="h-10 rounded-xl bg-gradient-to-r from-sky-700 to-sky-500 flex items-center justify-center text-white text-sm font-bold">{form.button_text}</div>
-                  </div>
+                      <div className="px-6 py-5 space-y-2">
+                        {form.description && <p className="text-gray-500 text-sm mb-2">{form.description}</p>}
+                        {form.collect_name && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu nombre</div>}
+                        <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu email *</div>
+                        {form.collect_phone && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu teléfono</div>}
+                        {currentFields.map((f) => (
+                          <div key={f.key} className="rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400" style={{ height: f.type === "textarea" ? 64 : 36 }}>
+                            {f.label}{f.required ? " *" : ""}
+                          </div>
+                        ))}
+                        <div className="h-10 rounded-xl bg-gradient-to-r from-sky-700 to-sky-500 flex items-center justify-center text-white text-sm font-bold">{form.button_text}</div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="px-6 py-8 text-center space-y-3">
+                      <div className="text-4xl">✅</div>
+                      <p className="text-green-700 font-bold text-sm">{form.success_message}</p>
+                      {(localCoupon ?? form.coupon_code) && (
+                        <div className="mt-2 p-4 bg-sky-50 border-2 border-dashed border-sky-400 rounded-xl">
+                          <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-1">Tu cupón de reserva</p>
+                          <p className="text-2xl font-black text-sky-700 tracking-widest">{localCoupon ?? form.coupon_code}</p>
+                          <p className="text-xs text-gray-400 mt-1">Úsalo al reservar en hotboat.cl</p>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-400">Respetamos tu privacidad. Puedes darte de baja cuando quieras.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

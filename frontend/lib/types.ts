@@ -152,6 +152,7 @@ export interface SignupForm {
   popup_scroll_pct: number;
   custom_form_fields: FormField[] | null;
   html_override: string | null;
+  coupon_code: string | null;
   status: "active" | "paused";
   created_by: number | null;
   created_at: string;

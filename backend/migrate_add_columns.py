@@ -16,9 +16,10 @@ migrations = [
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS notes TEXT",
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS custom_fields JSONB",
     "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS location VARCHAR",
-    # signup_forms — custom fields + html override
+    # signup_forms — custom fields + html override + coupon
     "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS custom_form_fields JSONB",
     "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS html_override TEXT",
+    "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS coupon_code VARCHAR",
     # form_submissions — extra data from custom fields
     "ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS extra_data JSONB",
     # automations + automation_runs (new tables — create if not exist)

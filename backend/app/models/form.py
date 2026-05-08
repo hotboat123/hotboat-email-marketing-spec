@@ -23,6 +23,8 @@ class SignupForm(SQLModel, table=True):
     custom_form_fields: Optional[Any] = Field(default=None, sa_column=Column(JSON))
     # Full HTML override for popup content (null = use auto-generated)
     html_override: Optional[str] = Field(default=None, sa_column=Column(Text))
+    # Coupon code shown in success screen (null = no coupon)
+    coupon_code: Optional[str] = Field(default=None)
     # active | paused
     status: str = Field(default="active")
     created_by: Optional[int] = Field(default=None, foreign_key="users.id")
@@ -56,6 +58,7 @@ class SignupFormCreate(SQLModel):
     popup_scroll_pct: int = 50
     custom_form_fields: Optional[list] = None
     html_override: Optional[str] = None
+    coupon_code: Optional[str] = None
 
 
 class SignupFormUpdate(SQLModel):
@@ -71,6 +74,7 @@ class SignupFormUpdate(SQLModel):
     popup_scroll_pct: Optional[int] = None
     custom_form_fields: Optional[list] = None
     html_override: Optional[str] = None
+    coupon_code: Optional[str] = None
     status: Optional[str] = None
 
 
@@ -88,6 +92,7 @@ class SignupFormRead(SQLModel):
     popup_scroll_pct: int
     custom_form_fields: Optional[list]
     html_override: Optional[str]
+    coupon_code: Optional[str]
     status: str
     created_by: Optional[int]
     created_at: datetime

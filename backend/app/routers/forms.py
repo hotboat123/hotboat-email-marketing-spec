@@ -187,6 +187,7 @@ def embed_js(form_id: int, session: Session = Depends(get_session)):
         "delay_seconds": f.popup_delay_seconds,
         "scroll_pct": f.popup_scroll_pct,
         "html_override": f.html_override or "",
+        "coupon_code": f.coupon_code or "",
         "api": settings.BACKEND_PUBLIC_URL,
     }
 
@@ -336,7 +337,14 @@ def _build_embed_js(cfg: dict) -> str:
           '  </form>' +
           '  <div id="hb-popup-success">' +
           '    <div style="font-size:40px;margin-bottom:8px;">&#x2705;</div>' +
-          '    <p style="color:#166534;font-weight:700;font-size:15px;margin:0">' + C.success_message + '</p>' +
+          '    <p style="color:#166534;font-weight:700;font-size:15px;margin:0 0 12px">' + C.success_message + '</p>' +
+          (C.coupon_code ? (
+          '    <div style="margin:4px 0 12px;padding:14px 20px;background:#f0f9ff;border:2px dashed #0ea5e9;border-radius:12px;text-align:center">' +
+          '      <p style="margin:0 0 6px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Tu cupón de reserva</p>' +
+          '      <p style="margin:0;font-size:26px;font-weight:900;color:#0369a1;letter-spacing:4px">' + C.coupon_code + '</p>' +
+          '      <p style="margin:8px 0 0;font-size:12px;color:#64748b">Úsalo al reservar en hotboat.cl</p>' +
+          '    </div>'
+          ) : '') +
           '  </div>' +
           '  <p id="hb-popup-fine">Respetamos tu privacidad. Puedes darte de baja cuando quieras.</p>' +
           '</div>'
