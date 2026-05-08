@@ -59,16 +59,16 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
     queryFn: () => campaignsApi.get(id).then((r) => r.data),
   });
 
-  const { data: stats } = useQuery<CampaignStats>({
-    queryKey: ["campaign-stats", id],
-    queryFn: () => campaignsApi.stats(id).then((r) => r.data),
-    enabled: campaign?.status === "sent" || campaign?.status === "sending",
-  });
-
   const { data: sends = [] } = useQuery<CampaignSendRow[]>({
     queryKey: ["campaign-sends", id],
     queryFn: () => campaignsApi.sends(id).then((r) => r.data),
     staleTime: 30_000,
+  });
+
+  const { data: stats } = useQuery<CampaignStats>({
+    queryKey: ["campaign-stats", id],
+    queryFn: () => campaignsApi.stats(id).then((r) => r.data),
+    enabled: sends.length > 0 || campaign?.status === "sent" || campaign?.status === "sending",
   });
 
   const { data: progress } = useQuery<SendProgress>({
