@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { campaignsApi, contactsApi } from "@/lib/api";
 import { Campaign, CampaignStats } from "@/lib/types";
-import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, UserMinus, Trash2 } from "lucide-react";
+import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
 
@@ -59,7 +59,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
-  type SortCol = "name" | "sent_at" | "delivered_at" | "opened_at" | "clicked_at" | "bounced_at";
+  type SortCol = "name" | "sent_at" | "delivered_at" | "opened_at" | "clicked_at" | "bounced_at" | "opted_in";
   const [sortCol, setSortCol] = useState<SortCol>("sent_at");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -138,7 +138,9 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
       return sortAsc ? cmp : -cmp;
     }
     const val = (s: CampaignSendRow) =>
-      sortCol === "bounced_at" ? (isBounced(s) ? 1 : 0) : (s[sortCol] ? 1 : 0);
+      sortCol === "bounced_at" ? (isBounced(s) ? 1 : 0) :
+      sortCol === "opted_in"   ? (s.opted_in === false ? 1 : 0) :
+      (s[sortCol] ? 1 : 0);
     return sortAsc ? val(a) - val(b) : val(b) - val(a);
   });
 
@@ -306,12 +308,13 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   {([
-                    { col: "name",         label: "Contacto",   align: "left"   },
-                    { col: "sent_at",      label: "Enviado",    align: "center" },
-                    { col: "delivered_at", label: "Entregado",  align: "center" },
-                    { col: "opened_at",    label: "Abrió",      align: "center" },
-                    { col: "clicked_at",   label: "Clic",       align: "center" },
-                    { col: "bounced_at",   label: "Rebote",     align: "center" },
+                    { col: "name",         label: "Contacto",    align: "left"   },
+                    { col: "sent_at",      label: "Enviado",     align: "center" },
+                    { col: "delivered_at", label: "Entregado",   align: "center" },
+                    { col: "opened_at",    label: "Abrió",       align: "center" },
+                    { col: "clicked_at",   label: "Clic",        align: "center" },
+                    { col: "bounced_at",   label: "Rebote",      align: "center" },
+                    { col: "opted_in",     label: "Desuscripto", align: "center" },
                   ] as { col: SortCol; label: string; align: string }[]).map(({ col, label, align }) => (
                     <th
                       key={col}
@@ -329,14 +332,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                   <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isBounced(s) ? "bg-red-50/40" : ""}`}>
                     <td className="px-5 py-3">
                       <Link href={`/contacts/${s.contact_id}`} className="hover:text-brand-600 transition-colors">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900">{s.name}</p>
-                          {s.opted_in === false && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
-                              <UserMinus size={9} /> Desuscripto
-                            </span>
-                          )}
-                        </div>
+                        <p className="font-medium text-gray-900">{s.name}</p>
                         <p className="text-xs text-gray-400">{s.email}</p>
                       </Link>
                     </td>
@@ -358,6 +354,11 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                           </button>
                         </div>
                       ) : <span className="text-gray-200">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {s.opted_in === false
+                        ? <span title="Se desuscribió" className="text-orange-500 font-semibold">✕</span>
+                        : <span className="text-gray-200">—</span>}
                     </td>
                   </tr>
                 ))}
