@@ -265,7 +265,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1.5"><Calendar size={12} /> Programar envío (opcional)</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1.5"><Calendar size={12} /> Programar envío — hora de Chile (tu zona horaria local)</label>
             <div className="flex gap-3 items-center">
               <input
                 type="datetime-local"
@@ -297,7 +297,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                   preview_text: editForm.preview_text || undefined,
                   segment_id: editForm.segment_id || undefined,
                   template_id: editForm.template_id || undefined,
-                  scheduled_at: editForm.scheduled_at ? editForm.scheduled_at : null,
+                  scheduled_at: editForm.scheduled_at ? new Date(editForm.scheduled_at).toISOString() : null,
                   status: editForm.scheduled_at ? "scheduled" : "draft",
                 });
               }}

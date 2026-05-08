@@ -36,7 +36,7 @@ export default function NewCampaignPage() {
   const mutation = useMutation({
     mutationFn: () => campaignsApi.create({
       ...form,
-      scheduled_at: form.scheduled_at || undefined,
+      scheduled_at: form.scheduled_at ? new Date(form.scheduled_at).toISOString() : undefined,
       status: form.scheduled_at ? "scheduled" : "draft",
     }),
     onSuccess: () => {
@@ -96,7 +96,7 @@ export default function NewCampaignPage() {
               <input value={form.preview_text} onChange={(e) => setForm((f) => ({ ...f, preview_text: e.target.value }))} placeholder="Texto de vista previa en el cliente de correo" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><Calendar size={13} /> Programar envío (opcional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><Calendar size={13} /> Programar envío — hora de Chile (tu zona horaria local)</label>
               <input
                 type="datetime-local"
                 value={form.scheduled_at}
