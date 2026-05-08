@@ -110,7 +110,7 @@ def send_campaign_sync(campaign_id: int, contact_ids: List[int], total_in_segmen
         contacts = [session.get(Contact, cid) for cid in contact_ids]
         contacts = [c for c in contacts if c]
 
-        # Crear registros queued
+        # Crear registros queued; resetear los "failed" para que puedan reintentarse
         for contact in contacts:
             exists = session.exec(
                 select(CampaignSend).where(
@@ -120,6 +120,9 @@ def send_campaign_sync(campaign_id: int, contact_ids: List[int], total_in_segmen
             ).first()
             if not exists:
                 session.add(CampaignSend(campaign_id=campaign_id, contact_id=contact.id))
+            elif exists.status == "failed":
+                exists.status = "queued"
+                session.add(exists)
         session.commit()
 
         # Enviar en lotes
@@ -130,9 +133,12 @@ def send_campaign_sync(campaign_id: int, contact_ids: List[int], total_in_segmen
             if i + BATCH_SIZE < len(contacts):
                 time.sleep(BATCH_DELAY)
 
-        # Si quedan contactos del segmento sin enviar, volver a draft para permitir nuevos envíos parciales
+        # "failed" no cuentan como enviados — quedan pendientes para reintento
         total_sent = session.exec(
-            select(func.count(CampaignSend.id)).where(CampaignSend.campaign_id == campaign_id)
+            select(func.count(CampaignSend.id)).where(
+                CampaignSend.campaign_id == campaign_id,
+                CampaignSend.status != "failed",
+            )
         ).one()
         if total_in_segment > 0 and total_sent < total_in_segment:
             campaign.status = "draft"

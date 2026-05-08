@@ -107,10 +107,13 @@ def send_campaign_now(
     if not contacts:
         raise HTTPException(status_code=400, detail="El segmento no tiene contactos con opt-in")
 
-    # Excluir contactos que ya recibieron esta campaña
+    # Excluir contactos que ya recibieron esta campaña; los "failed" sí pueden reintentarse
     already_sent = set(
         session.exec(
-            select(CampaignSend.contact_id).where(CampaignSend.campaign_id == campaign_id)
+            select(CampaignSend.contact_id).where(
+                CampaignSend.campaign_id == campaign_id,
+                CampaignSend.status != "failed",
+            )
         ).all()
     )
     remaining = [ct for ct in contacts if ct.id not in already_sent]
@@ -139,7 +142,10 @@ def send_progress(campaign_id: int, session: Session = Depends(get_session), _: 
     seg = session.get(Segment, c.segment_id)
     total_in_segment = len(evaluate_segment(seg.conditions, session)) if seg else 0
     already_sent = session.exec(
-        select(func.count(CampaignSend.contact_id)).where(CampaignSend.campaign_id == campaign_id)
+        select(func.count(CampaignSend.contact_id)).where(
+            CampaignSend.campaign_id == campaign_id,
+            CampaignSend.status != "failed",
+        )
     ).one()
     return {"total_in_segment": total_in_segment, "already_sent": already_sent}
 
