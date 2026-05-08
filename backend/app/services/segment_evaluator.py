@@ -5,6 +5,7 @@ from app.models.contact import Contact
 
 # Campos permitidos en condiciones de segmento
 FIELD_MAP = {
+    "id":            Contact.id,
     "email":          Contact.email,
     "language":       Contact.language,
     "origin_utm":     Contact.origin_utm,
@@ -15,6 +16,8 @@ FIELD_MAP = {
     "ticket_medio":   Contact.ticket_medio,
     "name":           Contact.name,
 }
+
+STRING_FIELDS = {"email", "language", "origin_utm", "name"}
 
 OPS = {
     "eq":       lambda col, v: col == v,
@@ -61,6 +64,12 @@ def _build_clause(node: dict) -> Optional[Any]:
     fn = OPS.get(op)
     if col is None or fn is None:
         return None
+
+    # Comparación case-insensitive para campos de texto con eq/neq
+    if field in STRING_FIELDS and op == "eq" and isinstance(value, str):
+        return col.ilike(value)
+    if field in STRING_FIELDS and op == "neq" and isinstance(value, str):
+        return ~col.ilike(value)
 
     return fn(col, value)
 
