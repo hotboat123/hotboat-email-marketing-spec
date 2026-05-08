@@ -190,7 +190,7 @@ def campaign_stats(campaign_id: int, session: Session = Depends(get_session), _:
 
     sends = session.exec(select(CampaignSend).where(CampaignSend.campaign_id == campaign_id)).all()
     total = len(sends)
-    sent      = sum(1 for s in sends if s.status not in ("queued",))
+    sent      = sum(1 for s in sends if s.status not in ("queued", "failed"))
     delivered = sum(1 for s in sends if s.delivered_at is not None or s.status in ("delivered", "opened", "clicked"))
     opened    = sum(1 for s in sends if s.opened_at is not None)
     clicked   = sum(1 for s in sends if s.clicked_at is not None)
