@@ -271,9 +271,9 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
 
           <div className="space-y-4">
             <StatBar label="Entregados" value={stats.delivered} total={stats.sent} color="bg-blue-500" />
-            <StatBar label="Abiertos" value={stats.opened} total={stats.delivered} color="bg-green-500" />
-            <StatBar label="Con clics" value={stats.clicked} total={stats.delivered} color="bg-purple-500" />
-            <StatBar label="Rebotados" value={stats.bounced} total={stats.sent} color="bg-red-400" />
+            <StatBar label="Abiertos"   value={stats.opened}    total={stats.delivered || stats.sent} color="bg-green-500" />
+            <StatBar label="Con clics"  value={stats.clicked}   total={stats.delivered || stats.sent} color="bg-purple-500" />
+            <StatBar label="Rebotados"  value={stats.bounced}   total={stats.sent} color="bg-red-400" />
           </div>
         </div>
       )}
