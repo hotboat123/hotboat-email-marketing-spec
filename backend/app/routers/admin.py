@@ -15,7 +15,7 @@ FOOTER = """
   <p style="font-size:13px;font-weight:700;color:#111;margin:0 0 4px;">HotBoat</p>
   <p style="font-size:12px;color:#999;margin:4px 0;">Experiencias en el agua &middot; Chile</p>
   <p style="font-size:12px;color:#bbb;margin:8px 0;">
-    <a href="#" style="color:#bbb;">Cancelar suscripci&oacute;n</a>
+    <a href="##unsub##" style="color:#bbb;">Cancelar suscripci&oacute;n</a>
   </p>
 </div>"""
 
@@ -26,10 +26,10 @@ SEED_TEMPLATES = [
         "preview": "Nos alegra tenerte aquí. Descubre lo que tenemos preparado para ti.",
         "segment": "Todos los suscriptores",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
-  <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;filter:brightness(0) invert(1);" />
-    <h1 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 10px;line-height:1.3;">Bienvenido/a a HotBoat, {{nombre}}</h1>
-    <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">Nos alegra tenerte en nuestra comunidad</p>
+  <div style="background:#f9fafb;border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;border:1px solid #e5e7eb;">
+    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
+    <h1 style="color:#111;font-size:20px;font-weight:700;margin:0 0 10px;line-height:1.3;">Bienvenido/a a HotBoat, {{nombre or 'cliente'}}</h1>
+    <p style="color:#555;font-size:16px;margin:0;">Nos alegra tenerte en nuestra comunidad</p>
   </div>
   <p style="font-size:16px;color:#333;line-height:1.75;margin-bottom:24px;">
     Hola {{nombre}}, acabas de unirte a la lista de HotBoat.
@@ -75,10 +75,10 @@ SEED_TEMPLATES = [
         "preview": "Nos alegra tenerte aquí. Descubre lo que tenemos preparado para ti.",
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
-  <div style="background:linear-gradient(135deg,#2563eb,#60a5fa);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;filter:brightness(0) invert(1);" />
-    <h1 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 8px;">¡Hola, {{nombre}}! 🌸</h1>
-    <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">Nos alegra tenerte en la familia HotBoat</p>
+  <div style="background:#f9fafb;border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;border:1px solid #e5e7eb;">
+    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
+    <h1 style="color:#111;font-size:20px;font-weight:700;margin:0 0 8px;">¡Hola, {{nombre or 'cliente'}}! 🌸</h1>
+    <p style="color:#555;font-size:16px;margin:0;">Nos alegra tenerte en la familia HotBoat</p>
   </div>
   <p style="font-size:16px;color:#333;line-height:1.7;">En HotBoat creamos experiencias únicas en el agua para que disfrutes momentos inolvidables junto a las personas que más quieres.</p>
   <div style="background:#f9fafb;border-radius:12px;padding:24px;margin:24px 0;">
@@ -101,10 +101,10 @@ SEED_TEMPLATES = [
         "preview": "Video profesional gratis + jugo natural 1L. Solo para ti, con el cupón MAMÁ.",
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
-  <div style="background:linear-gradient(135deg,#ff6b9d,#2563eb);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;filter:brightness(0) invert(1);" />
-    <h1 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 8px;">Feliz Día de la Madre 🌸</h1>
-    <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;">{{nombre}}, este día es tuyo. Te lo merecés todo.</p>
+  <div style="background:#fdf2f8;border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;border:1px solid #f9c6e0;">
+    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
+    <h1 style="color:#111;font-size:20px;font-weight:700;margin:0 0 8px;">Feliz Día de la Madre 🌸</h1>
+    <p style="color:#555;font-size:16px;margin:0;">{{nombre or 'cliente'}}, este día es tuyo. Te lo merecés todo.</p>
   </div>
   <p style="font-size:16px;color:#333;line-height:1.7;text-align:center;">Para celebrarte, preparamos un regalo especial cuando reserves tu experiencia HotBoat:</p>
   <div style="display:flex;gap:16px;margin:28px 0;flex-wrap:wrap;">
@@ -206,5 +206,27 @@ def seed_templates(
                 session.add(camp)
                 created["campaigns"].append(t["name"])
 
+    # Asegurar unsub en TODAS las plantillas de la BD
+    all_templates = session.exec(select(Template)).all()
+    added_unsub: list[str] = []
+    for tpl in all_templates:
+        if "##unsub##" in tpl.html_content:
+            continue  # ya actualizada
+        if 'href="#" style="color:#bbb;">Cancelar suscripci' in tpl.html_content:
+            # Actualizar placeholder viejo
+            tpl.html_content = tpl.html_content.replace(
+                'href="#" style="color:#bbb;">Cancelar suscripci',
+                'href="##unsub##" style="color:#bbb;">Cancelar suscripci',
+            )
+            tpl.updated_at = now
+            session.add(tpl)
+            added_unsub.append(tpl.name)
+        elif "Cancelar suscripci" not in tpl.html_content:
+            # Sin sección de baja → agregar al final
+            tpl.html_content = tpl.html_content.rstrip() + FOOTER
+            tpl.updated_at = now
+            session.add(tpl)
+            added_unsub.append(tpl.name)
+
     session.commit()
-    return {"ok": True, "created": created, "updated": updated}
+    return {"ok": True, "created": created, "updated": updated, "unsub_added": added_unsub}

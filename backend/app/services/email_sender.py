@@ -28,6 +28,8 @@ Recibiste este correo porque eres cliente de <strong style="color:#6b7280">HotBo
 
 def _inject_footer(html: str, email: str) -> str:
     url = unsub_url(email)
+    if "##unsub##" in html:
+        return html.replace("##unsub##", url)
     footer = _FOOTER.format(url=url)
     lower = html.lower()
     idx = lower.rfind("</body>")
@@ -47,7 +49,7 @@ def _unsub_headers(email: str) -> dict:
 def render_html(html_content: str, contact: Contact) -> str:
     tpl = Jinja2Template(html_content)
     return tpl.render(
-        nombre=contact.name or "",
+        nombre=contact.name or "cliente",
         email=contact.email,
         ultima_visita=str(contact.ultima_visita) if contact.ultima_visita else "",
         veces_hotboat=contact.veces_hotboat,
