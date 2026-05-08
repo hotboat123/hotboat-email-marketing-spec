@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { campaignsApi, contactsApi } from "@/lib/api";
-import { Campaign, CampaignStats } from "@/lib/types";
-import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, Trash2 } from "lucide-react";
+import { campaignsApi, contactsApi, segmentsApi, templatesApi } from "@/lib/api";
+import { Campaign, CampaignStats, Segment, Template } from "@/lib/types";
+import { ArrowLeft, TrendingUp, Mail, MousePointer, AlertTriangle, Send, Users, Trash2, Pencil, Save, X, Calendar } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, statusColor, statusLabel } from "@/lib/utils";
 
@@ -63,6 +63,11 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<{
+    name: string; subject: string; preview_text: string;
+    segment_id: number; template_id: number; scheduled_at: string;
+  } | null>(null);
   type SortCol = "name" | "sent_at" | "delivered_at" | "opened_at" | "clicked_at" | "bounced_at" | "opted_in";
   const [sortCol, setSortCol] = useState<SortCol>("sent_at");
   const [sortAsc, setSortAsc] = useState(false);
@@ -71,6 +76,27 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
     if (sortCol === col) setSortAsc((v) => !v);
     else { setSortCol(col); setSortAsc(false); }
   }
+
+  const { data: segments = [] } = useQuery<Segment[]>({
+    queryKey: ["segments"],
+    queryFn: () => segmentsApi.list().then((r) => r.data),
+    enabled: editing,
+  });
+
+  const { data: templates = [] } = useQuery<Template[]>({
+    queryKey: ["templates"],
+    queryFn: () => templatesApi.list().then((r) => r.data),
+    enabled: editing,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: Parameters<typeof campaignsApi.update>[1]) => campaignsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["campaign", id] });
+      setEditing(false);
+      setEditForm(null);
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (contactId: number) => contactsApi.delete(contactId),
@@ -167,10 +193,122 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
           <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
           <p className="text-gray-500 text-sm mt-1">{campaign.subject}</p>
         </div>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor(campaign.status)}`}>
-          {statusLabel(campaign.status)}
-        </span>
+        <div className="flex items-center gap-2">
+          {campaign.status !== "sent" && campaign.status !== "sending" && (
+            <button
+              onClick={() => {
+                setEditing((v) => !v);
+                if (!editing) setEditForm({
+                  name: campaign.name,
+                  subject: campaign.subject,
+                  preview_text: campaign.preview_text ?? "",
+                  segment_id: campaign.segment_id,
+                  template_id: campaign.template_id,
+                  scheduled_at: campaign.scheduled_at
+                    ? new Date(campaign.scheduled_at).toISOString().slice(0, 16)
+                    : "",
+                });
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
+            >
+              {editing ? <X size={13} /> : <Pencil size={13} />}
+              {editing ? "Cancelar" : "Editar"}
+            </button>
+          )}
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor(campaign.status)}`}>
+            {statusLabel(campaign.status)}
+          </span>
+        </div>
       </div>
+
+      {/* ── Edit panel ──────────────────────────────────────────────────── */}
+      {editing && editForm && (
+        <div className="bg-white border border-brand-200 rounded-xl p-6 mb-6 space-y-4">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Pencil size={14} /> Editar campaña</h2>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Nombre interno</label>
+              <input value={editForm.name} onChange={(e) => setEditForm((f) => f && ({ ...f, name: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Asunto del email</label>
+              <input value={editForm.subject} onChange={(e) => setEditForm((f) => f && ({ ...f, subject: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Preview text</label>
+            <input value={editForm.preview_text} onChange={(e) => setEditForm((f) => f && ({ ...f, preview_text: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Segmento</label>
+              <select value={editForm.segment_id} onChange={(e) => setEditForm((f) => f && ({ ...f, segment_id: Number(e.target.value) }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value={0}>— Seleccionar —</option>
+                {segments.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.contact_count?.toLocaleString()} contactos)</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Plantilla</label>
+              <select value={editForm.template_id} onChange={(e) => setEditForm((f) => f && ({ ...f, template_id: Number(e.target.value) }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value={0}>— Seleccionar —</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1.5"><Calendar size={12} /> Programar envío (opcional)</label>
+            <div className="flex gap-3 items-center">
+              <input
+                type="datetime-local"
+                value={editForm.scheduled_at}
+                onChange={(e) => setEditForm((f) => f && ({ ...f, scheduled_at: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              {editForm.scheduled_at && (
+                <button onClick={() => setEditForm((f) => f && ({ ...f, scheduled_at: "" }))}
+                  className="text-xs text-gray-400 hover:text-red-500 underline">
+                  Quitar programación
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Si lo dejas vacío la campaña queda en borrador. Si pones una fecha, se enviará automáticamente.</p>
+          </div>
+
+          {updateMutation.isError && (
+            <p className="text-sm text-red-600">Error al guardar. Intenta de nuevo.</p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={() => {
+                if (!editForm) return;
+                updateMutation.mutate({
+                  name: editForm.name,
+                  subject: editForm.subject,
+                  preview_text: editForm.preview_text || undefined,
+                  segment_id: editForm.segment_id || undefined,
+                  template_id: editForm.template_id || undefined,
+                  scheduled_at: editForm.scheduled_at ? editForm.scheduled_at : null,
+                  status: editForm.scheduled_at ? "scheduled" : "draft",
+                });
+              }}
+              disabled={updateMutation.isPending || !editForm.name || !editForm.subject}
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-60 transition-colors"
+            >
+              <Save size={13} /> {updateMutation.isPending ? "Guardando…" : "Guardar cambios"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         {[

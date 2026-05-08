@@ -15,9 +15,12 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.database import engine as db_engine
 from app.models.automation import Automation, AutomationRun
+from app.models.campaign import Campaign, CampaignSend
 from app.models.contact import Contact
+from app.models.segment import Segment
 from app.models.template import Template
-from app.services.email_sender import _inject_footer, _unsub_headers
+from app.services.email_sender import _inject_footer, _unsub_headers, send_campaign_sync
+from app.services.segment_evaluator import evaluate_segment
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +216,48 @@ HANDLERS = {
 }
 
 
+def run_scheduled_campaigns() -> None:
+    """Fire campaigns whose scheduled_at has passed and are still in 'scheduled' status."""
+    with Session(db_engine) as session:
+        now = datetime.utcnow()
+        due = session.exec(
+            select(Campaign).where(
+                Campaign.status == "scheduled",
+                Campaign.scheduled_at <= now,
+            )
+        ).all()
+        for campaign in due:
+            try:
+                seg = session.get(Segment, campaign.segment_id)
+                if not seg:
+                    logger.warning("Scheduled campaign %d: segment %d not found", campaign.id, campaign.segment_id)
+                    continue
+                contacts = evaluate_segment(seg.conditions, session)
+                if not contacts:
+                    logger.warning("Scheduled campaign %d: no opted-in contacts", campaign.id)
+                    continue
+                already_sent = set(session.exec(
+                    select(CampaignSend.contact_id).where(
+                        CampaignSend.campaign_id == campaign.id,
+                        CampaignSend.status != "failed",
+                    )
+                ).all())
+                to_send = [c for c in contacts if c.id not in already_sent]
+                if not to_send:
+                    campaign.status = "sent"
+                    session.add(campaign)
+                    session.commit()
+                    continue
+                campaign.status = "sending"
+                session.add(campaign)
+                session.commit()
+                contact_ids = [c.id for c in to_send]
+                send_campaign_sync(campaign.id, contact_ids, len(contacts))
+                logger.info("Scheduled campaign %d fired to %d contacts", campaign.id, len(contact_ids))
+            except Exception as exc:
+                logger.exception("Scheduled campaign %d error: %s", campaign.id, exc)
+
+
 def run_automations() -> None:
     with Session(db_engine) as session:
         automations = session.exec(
@@ -234,6 +279,7 @@ def start_scheduler() -> None:
         while True:
             try:
                 run_automations()
+                run_scheduled_campaigns()
             except Exception as exc:
                 logger.exception("Automation scheduler error: %s", exc)
             time.sleep(60)  # 1 minute

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi, segmentsApi, templatesApi } from "@/lib/api";
 import { Segment, Template } from "@/lib/types";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Calendar } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -20,6 +20,7 @@ export default function NewCampaignPage() {
     preview_text: "",
     segment_id: 0,
     template_id: 0,
+    scheduled_at: "",
   });
 
   const { data: segments = [] } = useQuery<Segment[]>({
@@ -33,7 +34,11 @@ export default function NewCampaignPage() {
   });
 
   const mutation = useMutation({
-    mutationFn: () => campaignsApi.create(form),
+    mutationFn: () => campaignsApi.create({
+      ...form,
+      scheduled_at: form.scheduled_at || undefined,
+      status: form.scheduled_at ? "scheduled" : "draft",
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["campaigns"] });
       router.push("/campaigns");
@@ -89,6 +94,16 @@ export default function NewCampaignPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Preview text</label>
               <input value={form.preview_text} onChange={(e) => setForm((f) => ({ ...f, preview_text: e.target.value }))} placeholder="Texto de vista previa en el cliente de correo" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><Calendar size={13} /> Programar envío (opcional)</label>
+              <input
+                type="datetime-local"
+                value={form.scheduled_at}
+                onChange={(e) => setForm((f) => ({ ...f, scheduled_at: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">Si lo dejas vacío se crea como borrador y puedes enviarla manualmente.</p>
             </div>
           </div>
         )}
@@ -150,6 +165,7 @@ export default function NewCampaignPage() {
               { label: "Asunto", value: form.subject },
               { label: "Segmento", value: selectedSeg ? `${selectedSeg.name} (${selectedSeg.contact_count} contactos)` : "—" },
               { label: "Plantilla", value: selectedTpl?.name ?? "—" },
+              { label: "Programada para", value: form.scheduled_at ? new Date(form.scheduled_at).toLocaleString("es-CL") : "Borrador (envío manual)" },
             ].map(({ label, value }) => (
               <div key={label} className="flex justify-between py-2 border-b border-gray-100 text-sm">
                 <span className="text-gray-500">{label}</span>
