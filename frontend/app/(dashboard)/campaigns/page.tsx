@@ -183,8 +183,8 @@ export default function CampaignsPage() {
 
   const segMap = Object.fromEntries(segments.map((s) => [s.id, s]));
 
-  // Fetch stats + conversions for sent campaigns only
-  const sentCampaigns = campaigns.filter((c) => c.status === "sent");
+  // Fetch stats + conversions for sent campaigns AND drafts that may have partial sends
+  const sentCampaigns = campaigns.filter((c) => c.status === "sent" || c.status === "draft");
   const statsQueries = useQueries({
     queries: sentCampaigns.map((c) => ({
       queryKey: ["campaign-stats", c.id],
@@ -367,7 +367,7 @@ export default function CampaignsPage() {
                 const seg = segMap[c.segment_id];
                 const stats = statsMap[c.id];
                 const conv = convMap[c.id];
-                const hasSent = c.status === "sent";
+                const hasSent = c.status === "sent" || (stats != null && stats.sent > 0);
                 return (
                   <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                     {/* Campaign name + audience */}
