@@ -32,6 +32,10 @@ function isBounced(s: CampaignSendRow) {
   return s.status === "bounced" || s.bounced_at != null;
 }
 
+function isFailed(s: CampaignSendRow) {
+  return s.status === "failed";
+}
+
 interface SendProgress {
   total_in_segment: number;
   already_sent: number;
@@ -329,7 +333,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
               </thead>
               <tbody>
                 {sortedSends.map((s) => (
-                  <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isBounced(s) ? "bg-red-50/40" : ""}`}>
+                  <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isBounced(s) ? "bg-red-50/40" : isFailed(s) ? "bg-orange-50/40" : ""}`}>
                     <td className="px-5 py-3">
                       <Link href={`/contacts/${s.contact_id}`} className="hover:text-brand-600 transition-colors">
                         <p className="font-medium text-gray-900">{s.name}</p>
@@ -353,6 +357,8 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                             <Trash2 size={13} />
                           </button>
                         </div>
+                      ) : isFailed(s) ? (
+                        <span title="Error técnico — no se envió" className="text-orange-400 font-semibold text-xs">Error</span>
                       ) : <span className="text-gray-200">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center">

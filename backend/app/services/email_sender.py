@@ -92,7 +92,7 @@ def _send_one(campaign: Campaign, template: Template, contact: Contact, session:
     except Exception as exc:
         logger.error("Error enviando a %s: %s", contact.email, exc)
         if send:
-            send.status = "bounced"
+            send.status = "failed"  # error técnico de envío, no rebote real
             session.add(send)
             session.commit()
 

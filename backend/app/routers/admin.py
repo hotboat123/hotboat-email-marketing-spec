@@ -5,7 +5,7 @@ from app.database import get_session
 from app.core.deps import require_admin
 from app.models.user import User
 from app.models.template import Template
-from app.models.campaign import Campaign
+from app.models.campaign import Campaign, CampaignSend
 from app.models.segment import Segment
 
 router = APIRouter()
@@ -228,5 +228,19 @@ def seed_templates(
             session.add(tpl)
             added_unsub.append(tpl.name)
 
+    # Corregir envíos mal clasificados como "bounced" que en realidad fallaron técnicamente
+    # (sin resend_id y sin bounced_at significa que nunca llegaron a Resend)
+    bad_sends = session.exec(
+        select(CampaignSend).where(
+            CampaignSend.status == "bounced",
+            CampaignSend.resend_id == None,  # noqa: E711
+            CampaignSend.bounced_at == None,  # noqa: E711
+        )
+    ).all()
+    for s in bad_sends:
+        s.status = "failed"
+        session.add(s)
+    fixed_sends = len(bad_sends)
+
     session.commit()
-    return {"ok": True, "created": created, "updated": updated, "unsub_added": added_unsub}
+    return {"ok": True, "created": created, "updated": updated, "unsub_added": added_unsub, "fixed_failed_sends": fixed_sends}
