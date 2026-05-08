@@ -27,6 +27,10 @@ function Tick({ date, label }: { date: string | null; label: string }) {
   );
 }
 
+function isBounced(s: CampaignSendRow) {
+  return s.status === "bounced" || s.bounced_at != null;
+}
+
 interface SendProgress {
   total_in_segment: number;
   already_sent: number;
@@ -78,7 +82,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   }
 
   async function deleteAllBounced() {
-    const bounced = sends.filter((s) => s.bounced_at);
+    const bounced = sends.filter(isBounced);
     if (!confirm(`¿Eliminar ${bounced.length} contactos rebotados de la base de datos?`)) return;
     for (const s of bounced) await contactsApi.delete(s.contact_id);
     queryClient.invalidateQueries({ queryKey: ["campaign-sends", id] });
@@ -132,9 +136,9 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
       const cmp = a.name.localeCompare(b.name, "es");
       return sortAsc ? cmp : -cmp;
     }
-    const av = a[sortCol] ? 1 : 0;
-    const bv = b[sortCol] ? 1 : 0;
-    return sortAsc ? av - bv : bv - av;
+    const val = (s: CampaignSendRow) =>
+      sortCol === "bounced_at" ? (isBounced(s) ? 1 : 0) : (s[sortCol] ? 1 : 0);
+    return sortAsc ? val(a) - val(b) : val(b) - val(a);
   });
 
   const remaining = progress ? progress.total_in_segment - progress.already_sent : 0;
@@ -252,13 +256,13 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
             <h2 className="font-semibold text-gray-900">Contactos</h2>
             <div className="flex items-center gap-3">
-              {sends.filter((s) => s.bounced_at).length > 0 && (
+              {sends.filter(isBounced).length > 0 && (
                 <button
                   onClick={deleteAllBounced}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
                 >
                   <Trash2 size={12} />
-                  Eliminar {sends.filter((s) => s.bounced_at).length} rebotados
+                  Eliminar {sends.filter(isBounced).length} rebotados
                 </button>
               )}
               <span className="text-xs text-gray-400">{sends.length} enviados</span>
@@ -289,7 +293,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
               </thead>
               <tbody>
                 {sortedSends.map((s) => (
-                  <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${s.bounced_at ? "bg-red-50/40" : ""}`}>
+                  <tr key={s.contact_id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isBounced(s) ? "bg-red-50/40" : ""}`}>
                     <td className="px-5 py-3">
                       <Link href={`/contacts/${s.contact_id}`} className="hover:text-brand-600 transition-colors">
                         <p className="font-medium text-gray-900">{s.name}</p>
@@ -301,7 +305,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                     <td className="px-4 py-3 text-center"><Tick date={s.opened_at} label="abierto" /></td>
                     <td className="px-4 py-3 text-center"><Tick date={s.clicked_at} label="clic" /></td>
                     <td className="px-4 py-3 text-center">
-                      {s.bounced_at ? (
+                      {isBounced(s) ? (
                         <div className="flex items-center justify-center gap-2">
                           <span title={`Rebotó: ${formatDateTime(s.bounced_at)}`} className="text-red-400 font-semibold">✕</span>
                           <button
