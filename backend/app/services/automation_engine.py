@@ -44,6 +44,7 @@ def _send_email(
     automation: Automation,
     contact: Contact,
     trigger_key: str,
+    extra_vars: dict | None = None,
 ) -> None:
     tpl = session.get(Template, automation.template_id)
     if not tpl:
@@ -56,6 +57,7 @@ def _send_email(
         "veces_hotboat": contact.veces_hotboat,
         "ultima_visita": str(contact.ultima_visita) if contact.ultima_visita else "",
         "ticket_medio": contact.ticket_medio or 0,
+        **(extra_vars or {}),
     }
     html = _inject_footer(JTemplate(tpl.html_content).render(**vars_), contact.email)
     resend.api_key = settings.RESEND_API_KEY
@@ -93,23 +95,32 @@ def _send_email(
 # ── Trigger handlers ──────────────────────────────────────────────────────────
 
 def _check_abandoned_booking(auto: Automation, session: Session) -> None:
-    """Poll source DB for pending bookings older than delay_hours (within last 7 days)."""
+    """
+    Fire when a booking has status='pending_payment' and paid_at IS NULL,
+    created between delay_minutes and lookback_hours ago.
+    Passes full booking details to the template as variables.
+    """
     config = auto.trigger_config or {}
-    delay_hours = int(config.get("delay_hours", 2))
-    cutoff_old = datetime.utcnow() - timedelta(hours=delay_hours)
-    cutoff_recent = datetime.utcnow() - timedelta(days=7)
+    delay_minutes = int(config.get("delay_minutes", 5))
+    lookback_hours = int(config.get("lookback_hours", 24))
+
+    now = datetime.utcnow()
+    cutoff_old = now - timedelta(minutes=delay_minutes)
+    cutoff_recent = now - timedelta(hours=lookback_hours)
 
     try:
         src = _source_engine()
         with src.connect() as conn:
             rows = conn.execute(text("""
-                SELECT email, nombre_cliente, fecha
+                SELECT id, email, nombre_cliente, servicio, fecha, hora,
+                       num_adultos, num_ninos, ingreso_total, created_at
                 FROM all_appointments
-                WHERE status = 'pending'
-                  AND fecha <= :cutoff_old
-                  AND fecha >= :cutoff_recent
+                WHERE status = 'pending_payment'
+                  AND (paid_at IS NULL OR payment_status != 'completed')
+                  AND created_at <= :cutoff_old
+                  AND created_at >= :cutoff_recent
                   AND email IS NOT NULL AND email <> ''
-                ORDER BY fecha DESC
+                ORDER BY created_at DESC
                 LIMIT 200
             """), {"cutoff_old": cutoff_old, "cutoff_recent": cutoff_recent}).fetchall()
     except Exception as exc:
@@ -118,15 +129,34 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
 
     for row in rows:
         email = row.email.lower().strip()
-        # Use email + date as the dedup key (one reminder per booking date per contact)
-        fecha_str = str(row.fecha.date()) if hasattr(row.fecha, "date") else str(row.fecha)[:10]
-        trigger_key = f"abandoned:{email}:{fecha_str}"
+        # Dedup per booking row ID — one email per abandoned cart attempt
+        trigger_key = f"abandoned:{row.id}"
         if _already_sent(session, auto.id, trigger_key):
             continue
         contact = session.exec(select(Contact).where(Contact.email == email)).first()
         if not contact or not contact.opted_in:
             continue
-        _send_email(session, auto, contact, trigger_key)
+
+        # Format booking details for the template
+        fecha_str = str(row.fecha) if row.fecha else ""
+        hora_str = str(row.hora)[:5] if row.hora else ""
+        adultos = int(row.num_adultos or 0)
+        ninos = int(row.num_ninos or 0)
+        total = f"${int(row.ingreso_total):,}".replace(",", ".") if row.ingreso_total else ""
+        personas_str = f"{adultos} adulto{'s' if adultos != 1 else ''}"
+        if ninos:
+            personas_str += f" + {ninos} niño{'s' if ninos != 1 else ''}"
+
+        extra_vars = {
+            "servicio": row.servicio or "tu experiencia",
+            "fecha_reserva": fecha_str,
+            "hora_reserva": hora_str,
+            "personas": personas_str,
+            "num_adultos": adultos,
+            "num_ninos": ninos,
+            "ingreso_total": total,
+        }
+        _send_email(session, auto, contact, trigger_key, extra_vars=extra_vars)
 
 
 def _check_welcome(auto: Automation, session: Session) -> None:
