@@ -20,6 +20,7 @@ function SkeletonRow() {
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-32 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-28 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-5 bg-gray-100 rounded-full w-14 animate-pulse mx-auto" /></td>
     </tr>
   );
 }
@@ -159,6 +160,7 @@ export default function ContactsPage() {
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actualizado</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última visita</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Ubicación</th>
+              <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Suscripción</th>
             </tr>
           </thead>
           <tbody>
@@ -166,7 +168,7 @@ export default function ContactsPage() {
               [...Array(8)].map((_, i) => <SkeletonRow key={i} />)
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-5 py-16 text-center">
+                <td colSpan={8} className="px-5 py-16 text-center">
                   <Users size={36} className="mx-auto text-gray-300 mb-3" />
                   <p className="text-gray-500 font-medium">
                     {debouncedSearch ? "Sin resultados" : "No hay clientes"}
@@ -226,6 +228,13 @@ export default function ContactsPage() {
                   {/* Ubicación */}
                   <td className="px-5 py-3 text-gray-500 text-xs">
                     {c.location || <span className="text-gray-300">—</span>}
+                  </td>
+
+                  {/* Suscripción */}
+                  <td className="px-5 py-3 text-center">
+                    {c.opted_in
+                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">Activo</span>
+                      : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-500">Baja</span>}
                   </td>
                 </tr>
               ))
