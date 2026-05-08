@@ -96,7 +96,7 @@ def send_campaign_now(
     c = session.get(Campaign, campaign_id)
     if not c:
         raise HTTPException(status_code=404, detail="Campaña no encontrada")
-    if c.status not in ("draft", "scheduled"):
+    if c.status not in ("draft", "scheduled", "sent"):
         raise HTTPException(status_code=400, detail=f"Estado inválido para envío: {c.status}")
 
     seg = session.get(Segment, c.segment_id)

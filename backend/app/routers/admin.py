@@ -242,5 +242,13 @@ def seed_templates(
         session.add(s)
     fixed_sends = len(bad_sends)
 
+    # Resetear a "draft" las campañas que tienen envíos fallidos pendientes de reintento
+    affected_campaign_ids = {s.campaign_id for s in bad_sends}
+    for cid in affected_campaign_ids:
+        camp = session.get(Campaign, cid)
+        if camp and camp.status == "sent":
+            camp.status = "draft"
+            session.add(camp)
+
     session.commit()
     return {"ok": True, "created": created, "updated": updated, "unsub_added": added_unsub, "fixed_failed_sends": fixed_sends}
