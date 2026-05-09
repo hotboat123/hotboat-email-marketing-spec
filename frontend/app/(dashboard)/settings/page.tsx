@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi, syncApi, api } from "@/lib/api";
 import { User } from "@/lib/types";
-import { RefreshCw, PackagePlus } from "lucide-react";
+import { RefreshCw, PackagePlus, ImageOff } from "lucide-react";
 
 export default function SettingsPage() {
   const qc = useQueryClient();
@@ -26,6 +26,21 @@ export default function SettingsPage() {
   const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null);
   const [seedResult, setSeedResult] = useState<{ ok: boolean; created: Record<string, string[]>; updated?: Record<string, string[]> } | null>(null);
   const [seeding, setSeeding]       = useState(false);
+  const [logoResult, setLogoResult] = useState<{ ok: boolean; fixed: string[] } | null>(null);
+  const [fixingLogo, setFixingLogo] = useState(false);
+
+  async function fixLogo() {
+    setFixingLogo(true);
+    setLogoResult(null);
+    try {
+      const r = await api.post("/admin/fix-logo");
+      setLogoResult(r.data);
+    } catch {
+      setLogoResult({ ok: false, fixed: [] });
+    } finally {
+      setFixingLogo(false);
+    }
+  }
 
   async function runSeed() {
     setSeeding(true);
@@ -119,6 +134,33 @@ export default function SettingsPage() {
                      " Todo ya estaba al día."}
                   </>
                 ) : "Error al instalar. Revisá los logs del backend."}
+              </div>
+            )}
+          </div>
+        )}
+
+        {user?.role === "admin" && (
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <h2 className="font-semibold text-gray-900 mb-1">Corregir logo en plantillas</h2>
+            <p className="text-gray-500 text-sm mb-4">
+              Reemplaza el logo SVG (no compatible con Gmail/Outlook) por la imagen PNG alojada en el backend.
+              Corre esto una sola vez después de desplegar.
+            </p>
+            <button
+              onClick={fixLogo}
+              disabled={fixingLogo}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-60 transition-colors"
+            >
+              <ImageOff size={14} className={fixingLogo ? "animate-pulse" : ""} />
+              {fixingLogo ? "Corrigiendo..." : "Corregir logos"}
+            </button>
+            {logoResult && (
+              <div className={`mt-3 px-4 py-3 rounded-lg text-sm ${logoResult.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                {logoResult.ok
+                  ? logoResult.fixed.length === 0
+                    ? "✓ No había plantillas con el logo SVG. Todo al día."
+                    : `✓ Logo corregido en: ${logoResult.fixed.join(", ")}`
+                  : "Error al corregir. Revisá los logs del backend."}
               </div>
             )}
           </div>

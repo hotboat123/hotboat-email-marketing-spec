@@ -1,7 +1,9 @@
+import re
 from datetime import datetime
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 from app.database import get_session
+from app.core.config import settings
 from app.core.deps import require_admin
 from app.models.user import User
 from app.models.template import Template
@@ -27,7 +29,7 @@ SEED_TEMPLATES = [
         "segment": "Todos los suscriptores",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
   <div style="background:#f9fafb;border-radius:16px;padding:44px 40px;text-align:center;margin-bottom:32px;border:1px solid #e5e7eb;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
+    <img src="__LOGO_PNG__" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
     <h1 style="color:#111;font-size:20px;font-weight:700;margin:0 0 10px;line-height:1.3;">Bienvenido/a a HotBoat, {{nombre or 'cliente'}}</h1>
     <p style="color:#555;font-size:16px;margin:0;">Nos alegra tenerte en nuestra comunidad</p>
   </div>
@@ -76,7 +78,7 @@ SEED_TEMPLATES = [
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
   <div style="background:#f9fafb;border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;border:1px solid #e5e7eb;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
+    <img src="__LOGO_PNG__" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
     <h1 style="color:#111;font-size:20px;font-weight:700;margin:0 0 8px;">¡Hola, {{nombre or 'cliente'}}! 🌸</h1>
     <p style="color:#555;font-size:16px;margin:0;">Nos alegra tenerte en la familia HotBoat</p>
   </div>
@@ -102,7 +104,7 @@ SEED_TEMPLATES = [
         "segment": "Mamás",
         "html": """<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 32px;">
   <div style="background:#fdf2f8;border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;border:1px solid #f9c6e0;">
-    <img src="https://hotboatchile.com/LOGO_HOTBOAT.svg" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
+    <img src="__LOGO_PNG__" alt="HotBoat" style="height:80px;width:auto;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />
     <h1 style="color:#111;font-size:20px;font-weight:700;margin:0 0 8px;">Feliz Día de la Madre 🌸</h1>
     <p style="color:#555;font-size:16px;margin:0;">{{nombre or 'cliente'}}, este día es tuyo. Te lo merecés todo.</p>
   </div>
@@ -161,6 +163,8 @@ def seed_templates(
     created = {"segments": [], "templates": [], "campaigns": []}
     updated = {"templates": []}
 
+    logo_url = f"{settings.BACKEND_PUBLIC_URL}/static/logo.png"
+
     # Segmentos
     seg_map: dict[str, int] = {}
     for s in SEED_SEGMENTS:
@@ -179,8 +183,9 @@ def seed_templates(
     # Plantillas y campañas
     for t in SEED_TEMPLATES:
         existing_tpl = session.exec(select(Template).where(Template.name == t["name"])).first()
+        html = t["html"].replace("__LOGO_PNG__", logo_url)
         if existing_tpl:
-            existing_tpl.html_content    = t["html"]
+            existing_tpl.html_content    = html
             existing_tpl.subject_default = t["subject"]
             existing_tpl.preview_text    = t["preview"]
             existing_tpl.updated_at      = now
@@ -189,7 +194,7 @@ def seed_templates(
             updated["templates"].append(t["name"])
         else:
             tpl = Template(name=t["name"], subject_default=t["subject"], preview_text=t["preview"],
-                           html_content=t["html"], created_by=current_user.id,
+                           html_content=html, created_by=current_user.id,
                            created_at=now, updated_at=now)
             session.add(tpl)
             session.flush()
@@ -252,3 +257,25 @@ def seed_templates(
 
     session.commit()
     return {"ok": True, "created": created, "updated": updated, "unsub_added": added_unsub, "fixed_failed_sends": fixed_sends}
+
+
+@router.post("/fix-logo")
+def fix_logo(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Replace SVG hotboatchile.com logo with hosted PNG in all templates."""
+    logo_url = f"{settings.BACKEND_PUBLIC_URL}/static/logo.png"
+    old_pattern = re.compile(r'https?://hotboatchile\.com/LOGO_HOTBOAT\.svg')
+    now = datetime.utcnow()
+    all_templates = session.exec(select(Template)).all()
+    fixed = []
+    for tpl in all_templates:
+        new_html = old_pattern.sub(logo_url, tpl.html_content or "")
+        if new_html != tpl.html_content:
+            tpl.html_content = new_html
+            tpl.updated_at = now
+            session.add(tpl)
+            fixed.append(tpl.name)
+    session.commit()
+    return {"ok": True, "fixed": fixed, "logo_url": logo_url}
