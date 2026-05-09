@@ -19,7 +19,7 @@ from app.models.campaign import Campaign, CampaignSend
 from app.models.contact import Contact
 from app.models.segment import Segment
 from app.models.template import Template
-from app.services.email_sender import _inject_footer, _unsub_headers, send_campaign_sync
+from app.services.email_sender import _inject_footer, _unsub_headers, send_campaign_sync, _fmt_nombre
 from app.services.segment_evaluator import evaluate_segment
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def _send_email(
         return
 
     vars_ = {
-        "nombre": contact.name or contact.email.split("@")[0],
+        "nombre": _fmt_nombre(contact.name, contact.email),
         "email": contact.email,
         "veces_hotboat": contact.veces_hotboat,
         "ultima_visita": str(contact.ultima_visita) if contact.ultima_visita else "",

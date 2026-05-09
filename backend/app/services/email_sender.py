@@ -14,6 +14,14 @@ from app.models.template import Template
 
 logger = logging.getLogger(__name__)
 
+
+def _fmt_nombre(name: str | None, email: str = "") -> str:
+    """Return title-cased first name only. Falls back to email prefix or 'cliente'."""
+    raw = (name or email.split("@")[0] or "cliente").strip()
+    first = raw.lower().title().split()[0]
+    return first
+
+
 BATCH_SIZE = 50
 RATE_DELAY = 0.25  # 4 emails/segundo — límite de Resend es 5/segundo
 
@@ -49,7 +57,7 @@ def _unsub_headers(email: str) -> dict:
 def render_html(html_content: str, contact: Contact) -> str:
     tpl = Jinja2Template(html_content)
     return tpl.render(
-        nombre=contact.name or "cliente",
+        nombre=_fmt_nombre(contact.name, contact.email),
         email=contact.email,
         ultima_visita=str(contact.ultima_visita) if contact.ultima_visita else "",
         veces_hotboat=contact.veces_hotboat,
@@ -62,7 +70,7 @@ def render_html(html_content: str, contact: Contact) -> str:
 def _send_one(campaign: Campaign, template: Template, contact: Contact, session: Session) -> None:
     resend.api_key = settings.RESEND_API_KEY
     html = _inject_footer(render_html(template.html_content, contact), contact.email)
-    subject = Jinja2Template(campaign.subject).render(nombre=contact.name or "")
+    subject = Jinja2Template(campaign.subject).render(nombre=_fmt_nombre(contact.name, contact.email))
 
     send = session.exec(
         select(CampaignSend).where(
