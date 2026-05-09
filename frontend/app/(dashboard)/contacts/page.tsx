@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { contactsApi, syncApi } from "@/lib/api";
 import { Contact } from "@/lib/types";
 import { formatDateTime, formatDate } from "@/lib/utils";
-import { Plus, Upload, Search, Users, RefreshCw, ChevronLeft, ChevronRight, FileCheck } from "lucide-react";
+import { Plus, Upload, Search, Users, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 const PAGE_SIZE = 50;
@@ -31,7 +31,6 @@ export default function ContactsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(0);
   const [syncResult, setSyncResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
-  const [tcResult, setTcResult] = useState<{ created: number; updated: number; skipped: number; no_appointment_match: number } | null>(null);
 
   // Simple debounce on search
   function handleSearch(val: string) {
@@ -59,15 +58,7 @@ export default function ContactsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contacts"] }),
   });
 
-  const tcMutation = useMutation({
-    mutationFn: (file: File) => syncApi.importTc(file),
-    onSuccess: (res) => {
-      setTcResult(res.data);
-      qc.invalidateQueries({ queryKey: ["contacts"] });
-    },
-  });
-
-  const syncMutation = useMutation({
+const syncMutation = useMutation({
     mutationFn: () => syncApi.run(),
     onSuccess: (res) => {
       setSyncResult(res.data);
@@ -81,13 +72,7 @@ export default function ContactsPage() {
     e.target.value = "";
   }
 
-  function handleTcFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) tcMutation.mutate(file);
-    e.target.value = "";
-  }
-
-  const hasNextPage = contacts.length === PAGE_SIZE;
+const hasNextPage = contacts.length === PAGE_SIZE;
   const hasPrevPage = page > 0;
 
   return (
@@ -108,14 +93,6 @@ export default function ContactsPage() {
             <Upload size={14} />
             Importar CSV
             <input type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
-          </label>
-          <label
-            className={`flex items-center gap-2 px-3.5 py-2 border border-blue-300 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-50 cursor-pointer transition-colors ${tcMutation.isPending ? "opacity-50 pointer-events-none" : ""}`}
-            title="Importa el CSV de Google Forms (Términos y Condiciones) y cruza cada asistente con su reserva"
-          >
-            <FileCheck size={14} />
-            {tcMutation.isPending ? "Importando T&C..." : "Importar T&C"}
-            <input type="file" accept=".csv" className="hidden" onChange={handleTcFile} />
           </label>
           <Link
             href="/contacts/new"
@@ -148,20 +125,6 @@ export default function ContactsPage() {
       {importMutation.data && (
         <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-3">
           Importados: {importMutation.data.data.created} nuevos · {importMutation.data.data.skipped} omitidos
-        </div>
-      )}
-      {tcMutation.isError && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
-          Error al importar T&C. Verifica que el archivo sea el CSV de Google Forms.
-        </div>
-      )}
-      {tcResult && (
-        <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-700 text-sm rounded-lg px-4 py-3 flex items-center justify-between">
-          <span>
-            T&C importados: <strong>{tcResult.created}</strong> nuevos · <strong>{tcResult.updated}</strong> actualizados
-            {tcResult.no_appointment_match > 0 && <> · <span className="text-blue-500">{tcResult.no_appointment_match} sin reserva asociada</span></>}
-          </span>
-          <button onClick={() => setTcResult(null)} className="text-blue-400 hover:text-blue-600 ml-4 text-xs">✕</button>
         </div>
       )}
 
