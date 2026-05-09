@@ -126,4 +126,9 @@ export const automationsApi = {
 export const syncApi = {
   run: () => api.post("/sync/run"),
   status: () => api.get("/sync/status"),
+  importTc: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post("/sync/tc-import", form);
+  },
 };
