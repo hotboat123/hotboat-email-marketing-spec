@@ -159,11 +159,13 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         _send_email(session, auto, contact, trigger_key, extra_vars=extra_vars)
 
 
+_BATCH_ORIGINS = {"Formulario T&C", "Sincronización HotBoat", ""}
+
+
 def _check_welcome(auto: Automation, session: Session) -> None:
-    """Fire welcome email to contacts created in the last polling window."""
+    """Fire welcome email to contacts created organically (popup/form), not batch imports."""
     config = auto.trigger_config or {}
     delay_hours = int(config.get("delay_hours", 0))
-    # Look at contacts created in the window that matches the delay
     window_end = datetime.utcnow() - timedelta(hours=delay_hours)
     window_start = window_end - timedelta(minutes=20)
 
@@ -176,6 +178,11 @@ def _check_welcome(auto: Automation, session: Session) -> None:
     ).all()
 
     for contact in contacts:
+        # Skip contacts imported in batch (TC form, sync, CSV) — only fire for
+        # organic signups via the popup/embed form (origin_utm is a URL or form name)
+        origin = (contact.origin_utm or "").strip()
+        if origin in _BATCH_ORIGINS or origin.startswith("Formulario #"):
+            continue
         trigger_key = f"welcome:{contact.id}"
         if _already_sent(session, auto.id, trigger_key):
             continue
