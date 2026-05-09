@@ -163,7 +163,7 @@ def seed_templates(
     created = {"segments": [], "templates": [], "campaigns": []}
     updated = {"templates": []}
 
-    logo_url = f"{settings.BACKEND_PUBLIC_URL}/static/logo.png"
+    logo_url = "https://hotboatchile.com/logo_hotboat_blanco.png"
 
     # Segmentos
     seg_map: dict[str, int] = {}
@@ -265,7 +265,7 @@ def fix_logo(
     current_user: User = Depends(require_admin),
 ):
     """Replace SVG hotboatchile.com logo with hosted PNG in all templates."""
-    logo_url = f"{settings.BACKEND_PUBLIC_URL}/static/logo.png"
+    logo_url = "https://hotboatchile.com/logo_hotboat_blanco.png"
     old_pattern = re.compile(r'https?://hotboatchile\.com/LOGO_HOTBOAT\.svg')
     now = datetime.utcnow()
     all_templates = session.exec(select(Template)).all()
