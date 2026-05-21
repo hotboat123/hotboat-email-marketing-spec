@@ -6,7 +6,8 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatDate(date: string | null | undefined): string {
   if (!date) return "—";
-  return new Date(date).toLocaleDateString("es-CL", {
+  const s = date.endsWith("Z") ? date : date + "Z";
+  return new Date(s).toLocaleDateString("es-CL", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -15,7 +16,8 @@ export function formatDate(date: string | null | undefined): string {
 
 export function formatDateTime(date: string | null | undefined): string {
   if (!date) return "—";
-  return new Date(date).toLocaleString("es-CL", {
+  const s = date.endsWith("Z") ? date : date + "Z";
+  return new Date(s).toLocaleString("es-CL", {
     day: "2-digit",
     month: "short",
     year: "numeric",
