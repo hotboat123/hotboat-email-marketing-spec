@@ -12,7 +12,10 @@ async function proxy(req: NextRequest): Promise<NextResponse> {
   const forward = new Headers();
   for (const [k, v] of req.headers.entries()) {
     const lower = k.toLowerCase();
-    if (!["host", "connection", "transfer-encoding", "content-length"].includes(lower)) {
+    // Skip accept-encoding: Node fetch auto-decompresses gzip, so forwarding it
+    // causes double-encoding — backend gzips, Node decodes, proxy re-sends decoded
+    // body with Content-Encoding: gzip still set → browser fails to decode.
+    if (!["host", "connection", "transfer-encoding", "content-length", "accept-encoding"].includes(lower)) {
       forward.set(k, v);
     }
   }
@@ -30,7 +33,8 @@ async function proxy(req: NextRequest): Promise<NextResponse> {
 
     const resHeaders = new Headers();
     for (const [k, v] of upstream.headers.entries()) {
-      if (!["transfer-encoding", "connection"].includes(k.toLowerCase())) {
+      // Also strip content-encoding from response — body is already decompressed by Node
+      if (!["transfer-encoding", "connection", "content-encoding"].includes(k.toLowerCase())) {
         resHeaders.set(k, v);
       }
     }
