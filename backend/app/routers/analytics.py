@@ -37,6 +37,43 @@ def overview(session: Session = Depends(get_session), _: User = Depends(get_curr
     }
 
 
+@router.get("/asuntos")
+def subject_analytics(session: Session = Depends(get_session), _: User = Depends(get_current_user)):
+    """Ranking de asuntos por open rate para todas las campañas enviadas."""
+    campaigns = session.exec(
+        select(Campaign).where(Campaign.status == "sent").order_by(Campaign.sent_at.desc())
+    ).all()
+    result = []
+    for c in campaigns:
+        total = session.exec(
+            select(func.count(CampaignSend.id)).where(CampaignSend.campaign_id == c.id)
+        ).one()
+        if not total:
+            continue
+        opened = session.exec(
+            select(func.count(CampaignSend.id)).where(
+                CampaignSend.campaign_id == c.id,
+                CampaignSend.opened_at.isnot(None),
+            )
+        ).one()
+        clicked = session.exec(
+            select(func.count(CampaignSend.id)).where(
+                CampaignSend.campaign_id == c.id,
+                CampaignSend.clicked_at.isnot(None),
+            )
+        ).one()
+        result.append({
+            "campaign_id": c.id,
+            "subject": c.subject,
+            "campaign_name": c.name,
+            "sent_at": c.sent_at,
+            "sent_count": total,
+            "open_rate": round(opened / total * 100, 1),
+            "click_rate": round(clicked / total * 100, 1),
+        })
+    return result
+
+
 @router.get("/campaigns/recent")
 def recent_campaigns(session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     campaigns = session.exec(

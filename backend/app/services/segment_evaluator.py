@@ -1,36 +1,42 @@
 from typing import List, Optional, Any
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, type_coerce
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Session, select
 from app.models.contact import Contact
 
 # Campos permitidos en condiciones de segmento
 FIELD_MAP = {
-    "id":            Contact.id,
-    "email":          Contact.email,
-    "language":       Contact.language,
-    "origin_utm":     Contact.origin_utm,
-    "opted_in":       Contact.opted_in,
-    "veces_hotboat":  Contact.veces_hotboat,
-    "ultima_visita":  Contact.ultima_visita,
-    "ha_alojamiento": Contact.ha_alojamiento,
-    "ticket_medio":   Contact.ticket_medio,
-    "name":           Contact.name,
+    "id":               Contact.id,
+    "email":            Contact.email,
+    "language":         Contact.language,
+    "origin_utm":       Contact.origin_utm,
+    "opted_in":         Contact.opted_in,
+    "veces_hotboat":    Contact.veces_hotboat,
+    "ultima_visita":    Contact.ultima_visita,
+    "ha_alojamiento":   Contact.ha_alojamiento,
+    "ticket_medio":     Contact.ticket_medio,
+    "name":             Contact.name,
+    "location":         Contact.location,
+    "birthday":         Contact.birthday,
+    "extras_favoritos": Contact.extras_favoritos,
 }
 
-STRING_FIELDS = {"email", "language", "origin_utm", "name"}
+STRING_FIELDS = {"email", "language", "origin_utm", "name", "location"}
 
 OPS = {
-    "eq":       lambda col, v: col == v,
-    "neq":      lambda col, v: col != v,
-    "gt":       lambda col, v: col > v,
-    "gte":      lambda col, v: col >= v,
-    "lt":       lambda col, v: col < v,
-    "lte":      lambda col, v: col <= v,
-    "contains": lambda col, v: col.ilike(f"%{v}%"),
-    "starts":   lambda col, v: col.ilike(f"{v}%"),
-    "in":       lambda col, v: col.in_(v),
-    "is_null":  lambda col, v: col.is_(None),
-    "not_null": lambda col, v: col.isnot(None),
+    "eq":             lambda col, v: col == v,
+    "neq":            lambda col, v: col != v,
+    "gt":             lambda col, v: col > v,
+    "gte":            lambda col, v: col >= v,
+    "lt":             lambda col, v: col < v,
+    "lte":            lambda col, v: col <= v,
+    "contains":       lambda col, v: col.ilike(f"%{v}%"),
+    "starts":         lambda col, v: col.ilike(f"{v}%"),
+    "in":             lambda col, v: col.in_(v),
+    "is_null":        lambda col, v: col.is_(None),
+    "not_null":       lambda col, v: col.isnot(None),
+    # Para columnas ARRAY (extras_favoritos): col @> ARRAY['valor']
+    "array_contains": lambda col, v: col.contains([v]),
 }
 
 
@@ -51,7 +57,7 @@ def _build_clause(node: dict) -> Optional[Any]:
     # Soporte para custom_fields.{clave} — p. ej. custom_fields.es_mama
     if field and field.startswith("custom_fields."):
         key = field[len("custom_fields."):]
-        col = Contact.custom_fields[key].astext
+        col = type_coerce(Contact.custom_fields, JSONB)[key].astext
         fn = OPS.get(op)
         if fn is None:
             return None

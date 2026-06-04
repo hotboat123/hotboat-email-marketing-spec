@@ -94,10 +94,21 @@ export const campaignsApi = {
   sends: (id: number) => api.get(`/campaigns/${id}/sends`),
 };
 
+// Marca
+export const marcaApi = {
+  list: (categoria?: string) => api.get("/marca", { params: categoria ? { categoria } : {} }),
+  create: (data: { categoria: string; nombre: string; valor: string; descripcion?: string }) =>
+    api.post("/marca", data),
+  update: (id: number, data: Partial<{ categoria: string; nombre: string; valor: string; descripcion: string }>) =>
+    api.put(`/marca/${id}`, data),
+  remove: (id: number) => api.delete(`/marca/${id}`),
+};
+
 // Analytics
 export const analyticsApi = {
   overview: () => api.get("/analytics/overview"),
   recentCampaigns: () => api.get("/analytics/campaigns/recent"),
+  asuntos: () => api.get("/analytics/asuntos"),
 };
 
 // Signup Forms

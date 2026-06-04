@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.database import create_db_and_tables
-from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync, automations, forms, admin
+from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync, automations, forms, admin, brand_assets
+from app.models import brand_asset as _brand_asset_models  # noqa: registers table
 
 app = FastAPI(title="HotBoat Email Marketing API", version="1.0.0", redirect_slashes=False)
 
@@ -30,6 +31,7 @@ app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(automations.router, prefix="/api/automations", tags=["automations"])
 app.include_router(forms.router, prefix="/api/forms", tags=["forms"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(brand_assets.router, prefix="/api/marca", tags=["marca"])
 
 
 @app.on_event("startup")

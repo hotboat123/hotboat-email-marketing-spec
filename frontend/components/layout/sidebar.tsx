@@ -11,6 +11,8 @@ import {
   Send,
   Zap,
   MousePointerClick,
+  BarChart2,
+  Palette,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -25,6 +27,8 @@ const nav = [
   { href: "/campaigns",    label: "Campañas",         icon: Send },
   { href: "/automations",  label: "Automatizaciones", icon: Zap },
   { href: "/forms",        label: "Formularios",      icon: MousePointerClick },
+  { href: "/asuntos",     label: "Asuntos",          icon: BarChart2 },
+  { href: "/marca",       label: "Marca",            icon: Palette },
 ];
 
 interface SidebarProps {

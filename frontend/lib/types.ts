@@ -213,3 +213,23 @@ export interface OverviewStats {
   segments: number;
   templates: number;
 }
+
+export interface BrandAsset {
+  id: number;
+  categoria: string;
+  nombre: string;
+  valor: string;
+  descripcion: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubjectAnalytics {
+  campaign_id: number;
+  subject: string;
+  campaign_name: string;
+  sent_at: string;
+  sent_count: number;
+  open_rate: number;
+  click_rate: number;
+}

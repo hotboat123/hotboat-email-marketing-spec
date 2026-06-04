@@ -1,8 +1,10 @@
 """
 Automation engine — runs every 15 minutes in a background thread.
-Implements 4 trigger types: abandoned_booking, welcome, post_visit, reactivation.
+Implements 5 trigger types: abandoned_booking, welcome, post_visit, reactivation,
+tc_signature.
 """
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timedelta
@@ -23,6 +25,9 @@ from app.services.email_sender import _inject_footer, _unsub_headers, send_campa
 from app.services.segment_evaluator import evaluate_segment
 
 logger = logging.getLogger(__name__)
+
+# IDs de campañas que ya recibieron el recordatorio de 24h (se resetea al reiniciar el proceso)
+_reminder_sent: set = set()
 
 
 def _source_engine():
@@ -245,12 +250,281 @@ def _check_reactivation(auto: Automation, session: Session) -> None:
         _send_email(session, auto, contact, trigger_key)
 
 
+def _resolve_appointment_from_booking_ref(booking_ref: str, src_engine):
+    """
+    Try 3 join strategies to find the booking in all_appointments.
+      1. booking_ref = 'AA-{id}' → WHERE id = {number}
+      2. TRIM(source_id) = booking_ref
+      3. (legacy) hotboat_appointments.booking_ref (only if present)
+    Returns a Row or None.
+    """
+    _COLS = """
+        nombre_cliente, servicio, fecha, hora, ingreso_total,
+        extras_json, customer_language, ciudad_origen, como_supieron
+    """
+    ref = (booking_ref or "").strip()
+    if not ref:
+        return None
+
+    with src_engine.connect() as conn:
+        # Strategy 1: AA-{number}
+        m = re.match(r"^AA-(\d+)$", ref, re.IGNORECASE)
+        if m:
+            row = conn.execute(
+                text(f"SELECT {_COLS} FROM all_appointments WHERE id = :id LIMIT 1"),
+                {"id": int(m.group(1))},
+            ).fetchone()
+            if row:
+                return row
+
+        # Strategy 2: source_id match (web bookings)
+        row = conn.execute(
+            text(f"SELECT {_COLS} FROM all_appointments WHERE TRIM(source_id) = :ref ORDER BY created_at DESC LIMIT 1"),
+            {"ref": ref},
+        ).fetchone()
+        if row:
+            return row
+
+        # Strategy 3: legacy hotboat_appointments table (if it exists)
+        try:
+            row = conn.execute(
+                text(f"""
+                    SELECT aa.nombre_cliente, aa.servicio, aa.fecha, aa.hora, aa.ingreso_total,
+                           aa.extras_json, aa.customer_language, aa.ciudad_origen, aa.como_supieron
+                    FROM hotboat_appointments ha
+                    JOIN all_appointments aa ON aa.source = 'hotboat' AND TRIM(aa.source_id) = ha.source_id
+                    WHERE ha.booking_ref = :ref
+                    ORDER BY aa.created_at DESC LIMIT 1
+                """),
+                {"ref": ref},
+            ).fetchone()
+            if row:
+                return row
+        except Exception:
+            pass
+
+    return None
+
+
+def _check_tc_signatures(auto: Automation, session: Session) -> None:
+    """
+    5 hours after a T&C signature is created, resolve the associated booking,
+    upsert the contact with enriched data (ticket, extras, location, language…)
+    and optionally send an email if send_email=true in trigger_config.
+
+    trigger_config:
+      delay_hours   (default 5)   — minimum age of signature before processing
+      lookback_hours (default 48) — how far back to scan for unprocessed sigs
+      send_email    (default false)
+    """
+    config = auto.trigger_config or {}
+    delay_hours = int(config.get("delay_hours", 5))
+    lookback_hours = int(config.get("lookback_hours", 48))
+    send_email = bool(config.get("send_email", False))
+
+    now = datetime.utcnow()
+    cutoff_recent = now - timedelta(hours=delay_hours)
+    cutoff_old = now - timedelta(hours=delay_hours + lookback_hours)
+
+    try:
+        src = _source_engine()
+        with src.connect() as conn:
+            sigs = conn.execute(
+                text("""
+                    SELECT id, booking_ref, passenger_name, passenger_email,
+                           passenger_phone, passenger_birthday
+                    FROM hotboat_signatures
+                    WHERE accepted_tc = true
+                      AND passenger_email IS NOT NULL
+                      AND passenger_email <> ''
+                      AND created_at <= :recent
+                      AND created_at >= :old
+                    ORDER BY created_at
+                """),
+                {"recent": cutoff_recent, "old": cutoff_old},
+            ).fetchall()
+    except Exception as exc:
+        logger.error("Automation %d tc_signature: cannot read source DB: %s", auto.id, exc)
+        return
+
+    for sig in sigs:
+        trigger_key = f"tc_sig:{sig.id}"
+        if _already_sent(session, auto.id, trigger_key):
+            continue
+
+        email = (sig.passenger_email or "").strip().lower()
+        if not email or "@" not in email:
+            continue
+
+        appt = _resolve_appointment_from_booking_ref(sig.booking_ref, src)
+
+        # ── Extract enrichment ────────────────────────────────────────────
+        ultima_visita = None
+        ticket_medio = None
+        location = None
+        language = None
+        extras = None
+        ha_alojamiento = False
+
+        if appt:
+            ultima_visita = appt.fecha
+            if appt.ingreso_total:
+                ticket_medio = float(appt.ingreso_total)
+            location = (appt.ciudad_origen or "").strip() or None
+            language = (appt.customer_language or "").strip() or None
+            if appt.extras_json and isinstance(appt.extras_json, dict):
+                extras = [k for k in appt.extras_json if not k.startswith("aloj__")] or None
+                ha_alojamiento = any(k.startswith("aloj__") for k in appt.extras_json)
+
+        # ── Upsert contact ────────────────────────────────────────────────
+        now_dt = datetime.utcnow()
+        name = (sig.passenger_name or "").strip() or None
+        phone = (sig.passenger_phone or "").strip() or None
+        birthday = sig.passenger_birthday
+
+        existing = session.exec(select(Contact).where(Contact.email == email)).first()
+        if existing:
+            if name and not existing.name:
+                existing.name = name
+            if phone and not existing.phone:
+                existing.phone = phone
+            if birthday and not existing.birthday:
+                existing.birthday = birthday
+            if ultima_visita and (not existing.ultima_visita or ultima_visita > existing.ultima_visita):
+                existing.ultima_visita = ultima_visita
+            if ticket_medio and not existing.ticket_medio:
+                existing.ticket_medio = ticket_medio
+            if location and not existing.location:
+                existing.location = location
+            if language and not existing.language:
+                existing.language = language
+            if extras and not existing.extras_favoritos:
+                existing.extras_favoritos = extras
+            if ha_alojamiento:
+                existing.ha_alojamiento = True
+            existing.opted_in = True
+            if not existing.opted_in_at:
+                existing.opted_in_at = now_dt
+            existing.updated_at = now_dt
+            session.add(existing)
+            contact = existing
+        else:
+            contact = Contact(
+                email=email,
+                name=name,
+                phone=phone,
+                birthday=birthday,
+                language=language or "es",
+                origin_utm="Formulario T&C",
+                location=location,
+                opted_in=True,
+                opted_in_at=now_dt,
+                veces_hotboat=1 if appt else 0,
+                ultima_visita=ultima_visita,
+                ha_alojamiento=ha_alojamiento,
+                extras_favoritos=extras,
+                ticket_medio=ticket_medio,
+                created_at=now_dt,
+                updated_at=now_dt,
+            )
+            session.add(contact)
+            session.flush()  # get contact.id
+
+        # ── Record run (dedup guard) ───────────────────────────────────────
+        run = AutomationRun(
+            automation_id=auto.id,
+            contact_id=contact.id,
+            contact_email=email,
+            trigger_key=trigger_key,
+            triggered_at=now_dt,
+            executed_at=now_dt,
+            status="sent",
+        )
+        session.add(run)
+
+        # ── Optionally send email ─────────────────────────────────────────
+        if send_email:
+            _send_email(session, auto, contact, trigger_key)
+
+        logger.info(
+            "Automation %d tc_signature: processed sig %d → contact %s (appt=%s)",
+            auto.id, sig.id, email, "found" if appt else "not found",
+        )
+
+    session.commit()
+
+
 HANDLERS = {
     "abandoned_booking": _check_abandoned_booking,
     "welcome": _check_welcome,
     "post_visit": _check_post_visit,
     "reactivation": _check_reactivation,
+    "tc_signature": _check_tc_signatures,
 }
+
+
+def _notify_campaign_reminder(campaign: Campaign) -> None:
+    """Envía alerta a NOTIFY_EMAIL 24h antes del envío de una campaña."""
+    if not settings.NOTIFY_EMAIL:
+        return
+    try:
+        resend.api_key = settings.RESEND_API_KEY
+        scheduled_str = campaign.scheduled_at.strftime("%d/%m/%Y %H:%M") if campaign.scheduled_at else "?"
+        resend.Emails.send({
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [settings.NOTIFY_EMAIL],
+            "subject": f"⏰ Mañana se envía: {campaign.name}",
+            "html": (
+                f"<p>La campaña <strong>{campaign.name}</strong> está programada para mañana "
+                f"a las <strong>{scheduled_str} UTC</strong>.</p>"
+                f"<p>Si querés pausarla o modificarla, podés hacerlo desde "
+                f"<a href='{settings.FRONTEND_URL}/campaigns/{campaign.id}'>el panel</a> "
+                f"antes de que se dispare.</p>"
+            ),
+        })
+        logger.info("Recordatorio enviado para campaña %d (%s)", campaign.id, campaign.name)
+    except Exception as exc:
+        logger.warning("No se pudo enviar recordatorio para campaña %d: %s", campaign.id, exc)
+
+
+def _notify_campaign_fired(campaign: Campaign, contact_count: int) -> None:
+    """Envía alerta a NOTIFY_EMAIL cuando una campaña comienza a enviarse."""
+    if not settings.NOTIFY_EMAIL:
+        return
+    try:
+        resend.api_key = settings.RESEND_API_KEY
+        resend.Emails.send({
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [settings.NOTIFY_EMAIL],
+            "subject": f"🚀 Enviando ahora: {campaign.name}",
+            "html": (
+                f"<p>La campaña <strong>{campaign.name}</strong> acaba de comenzar su envío "
+                f"a <strong>{contact_count}</strong> contactos.</p>"
+                f"<p>Podés seguir el progreso en tiempo real en "
+                f"<a href='{settings.FRONTEND_URL}/campaigns/{campaign.id}'>el panel</a>.</p>"
+            ),
+        })
+    except Exception as exc:
+        logger.warning("No se pudo enviar notificación de envío para campaña %d: %s", campaign.id, exc)
+
+
+def run_campaign_reminders() -> None:
+    """Detecta campañas programadas para las próximas 24h y envía recordatorio (una vez por campaña)."""
+    with Session(db_engine) as session:
+        now = datetime.utcnow()
+        window_start = now + timedelta(hours=23)
+        window_end = now + timedelta(hours=25)
+        upcoming = session.exec(
+            select(Campaign).where(
+                Campaign.status == "scheduled",
+                Campaign.scheduled_at >= window_start,
+                Campaign.scheduled_at <= window_end,
+            )
+        ).all()
+        for campaign in upcoming:
+            if campaign.id not in _reminder_sent:
+                _notify_campaign_reminder(campaign)
+                _reminder_sent.add(campaign.id)
 
 
 def run_scheduled_campaigns() -> None:
@@ -291,6 +565,7 @@ def run_scheduled_campaigns() -> None:
                 contact_ids = [c.id for c in to_send]
                 send_campaign_sync(campaign.id, contact_ids, len(contacts))
                 logger.info("Scheduled campaign %d fired to %d contacts", campaign.id, len(contact_ids))
+                _notify_campaign_fired(campaign, len(contact_ids))
             except Exception as exc:
                 logger.exception("Scheduled campaign %d error: %s", campaign.id, exc)
 
@@ -317,6 +592,7 @@ def start_scheduler() -> None:
             try:
                 run_automations()
                 run_scheduled_campaigns()
+                run_campaign_reminders()
             except Exception as exc:
                 logger.exception("Automation scheduler error: %s", exc)
             time.sleep(60)  # 1 minute
