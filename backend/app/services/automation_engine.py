@@ -528,7 +528,8 @@ def run_campaign_reminders() -> None:
 
 
 def run_scheduled_campaigns() -> None:
-    """Fire campaigns whose scheduled_at has passed and are still in 'scheduled' status."""
+    """Fire campaigns whose scheduled_at has passed and are still in 'scheduled' status.
+    Also retries campaigns stuck in 'sending' for more than 10 minutes (crash recovery)."""
     with Session(db_engine) as session:
         now = datetime.utcnow()
         due = session.exec(
@@ -537,6 +538,29 @@ def run_scheduled_campaigns() -> None:
                 Campaign.scheduled_at <= now,
             )
         ).all()
+
+        # Pick up campaigns stuck in 'sending' for > 10 min with no recent sends
+        stuck_cutoff = now - timedelta(minutes=10)
+        stuck = session.exec(
+            select(Campaign).where(
+                Campaign.status == "sending",
+                Campaign.scheduled_at <= stuck_cutoff,
+            )
+        ).all()
+        # Only retry if no CampaignSend was recorded in the last 10 min
+        for c in stuck:
+            recent_send = session.exec(
+                select(CampaignSend).where(
+                    CampaignSend.campaign_id == c.id,
+                    CampaignSend.sent_at >= stuck_cutoff,
+                )
+            ).first()
+            if not recent_send:
+                logger.warning("Campaign %d stuck in 'sending' — resetting to 'scheduled' for retry", c.id)
+                c.status = "scheduled"
+                session.add(c)
+                session.commit()
+                due = list(due) + [c]
         for campaign in due:
             try:
                 seg = session.get(Segment, campaign.segment_id)
