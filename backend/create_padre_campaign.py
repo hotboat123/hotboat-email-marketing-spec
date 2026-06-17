@@ -12,6 +12,8 @@ load_dotenv()
 
 from sqlmodel import Session, select
 from app.database import engine, create_db_and_tables
+from app.models.user import User  # noqa: registra tabla users para FK
+from app.models.contact import Contact  # noqa: registra tabla contacts para FK
 from app.models.template import Template
 from app.models.campaign import Campaign
 from app.models.segment import Segment
