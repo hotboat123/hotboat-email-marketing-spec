@@ -129,6 +129,7 @@ export const automationsApi = {
   update: (id: number, data: unknown) => api.patch(`/automations/${id}`, data),
   delete: (id: number) => api.delete(`/automations/${id}`),
   toggle: (id: number) => api.post(`/automations/${id}/toggle`),
+  test: (id: number) => api.post(`/automations/${id}/test`),
   runs: (id: number) => api.get(`/automations/${id}/runs`),
   stats: (id: number) => api.get(`/automations/${id}/stats`),
 };

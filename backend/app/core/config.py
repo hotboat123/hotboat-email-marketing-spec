@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Si los datos fuente están en otra DB, ponla aquí; si no, usa la misma DATABASE_URL
     HOTBOAT_DATABASE_URL: str = ""
     NOTIFY_EMAIL: str = ""  # Email del admin que recibe alertas (desuscripciones, etc.)
+    # WooCommerce REST API — necesario para generar links de pago directo en carrito abandonado
+    WOO_URL: str = "https://hotboatchile.com"
+    WOO_CK: str = ""   # consumer key  (WooCommerce → Ajustes → Avanzado → REST API)
+    WOO_CS: str = ""   # consumer secret
 
     class Config:
         env_file = ".env"

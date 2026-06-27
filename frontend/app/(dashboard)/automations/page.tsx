@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { automationsApi, templatesApi } from "@/lib/api";
 import { Automation, AutomationStats, Template } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
-import { Plus, Zap, Play, Pause, Trash2, ChevronDown, ChevronUp, Pencil, Save, X } from "lucide-react";
+import { Plus, Zap, Play, Pause, Trash2, ChevronDown, ChevronUp, Pencil, Save, X, Send } from "lucide-react";
 import Link from "next/link";
 
 const TRIGGER_LABELS: Record<string, { label: string; description: string; color: string }> = {
@@ -17,7 +17,7 @@ const TRIGGER_LABELS: Record<string, { label: string; description: string; color
   welcome: {
     label: "Bienvenida",
     description: "Cuando se añade un nuevo contacto",
-    color: "bg-blue-100 text-blue-700",
+    color: "bg-brand-100 text-brand-700",
   },
   post_visit: {
     label: "Post-visita",
@@ -74,7 +74,7 @@ function EditPanel({
   const cfg = form.trigger_config as Record<string, number>;
 
   return (
-    <div className="border-t border-brand-100 bg-blue-50 px-5 py-4 space-y-3">
+    <div className="border-t border-brand-100 bg-brand-50 px-5 py-4 space-y-3">
       <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider">Editar automatización</p>
 
       <div className="grid grid-cols-2 gap-3">
@@ -208,9 +208,23 @@ function AutomationRow({ auto, templates }: { auto: Automation; templates: Templ
     staleTime: 60_000,
   });
 
+  const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error">("idle");
+
   const toggleMutation = useMutation({
     mutationFn: () => automationsApi.toggle(auto.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["automations"] }),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () => automationsApi.test(auto.id),
+    onSuccess: () => {
+      setTestStatus("ok");
+      setTimeout(() => setTestStatus("idle"), 3000);
+    },
+    onError: () => {
+      setTestStatus("error");
+      setTimeout(() => setTestStatus("idle"), 3000);
+    },
   });
 
   const updateMutation = useMutation({
@@ -256,7 +270,12 @@ function AutomationRow({ auto, templates }: { auto: Automation; templates: Templ
           <p className="text-sm text-gray-500 mt-0.5">{configSummary(auto)}</p>
           <p className="text-xs text-gray-400 mt-0.5 truncate">Asunto: {auto.subject}</p>
           {tplName && (
-            <p className="text-xs text-gray-400 mt-0.5 truncate">Plantilla: <span className="text-gray-600">{tplName}</span></p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate">
+              Plantilla:{" "}
+              <Link href={`/templates/${auto.template_id}`} className="text-brand-600 hover:underline">
+                {tplName}
+              </Link>
+            </p>
           )}
         </div>
 
@@ -275,6 +294,28 @@ function AutomationRow({ auto, templates }: { auto: Automation; templates: Templ
             className={`p-2 rounded-lg border transition-colors ${editing ? "border-brand-400 bg-brand-50 text-brand-600" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
           >
             <Pencil size={14} />
+          </button>
+          <button
+            onClick={() => testMutation.mutate()}
+            disabled={testMutation.isPending || !auto.template_id}
+            title={
+              !auto.template_id
+                ? "Asigná una plantilla primero"
+                : testStatus === "ok"
+                ? "¡Enviado!"
+                : testStatus === "error"
+                ? "Error al enviar"
+                : "Enviar email de prueba al mail de pruebas"
+            }
+            className={`p-2 rounded-lg border transition-colors disabled:opacity-50 ${
+              testStatus === "ok"
+                ? "border-green-300 bg-green-50 text-green-600"
+                : testStatus === "error"
+                ? "border-red-300 bg-red-50 text-red-500"
+                : "border-brand-200 text-brand-500 hover:bg-brand-50"
+            }`}
+          >
+            <Send size={14} />
           </button>
           <button
             onClick={() => toggleMutation.mutate()}

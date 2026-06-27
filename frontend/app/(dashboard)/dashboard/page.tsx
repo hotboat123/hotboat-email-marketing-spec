@@ -74,7 +74,7 @@ export default function DashboardPage() {
           value={overview?.contacts.opted_in.toLocaleString() ?? "—"}
           sub={`${overview?.contacts.total.toLocaleString()} total`}
           icon={Users}
-          color="bg-blue-500"
+          color="bg-brand-400"
         />
         <StatCard
           label="Campañas enviadas"

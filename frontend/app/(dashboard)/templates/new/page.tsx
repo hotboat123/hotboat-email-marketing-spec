@@ -74,7 +74,7 @@ export default function NewTemplatePage() {
             </div>
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-700">
+          <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 text-xs text-brand-700">
             <p className="font-semibold mb-2">Variables disponibles:</p>
             <ul className="space-y-0.5 font-mono">
               <li>{"{{nombre}}"} — nombre del contacto</li>
