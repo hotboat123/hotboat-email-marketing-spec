@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 _reminder_sent: set = set()
 
 
-_WOO_FALLBACK = "https://hotboatchile.com"
+_WOO_FALLBACK = "https://hotboat.cl"
 _WOO_STATUSES = {"pending", "on-hold", "failed"}
 
 
