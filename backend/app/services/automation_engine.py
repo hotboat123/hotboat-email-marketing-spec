@@ -124,6 +124,7 @@ def _send_email(
         **(extra_vars or {}),
     }
     html = _inject_footer(JTemplate(tpl.html_content).render(**vars_), contact.email)
+    subject = JTemplate(automation.subject).render(**vars_)
     resend.api_key = settings.RESEND_API_KEY
 
     run = AutomationRun(
@@ -137,7 +138,7 @@ def _send_email(
         result = resend.Emails.send({
             "from": settings.RESEND_FROM_EMAIL,
             "to": [contact.email],
-            "subject": automation.subject,
+            "subject": subject,
             "html": html,
             "headers": _unsub_headers(contact.email),
         })
