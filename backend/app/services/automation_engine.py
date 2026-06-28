@@ -31,38 +31,62 @@ logger = logging.getLogger(__name__)
 _reminder_sent: set = set()
 
 
-_WOO_FALLBACK = "https://hotboatchile.com/reservar"
+_WOO_FALLBACK = "https://hotboatchile.com"
+_WOO_STATUSES = {"pending", "on-hold", "failed"}
 
 
-def _get_woo_payment_link(source_id: str | None) -> str:
+def _build_pay_link(woo_url: str, order_id, order_key: str) -> str:
+    return f"{woo_url}/es/checkout/order-pay/{order_id}/?pay_for_order=true&key={order_key}"
+
+
+def _get_woo_payment_link(source_id: str | None, email: str | None = None) -> str:
     """
-    Llama a la WooCommerce REST API para obtener el order_key de una orden
-    y devuelve la URL directa de pago. Si la orden ya fue pagada o falla
-    la API, devuelve el fallback genérico de reserva.
+    Obtiene la URL directa de pago de WooCommerce usando dos estrategias:
+      1. Si source_id es numérico, busca la orden por ID en la REST API.
+      2. Si falla o source_id no es numérico, busca las órdenes pendientes del email.
+    Devuelve el fallback si ninguna estrategia funciona o las credenciales no están configuradas.
     """
-    if not source_id or not settings.WOO_CK or not settings.WOO_CS:
+    if not settings.WOO_CK or not settings.WOO_CS:
         return _WOO_FALLBACK
+
     woo_url = settings.WOO_URL.rstrip("/")
-    try:
-        r = httpx.get(
-            f"{woo_url}/wp-json/wc/v3/orders/{source_id}",
-            auth=(settings.WOO_CK, settings.WOO_CS),
-            timeout=8,
-        )
-        r.raise_for_status()
-        data = r.json()
-    except Exception as exc:
-        logger.warning("WooCommerce API error for order %s: %s", source_id, exc)
-        return _WOO_FALLBACK
+    auth = (settings.WOO_CK, settings.WOO_CS)
 
-    if data.get("status") not in ("pending", "on-hold", "failed"):
-        return _WOO_FALLBACK  # ya pagada o cancelada — no reenviar link
+    # Estrategia 1: buscar por source_id si parece un order ID numérico
+    if source_id and str(source_id).strip().isdigit():
+        try:
+            r = httpx.get(
+                f"{woo_url}/wp-json/wc/v3/orders/{source_id}",
+                auth=auth, timeout=8,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                key = data.get("order_key", "")
+                if data.get("status") in _WOO_STATUSES and key:
+                    return _build_pay_link(woo_url, source_id, key)
+        except Exception as exc:
+            logger.warning("WooCommerce lookup by source_id %s failed: %s", source_id, exc)
 
-    order_key = data.get("order_key", "")
-    if not order_key:
-        return _WOO_FALLBACK
+    # Estrategia 2: buscar por email del cliente
+    if email:
+        try:
+            r = httpx.get(
+                f"{woo_url}/wp-json/wc/v3/orders",
+                params={"email": email, "status": "pending,on-hold,failed", "per_page": 3, "orderby": "date", "order": "desc"},
+                auth=auth, timeout=8,
+            )
+            if r.status_code == 200:
+                orders = r.json()
+                if orders:
+                    o = orders[0]
+                    order_id = o.get("id")
+                    key = o.get("order_key", "")
+                    if order_id and key:
+                        return _build_pay_link(woo_url, order_id, key)
+        except Exception as exc:
+            logger.warning("WooCommerce lookup by email %s failed: %s", email, exc)
 
-    return f"{woo_url}/es/checkout/order-pay/{source_id}/?pay_for_order=true&key={order_key}"
+    return _WOO_FALLBACK
 
 
 def _source_engine():
@@ -154,7 +178,7 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
             rows = conn.execute(text("""
                 SELECT id, email, nombre_cliente, servicio, fecha, hora,
                        num_adultos, num_ninos, ingreso_total, created_at,
-                       source_id
+                       payment_order_id
                 FROM all_appointments
                 WHERE status = 'pending_payment'
                   AND (paid_at IS NULL OR payment_status != 'completed')
@@ -188,7 +212,7 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         if ninos:
             personas_str += f" + {ninos} niño{'s' if ninos != 1 else ''}"
 
-        pay_url = _get_woo_payment_link(str(row.source_id).strip() if row.source_id else None)
+        pay_url = _get_woo_payment_link(str(row.payment_order_id).strip() if row.payment_order_id else None, email=email)
         extra_vars = {
             "servicio": row.servicio or "tu experiencia",
             "fecha_reserva": fecha_str,
