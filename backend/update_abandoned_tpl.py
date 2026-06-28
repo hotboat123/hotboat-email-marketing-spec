@@ -56,7 +56,7 @@ HTML = """<!DOCTYPE html>
             <td style="padding:20px;">
               <table width="100%" cellpadding="0" cellspacing="0">
 
-                <!-- Servicio -->
+                <!-- Experiencia + personas -->
                 <tr>
                   <td style="padding:10px 0;border-bottom:1px solid #d6f0ee;">
                     <table width="100%" cellpadding="0" cellspacing="0">
@@ -64,7 +64,7 @@ HTML = """<!DOCTYPE html>
                         <td style="width:28px;vertical-align:middle;font-size:18px;">&#x1F6A4;</td>
                         <td style="vertical-align:middle;padding-left:8px;">
                           <p style="margin:0;font-size:11px;color:#5fb8ae;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">Experiencia</p>
-                          <p style="margin:3px 0 0;font-size:15px;color:#235e58;font-weight:700;">{{servicio}}</p>
+                          <p style="margin:3px 0 0;font-size:15px;color:#235e58;font-weight:700;">{{titulo_reserva}}</p>
                         </td>
                       </tr>
                     </table>
@@ -89,31 +89,34 @@ HTML = """<!DOCTYPE html>
                   </td>
                 </tr>
 
-                <!-- Personas -->
+                <!-- Extras (se omite si está vacío) -->
+                {% if extras_html %}
                 <tr>
                   <td style="padding:10px 0;border-bottom:1px solid #d6f0ee;">
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td style="width:28px;vertical-align:middle;font-size:18px;">&#x1F465;</td>
-                        <td style="vertical-align:middle;padding-left:8px;">
-                          <p style="margin:0;font-size:11px;color:#5fb8ae;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">Pasajeros</p>
-                          <p style="margin:3px 0 0;font-size:15px;color:#235e58;font-weight:700;">{{personas}}</p>
-                        </td>
-                      </tr>
-                    </table>
+                    {{extras_html}}
                   </td>
                 </tr>
+                {% endif %}
 
-                <!-- Total -->
+                <!-- Precios -->
                 <tr>
                   <td style="padding:14px 0 4px;">
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
+                        <td style="vertical-align:middle;padding-bottom:8px;">
+                          <p style="margin:0;font-size:12px;color:#9ca3af;">Valor total de la experiencia</p>
+                        </td>
+                        <td style="text-align:right;vertical-align:middle;padding-bottom:8px;">
+                          <p style="margin:0;font-size:16px;font-weight:600;color:#6b7280;text-decoration:line-through;">{{ingreso_total}}</p>
+                        </td>
+                      </tr>
+                      <tr>
                         <td style="vertical-align:middle;">
-                          <p style="margin:0;font-size:13px;color:#6b7280;">Total a pagar</p>
+                          <p style="margin:0;font-size:13px;font-weight:700;color:#235e58;">Solo pagas ahora para reservar</p>
+                          <p style="margin:2px 0 0;font-size:11px;color:#9ca3af;">El resto lo abonas el d&#237;a de la experiencia</p>
                         </td>
                         <td style="text-align:right;vertical-align:middle;">
-                          <p style="margin:0;font-size:24px;font-weight:900;color:#235e58;">{{ingreso_total}}</p>
+                          <p style="margin:0;font-size:26px;font-weight:900;color:#235e58;">{{ingreso_reserva}}</p>
                         </td>
                       </tr>
                     </table>

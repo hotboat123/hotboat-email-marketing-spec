@@ -177,8 +177,8 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         with src.connect() as conn:
             rows = conn.execute(text("""
                 SELECT id, email, nombre_cliente, servicio, fecha, hora,
-                       num_adultos, num_ninos, ingreso_total, created_at,
-                       payment_order_id
+                       num_adultos, num_ninos, ingreso_total, ingreso_reserva,
+                       extras_json, created_at, payment_order_id
                 FROM all_appointments
                 WHERE status = 'pending_payment'
                   AND (paid_at IS NULL OR payment_status != 'completed')
@@ -202,25 +202,77 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         if not contact or not contact.opted_in:
             continue
 
-        # Format booking details for the template
+        # Personas: extraer del nombre del servicio "(Xp)" o usar adultos/niños
+        m_personas = re.search(r'\((\d+)p\)', row.servicio or '')
+        if m_personas:
+            num_personas = int(m_personas.group(1))
+            personas_str = f"{num_personas} persona{'s' if num_personas != 1 else ''}"
+        else:
+            adultos = int(row.num_adultos or 0)
+            ninos = int(row.num_ninos or 0)
+            personas_str = f"{adultos} adulto{'s' if adultos != 1 else ''}"
+            if ninos:
+                personas_str += f" + {ninos} niño{'s' if ninos != 1 else ''}"
+
         fecha_str = str(row.fecha) if row.fecha else ""
         hora_str = str(row.hora)[:5] if row.hora else ""
-        adultos = int(row.num_adultos or 0)
-        ninos = int(row.num_ninos or 0)
-        total = f"${int(row.ingreso_total):,}".replace(",", ".") if row.ingreso_total else ""
-        personas_str = f"{adultos} adulto{'s' if adultos != 1 else ''}"
-        if ninos:
-            personas_str += f" + {ninos} niño{'s' if ninos != 1 else ''}"
+
+        # Montos
+        def _fmt_clp(v) -> str:
+            return f"${int(v):,}".replace(",", ".") if v else ""
+
+        total_fmt = _fmt_clp(row.ingreso_total)
+        reserva_fmt = _fmt_clp(row.ingreso_reserva or row.ingreso_total)
+
+        # Extras: soporta dos formatos de extras_json
+        extras_items: list[tuple[str, str]] = []
+        ej = row.extras_json or {}
+        if isinstance(ej, dict):
+            if "extras" in ej and isinstance(ej["extras"], list):
+                for e in ej["extras"]:
+                    name = (e.get("name") or "").strip()
+                    if not name:
+                        continue
+                    qty = int(e.get("quantity", 1))
+                    price = int(e.get("price", 0)) * qty
+                    label = f"{name}" + (f" x{qty}" if qty > 1 else "")
+                    extras_items.append((label, _fmt_clp(price)))
+            else:
+                _SKIP = {"extras", "price_per_person"}
+                for key, val in ej.items():
+                    if key in _SKIP or not isinstance(val, dict):
+                        continue
+                    qty = int(val.get("qty", 1))
+                    price = int(val.get("unit_price", 0)) * qty
+                    label = key.replace("_", " ").capitalize() + (f" x{qty}" if qty > 1 else "")
+                    extras_items.append((label, _fmt_clp(price)))
+
+        extras_html = ""
+        if extras_items:
+            filas = "".join(
+                f'<tr><td style="padding:4px 0;font-size:14px;color:#374151;">'
+                f'· {name}</td>'
+                f'<td style="padding:4px 0;font-size:14px;color:#374151;text-align:right;">'
+                f'{price}</td></tr>'
+                for name, price in extras_items
+            )
+            extras_html = (
+                f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">'
+                f'<tr><td colspan="2" style="padding-bottom:6px;font-size:11px;font-weight:700;'
+                f'color:#5fb8ae;text-transform:uppercase;letter-spacing:0.8px;">Extras incluidos</td></tr>'
+                f'{filas}</table>'
+            )
 
         pay_url = _get_woo_payment_link(str(row.payment_order_id).strip() if row.payment_order_id else None, email=email)
         extra_vars = {
             "servicio": row.servicio or "tu experiencia",
+            "titulo_reserva": f"Experiencia HotBoat · {personas_str}",
             "fecha_reserva": fecha_str,
             "hora_reserva": hora_str,
             "personas": personas_str,
-            "num_adultos": adultos,
-            "num_ninos": ninos,
-            "ingreso_total": total,
+            "ingreso_total": total_fmt,
+            "ingreso_reserva": reserva_fmt,
+            "extras_html": extras_html,
             "pay_url": pay_url,
         }
         _send_email(session, auto, contact, trigger_key, extra_vars=extra_vars)
