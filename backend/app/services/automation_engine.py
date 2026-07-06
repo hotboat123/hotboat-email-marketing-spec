@@ -365,6 +365,30 @@ def _check_reactivation(auto: Automation, session: Session) -> None:
         _send_email(session, auto, contact, trigger_key)
 
 
+def _normalize_categoria_cliente(cat: str) -> str | None:
+    """Normaliza categoria_clientes (all_appointments) a familia / pareja / amigos."""
+    c = (cat or "").strip().lower()
+    if not c:
+        return None
+    if "familia" in c:
+        return "familia"
+    if "amigo" in c or "amigas" in c:
+        return "amigos"
+    if "pareja" in c:
+        return "pareja"
+    return None
+
+
+def _normalize_tipo_cliente(tipo: str) -> str | None:
+    """Normaliza tipo_clientes (all_appointments) a trabajador / empresario."""
+    t = (tipo or "").strip().lower()
+    if "trabaj" in t:
+        return "trabajador"
+    if "empres" in t:
+        return "empresario"
+    return None
+
+
 def _resolve_appointment_from_booking_ref(booking_ref: str, src_engine):
     """
     Try 3 join strategies to find the booking in all_appointments.
@@ -375,7 +399,8 @@ def _resolve_appointment_from_booking_ref(booking_ref: str, src_engine):
     """
     _COLS = """
         nombre_cliente, servicio, fecha, hora, ingreso_total,
-        extras_json, customer_language, ciudad_origen, como_supieron
+        extras_json, customer_language, ciudad_origen, como_supieron,
+        categoria_clientes, tipo_clientes
     """
     ref = (booking_ref or "").strip()
     if not ref:
@@ -405,7 +430,8 @@ def _resolve_appointment_from_booking_ref(booking_ref: str, src_engine):
             row = conn.execute(
                 text(f"""
                     SELECT aa.nombre_cliente, aa.servicio, aa.fecha, aa.hora, aa.ingreso_total,
-                           aa.extras_json, aa.customer_language, aa.ciudad_origen, aa.como_supieron
+                           aa.extras_json, aa.customer_language, aa.ciudad_origen, aa.como_supieron,
+                           aa.categoria_clientes, aa.tipo_clientes
                     FROM hotboat_appointments ha
                     JOIN all_appointments aa ON aa.source = 'hotboat' AND TRIM(aa.source_id) = ha.source_id
                     WHERE ha.booking_ref = :ref
@@ -480,6 +506,9 @@ def _check_tc_signatures(auto: Automation, session: Session) -> None:
         language = None
         extras = None
         ha_alojamiento = False
+        como_supieron = None
+        categoria_cliente = None
+        tipo_cliente = None
 
         if appt:
             ultima_visita = appt.fecha
@@ -490,6 +519,9 @@ def _check_tc_signatures(auto: Automation, session: Session) -> None:
             if appt.extras_json and isinstance(appt.extras_json, dict):
                 extras = [k for k in appt.extras_json if not k.startswith("aloj__")] or None
                 ha_alojamiento = any(k.startswith("aloj__") for k in appt.extras_json)
+            como_supieron = (appt.como_supieron or "").strip() or None
+            categoria_cliente = _normalize_categoria_cliente(appt.categoria_clientes)
+            tipo_cliente = _normalize_tipo_cliente(appt.tipo_clientes)
 
         # ── Upsert contact ────────────────────────────────────────────────
         now_dt = datetime.utcnow()
@@ -517,6 +549,19 @@ def _check_tc_signatures(auto: Automation, session: Session) -> None:
                 existing.extras_favoritos = extras
             if ha_alojamiento:
                 existing.ha_alojamiento = True
+            cf = dict(existing.custom_fields or {})
+            cf_changed = False
+            if como_supieron and not cf.get("como_supieron"):
+                cf["como_supieron"] = como_supieron
+                cf_changed = True
+            if categoria_cliente and not cf.get("categoria_cliente"):
+                cf["categoria_cliente"] = categoria_cliente
+                cf_changed = True
+            if tipo_cliente and not cf.get("tipo_cliente"):
+                cf["tipo_cliente"] = tipo_cliente
+                cf_changed = True
+            if cf_changed:
+                existing.custom_fields = cf
             existing.opted_in = True
             if not existing.opted_in_at:
                 existing.opted_in_at = now_dt
@@ -524,6 +569,13 @@ def _check_tc_signatures(auto: Automation, session: Session) -> None:
             session.add(existing)
             contact = existing
         else:
+            cf = {}
+            if como_supieron:
+                cf["como_supieron"] = como_supieron
+            if categoria_cliente:
+                cf["categoria_cliente"] = categoria_cliente
+            if tipo_cliente:
+                cf["tipo_cliente"] = tipo_cliente
             contact = Contact(
                 email=email,
                 name=name,
@@ -532,6 +584,7 @@ def _check_tc_signatures(auto: Automation, session: Session) -> None:
                 language=language or "es",
                 origin_utm="Formulario T&C",
                 location=location,
+                custom_fields=cf or None,
                 opted_in=True,
                 opted_in_at=now_dt,
                 veces_hotboat=1 if appt else 0,
