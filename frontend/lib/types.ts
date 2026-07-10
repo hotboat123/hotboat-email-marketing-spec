@@ -224,6 +224,42 @@ export interface BrandAsset {
   updated_at: string;
 }
 
+export type CallStatus = "pending" | "called" | "no_answer" | "booked" | "not_interested";
+
+export interface ContactCRM {
+  id: number;
+  phone: string | null;
+  email: string | null;
+  name: string | null;
+  linked_contact_id: number | null;
+  ad_source: string | null;
+  ad_platform: string | null;
+  ad_creative_url: string | null;
+  utm_campaign: string | null;
+  lead_status: string | null;
+  veces_hotboat: number;
+  ultima_visita: string | null;
+  ticket_medio: number | null;
+  extras_favoritos: string[] | null;
+  reservation_score: number | null;
+  score_updated_at: string | null;
+  score_breakdown: Record<string, number> | null;
+  call_status: CallStatus;
+  call_status_updated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CallActivity {
+  id: number;
+  contact_crm_id: number;
+  old_status: string | null;
+  new_status: string;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface SubjectAnalytics {
   campaign_id: number;
   subject: string;

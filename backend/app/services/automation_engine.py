@@ -776,19 +776,27 @@ def run_automations() -> None:
                     logger.exception("Automation %d (%s) error: %s", auto.id, auto.trigger_type, exc)
 
 
+CRM_SYNC_EVERY_N_TICKS = 30  # loop tick = 60s, so ~30 min
+
+
 def start_scheduler() -> None:
     def loop():
         # Small delay to let the app fully start
         time.sleep(10)
+        tick = 0
         while True:
             try:
                 run_automations()
                 run_scheduled_campaigns()
                 run_campaign_reminders()
+                if tick % CRM_SYNC_EVERY_N_TICKS == 0:
+                    from app.services.crm_sync import run as run_crm_sync
+                    run_crm_sync()
             except Exception as exc:
                 logger.exception("Automation scheduler error: %s", exc)
+            tick += 1
             time.sleep(60)  # 1 minute
 
     t = threading.Thread(target=loop, daemon=True, name="automation-scheduler")
     t.start()
-    logger.info("Automation scheduler started (interval: 1 min)")
+    logger.info("Automation scheduler started (interval: 1 min, crm_sync every %d min)", CRM_SYNC_EVERY_N_TICKS)

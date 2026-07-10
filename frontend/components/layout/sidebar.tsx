@@ -15,6 +15,7 @@ import {
   Palette,
   Settings,
   LogOut,
+  PhoneCall,
 } from "lucide-react";
 import { clearToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 const nav = [
   { href: "/dashboard",    label: "Dashboard",        icon: LayoutDashboard },
   { href: "/contacts",     label: "Contactos",        icon: Users },
+  { href: "/calls",        label: "Llamadas",         icon: PhoneCall },
   { href: "/segments",     label: "Segmentos",        icon: Filter },
   { href: "/templates",    label: "Plantillas",       icon: FileText },
   { href: "/campaigns",    label: "Campañas",         icon: Send },

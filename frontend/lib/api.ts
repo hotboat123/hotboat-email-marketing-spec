@@ -134,6 +134,29 @@ export const automationsApi = {
   stats: (id: number) => api.get(`/automations/${id}/stats`),
 };
 
+// CRM (cola de llamadas)
+export const crmApi = {
+  list: (params?: { call_status?: string; min_score?: number; ad_source?: string; skip?: number; limit?: number }) =>
+    api.get("/crm/contacts", { params }),
+  get: (id: number) => api.get(`/crm/contacts/${id}`),
+  callActivity: (id: number) => api.get(`/crm/contacts/${id}/call_activity`),
+  updateCallStatus: (id: number, data: { call_status: string; note?: string }) =>
+    api.patch(`/crm/contacts/${id}/call_status`, data),
+  // Bearer token vive en localStorage, no en cookies, asi que la descarga no puede ser un <a href> plano:
+  // pedimos el CSV como blob (con el interceptor de auth) y disparamos la descarga en el cliente.
+  exportCsv: async (params?: { call_status?: string; min_score?: number }) => {
+    const res = await api.get("/crm/contacts/export/csv", { params, responseType: "blob" });
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "crm_contacts.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+};
+
 // Sync
 export const syncApi = {
   run: () => api.post("/sync/run"),
