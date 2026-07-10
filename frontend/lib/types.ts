@@ -264,6 +264,22 @@ export interface CallActivity {
   created_at: string;
 }
 
+export interface CrmConversationMessage {
+  message_text: string | null;
+  response_text: string | null;
+  message_type: string | null;
+  direction: "incoming" | "outgoing";
+  created_at: string | null;
+}
+
+export interface CrmWebActivityEvent {
+  event_type: string;
+  extra_date: string | null;
+  time_label: string | null;
+  recorded_at: string | null;
+  session_id: string | null;
+}
+
 export interface SubjectAnalytics {
   campaign_id: number;
   subject: string;

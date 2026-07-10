@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.database import get_session
@@ -11,6 +12,7 @@ from app.core.deps import get_current_user, require_editor
 from app.models.user import User
 from app.models.contact_crm import ContactCRM, ContactCRMRead, CallStatusUpdate
 from app.models.call_activity import CallActivity, CallActivityRead
+from app.services.sync_hotboat import _source_engine
 
 router = APIRouter()
 
@@ -98,6 +100,88 @@ def get_call_activity(
         .where(CallActivity.contact_crm_id == contact_crm_id)
         .order_by(CallActivity.created_at.desc())
     ).all()
+
+
+@router.get("/contacts/{contact_crm_id}/conversations")
+def get_crm_conversations(
+    contact_crm_id: int,
+    limit: int = Query(100, le=500),
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Historial de mensajes de WhatsApp para este contacto (lectura directa de
+    hotboat-whatsapp). Compara con y sin '+' porque los mensajes anteriores al
+    backfill de normalizacion de telefono quedaron guardados sin el '+'."""
+    contact = session.get(ContactCRM, contact_crm_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+    if not contact.phone:
+        return []
+
+    phone_digits = contact.phone.lstrip("+")
+    engine = _source_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT message_text, response_text, message_type, direction, created_at
+            FROM whatsapp_conversations
+            WHERE phone_number IN (:phone, :phone_digits)
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """), {"phone": contact.phone, "phone_digits": phone_digits, "limit": limit}).fetchall()
+
+    return [
+        {
+            "message_text": r.message_text,
+            "response_text": r.response_text,
+            "message_type": r.message_type,
+            "direction": r.direction,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/contacts/{contact_crm_id}/web_activity")
+def get_crm_web_activity(
+    contact_crm_id: int,
+    limit: int = Query(200, le=1000),
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Eventos de navegacion web para este contacto — solo cubre sesiones que
+    llegaron via un link de seguimiento (tracked_quote_links), que es la unica
+    forma hoy de asociar navegacion anonima a un telefono identificado."""
+    contact = session.get(ContactCRM, contact_crm_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+    if not contact.phone:
+        return []
+
+    phone_digits = contact.phone.lstrip("+")
+    engine = _source_engine()
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT event_type, extra_date, time_label, recorded_at, session_id
+                FROM booking_visitor_activity
+                WHERE phone = :phone
+                ORDER BY recorded_at DESC
+                LIMIT :limit
+            """), {"phone": phone_digits, "limit": limit}).fetchall()
+    except Exception:
+        # Vista puede no existir en algunos entornos — no romper el detalle del contacto.
+        return []
+
+    return [
+        {
+            "event_type": r.event_type,
+            "extra_date": r.extra_date,
+            "time_label": r.time_label,
+            "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+            "session_id": r.session_id,
+        }
+        for r in rows
+    ]
 
 
 @router.patch("/contacts/{contact_crm_id}/call_status", response_model=ContactCRMRead)
