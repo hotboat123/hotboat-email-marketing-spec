@@ -139,6 +139,7 @@ export const crmApi = {
   list: (params?: { call_status?: string; min_score?: number; ad_source?: string; skip?: number; limit?: number }) =>
     api.get("/crm/contacts", { params }),
   get: (id: number) => api.get(`/crm/contacts/${id}`),
+  getByContact: (contactId: number) => api.get(`/crm/contacts/by_contact/${contactId}`),
   callActivity: (id: number) => api.get(`/crm/contacts/${id}/call_activity`),
   conversations: (id: number) => api.get(`/crm/contacts/${id}/conversations`),
   webActivity: (id: number) => api.get(`/crm/contacts/${id}/web_activity`),

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { contactsApi } from "@/lib/api";
-import { Contact, ContactBooking, CampaignEmailSend } from "@/lib/types";
+import { contactsApi, crmApi } from "@/lib/api";
+import { Contact, ContactBooking, CampaignEmailSend, ContactCRM, CallStatus } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
   ArrowLeft, Mail, Calendar, StickyNote, Save, Plus, Trash2, Search,
@@ -12,6 +12,8 @@ import {
   ChevronDown, ChevronUp, Anchor, XCircle,
 } from "lucide-react";
 import Link from "next/link";
+import { statusMeta, StatusModal } from "@/components/crm/StatusModal";
+import { ConversationTab, WebActivityTab, CallHistoryTab } from "@/components/crm/CrmActivityTabs";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 function initials(name: string | null, email: string) {
@@ -676,11 +678,20 @@ export default function ContactDetailPage() {
   const router      = useRouter();
   const qc          = useQueryClient();
   const contactId   = Number(id);
-  const [tab, setTab] = useState<"details" | "metrics" | "segments" | "objects">("details");
+  const [tab, setTab] = useState<"details" | "metrics" | "segments" | "objects" | "whatsapp" | "web" | "calls">("details");
+  const [editingStatus, setEditingStatus] = useState(false);
 
   const { data: contact, isLoading } = useQuery<Contact>({
     queryKey: ["contact", contactId],
     queryFn:  () => contactsApi.get(contactId).then((r) => r.data),
+    staleTime: 60_000,
+  });
+
+  // Registro CRM (WhatsApp/telefono) vinculado a este contacto, si existe —
+  // null cuando el contacto nunca escribio por WhatsApp / no tiene telefono asociado.
+  const { data: crmContact } = useQuery<ContactCRM | null>({
+    queryKey: ["crm-contact-by-contact", contactId],
+    queryFn: () => crmApi.getByContact(contactId).then((r) => r.data).catch(() => null),
     staleTime: 60_000,
   });
 
@@ -692,6 +703,16 @@ export default function ContactDetailPage() {
   const deleteMutation = useMutation({
     mutationFn: () => contactsApi.delete(contactId),
     onSuccess:  () => router.push("/contacts"),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ status, note }: { status: CallStatus; note: string }) =>
+      crmApi.updateCallStatus(crmContact!.id, { call_status: status, note: note || undefined }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["crm-contact-by-contact", contactId] });
+      qc.invalidateQueries({ queryKey: ["crm-call-activity", crmContact?.id] });
+      setEditingStatus(false);
+    },
   });
 
   if (isLoading) return (
@@ -732,6 +753,19 @@ export default function ContactDetailPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {crmContact && (
+              <>
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700" title="Score de probabilidad de reserva">
+                  Score {crmContact.reservation_score ?? "—"}
+                </span>
+                <button
+                  onClick={() => setEditingStatus(true)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusMeta(crmContact.call_status).color} hover:opacity-80 transition-opacity`}
+                >
+                  {statusMeta(crmContact.call_status).label}
+                </button>
+              </>
+            )}
             <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${contact.opted_in ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
               {contact.opted_in ? "Suscrito" : "Dado de baja"}
             </span>
@@ -751,11 +785,18 @@ export default function ContactDetailPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-0 border-b border-gray-200 mt-4 mb-6">
+        <div className="flex gap-0 border-b border-gray-200 mt-4 mb-6 overflow-x-auto">
           <Tab label="Detalles"            active={tab === "details"}  onClick={() => setTab("details")} />
           <Tab label="Métricas e insights" active={tab === "metrics"}  onClick={() => setTab("metrics")} />
           <Tab label="Listas y segmentos"  active={tab === "segments"} onClick={() => setTab("segments")} />
           <Tab label="Objetos"             active={tab === "objects"}  onClick={() => setTab("objects")} />
+          {crmContact && (
+            <>
+              <Tab label="WhatsApp"          active={tab === "whatsapp"} onClick={() => setTab("whatsapp")} />
+              <Tab label="Actividad web"     active={tab === "web"}      onClick={() => setTab("web")} />
+              <Tab label="Historial llamadas" active={tab === "calls"}   onClick={() => setTab("calls")} />
+            </>
+          )}
         </div>
       </div>
 
@@ -772,6 +813,30 @@ export default function ContactDetailPage() {
       {tab === "metrics"  && <MetricsTab  contact={contact} />}
       {tab === "segments" && <SegmentsTab contactId={contactId} />}
       {tab === "objects"  && <ObjectsTab  contactId={contactId} />}
+      {tab === "whatsapp" && crmContact && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <ConversationTab contactCrmId={crmContact.id} />
+        </div>
+      )}
+      {tab === "web" && crmContact && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <WebActivityTab contactCrmId={crmContact.id} />
+        </div>
+      )}
+      {tab === "calls" && crmContact && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <CallHistoryTab contactCrmId={crmContact.id} />
+        </div>
+      )}
+
+      {editingStatus && crmContact && (
+        <StatusModal
+          contact={crmContact}
+          onClose={() => setEditingStatus(false)}
+          saving={statusMutation.isPending}
+          onSave={(status, note) => statusMutation.mutate({ status, note })}
+        />
+      )}
     </div>
   );
 }

@@ -74,6 +74,20 @@ def export_crm_contacts_csv(
     )
 
 
+@router.get("/contacts/by_contact/{contact_id}", response_model=ContactCRMRead)
+def get_crm_by_contact(
+    contact_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Busca el registro CRM (WhatsApp/telefono) vinculado a un contacto de email,
+    para poder mostrar ambas vistas fusionadas en /contacts/{id}."""
+    contact = session.exec(select(ContactCRM).where(ContactCRM.linked_contact_id == contact_id)).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Sin registro CRM vinculado")
+    return contact
+
+
 @router.get("/contacts/{contact_crm_id}", response_model=ContactCRMRead)
 def get_crm_contact(
     contact_crm_id: int,
