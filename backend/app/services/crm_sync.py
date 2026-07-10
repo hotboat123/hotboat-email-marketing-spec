@@ -180,6 +180,30 @@ def run() -> dict:
             # Vista puede no existir aun en algunos entornos (feature reciente) — no bloquear el sync.
             link_conversions = []
 
+        try:
+            # Visitantes que llegaron directo a la web (hotboat.cl / whatsapp.hotboat.cl/booking,
+            # muchos desde ads de Meta) y en algun momento dejaron telefono al reservar.
+            # booking_visitor_identity liga esa sesion anonima al telefono; el join trae todo
+            # el recorrido (incluidas visitas previas del mismo visitor_id, antes de identificarse).
+            direct_web_conversions = conn.execute(text("""
+                SELECT
+                    bvi.phone AS phone,
+                    MIN(bve.recorded_at) AS first_seen_at,
+                    MAX(bve.recorded_at) AS last_seen_at,
+                    BOOL_OR(bve.event_type = 'view_prices') AS viewed_prices,
+                    BOOL_OR(bve.event_type = 'date_selected') AS selected_date,
+                    COUNT(DISTINCT bve.id) AS event_count
+                FROM booking_visitor_identity bvi
+                JOIN booking_visitor_events bve
+                  ON bve.session_id = bvi.session_id
+                     OR (bvi.visitor_id IS NOT NULL AND bve.visitor_id = bvi.visitor_id)
+                WHERE bvi.phone IS NOT NULL AND bvi.phone <> ''
+                GROUP BY bvi.phone
+            """)).fetchall()
+        except Exception:
+            # Tabla nueva (migracion 036) — puede no existir aun en algunos entornos.
+            direct_web_conversions = []
+
     for row in leads:
         phone = row.phone_number
         if not phone:
@@ -218,6 +242,18 @@ def run() -> dict:
         d["link_viewed_prices"] = bool(row.viewed_prices)
         d["link_selected_date"] = bool(row.selected_date)
         d["link_last_seen_at"] = row.last_seen_at
+
+    for row in direct_web_conversions:
+        phone = _normalize_phone_e164(row.phone)
+        if not phone:
+            continue
+        d = merged.setdefault(phone, {})
+        d["link_clicked"] = True
+        d["link_viewed_prices"] = bool(d.get("link_viewed_prices")) or bool(row.viewed_prices)
+        d["link_selected_date"] = bool(d.get("link_selected_date")) or bool(row.selected_date)
+        existing_seen = d.get("link_last_seen_at")
+        if not existing_seen or (row.last_seen_at and row.last_seen_at > existing_seen):
+            d["link_last_seen_at"] = row.last_seen_at
 
     created = updated = 0
     with Session(local_engine) as session:

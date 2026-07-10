@@ -29,6 +29,7 @@ export default function CallsPage() {
   const qc = useQueryClient();
   const [callStatus, setCallStatus] = useState<string>("");
   const [minScore, setMinScore] = useState<string>("");
+  const [sort, setSort] = useState<"score" | "recent" | "updated">("score");
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ContactCRM | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -36,12 +37,13 @@ export default function CallsPage() {
   const filters = {
     call_status: callStatus || undefined,
     min_score: minScore ? Number(minScore) : undefined,
+    sort,
     skip: page * PAGE_SIZE,
     limit: PAGE_SIZE,
   };
 
   const { data: contacts = [], isLoading, isError, refetch } = useQuery<ContactCRM[]>({
-    queryKey: ["crm-contacts", callStatus, minScore, page],
+    queryKey: ["crm-contacts", callStatus, minScore, sort, page],
     queryFn: () => crmApi.list(filters).then((r) => r.data),
     staleTime: 60_000,
     retry: 1,
@@ -116,6 +118,15 @@ export default function CallsPage() {
             <option value="60">Score ≥ 60</option>
             <option value="40">Score ≥ 40</option>
           </select>
+          <select
+            value={sort}
+            onChange={(e) => { setSort(e.target.value as typeof sort); setPage(0); }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="score">Ordenar por score</option>
+            <option value="recent">Ordenar por última visita</option>
+            <option value="updated">Ordenar por más reciente</option>
+          </select>
           {!isLoading && (
             <span className="text-xs text-gray-400 ml-auto">
               {contacts.length < PAGE_SIZE
@@ -125,79 +136,81 @@ export default function CallsPage() {
           )}
         </div>
 
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Perfil</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Teléfono</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Anuncio</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actividad web</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última visita</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              [...Array(8)].map((_, i) => <SkeletonRow key={i} />)
-            ) : contacts.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-5 py-16 text-center">
-                  <PhoneCall size={36} className="mx-auto text-gray-300 mb-3" />
-                  <p className="text-gray-500 font-medium">No hay contactos en esta vista</p>
-                  <p className="text-gray-400 text-xs mt-1">Prueba cambiando los filtros, o espera a que corra la próxima sincronización</p>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Perfil</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Teléfono</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Anuncio</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actividad web</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última visita</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
               </tr>
-            ) : (
-              contacts.map((c) => {
-                const meta = statusMeta(c.call_status);
-                return (
-                  <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-3">
-                      <Link href={`/calls/${c.id}`} className="font-medium text-gray-900 hover:text-brand-600 hover:underline">
-                        {c.name || "Sin nombre"}
-                      </Link>
-                      {c.linked_contact_id && (
-                        <>
-                          {" · "}
-                          <Link
-                            href={`/contacts/${c.linked_contact_id}`}
-                            className="text-xs text-brand-600 hover:underline"
-                          >
-                            historial de emails
-                          </Link>
-                        </>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
-                      {c.phone || <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className="font-semibold text-gray-900">{c.reservation_score ?? "—"}</span>
-                    </td>
-                    <td className="px-5 py-3 text-gray-500 text-xs max-w-[160px] truncate">
-                      {c.ad_source || <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
-                      {linkFunnelLabel(c) || <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
-                      {c.ultima_visita ? formatDate(c.ultima_visita) : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-5 py-3">
-                      <button
-                        onClick={() => setEditing(c)}
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${meta.color} hover:opacity-80 transition-opacity`}
-                      >
-                        {meta.label}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                [...Array(8)].map((_, i) => <SkeletonRow key={i} />)
+              ) : contacts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-16 text-center">
+                    <PhoneCall size={36} className="mx-auto text-gray-300 mb-3" />
+                    <p className="text-gray-500 font-medium">No hay contactos en esta vista</p>
+                    <p className="text-gray-400 text-xs mt-1">Prueba cambiando los filtros, o espera a que corra la próxima sincronización</p>
+                  </td>
+                </tr>
+              ) : (
+                contacts.map((c) => {
+                  const meta = statusMeta(c.call_status);
+                  return (
+                    <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="px-5 py-3">
+                        <Link href={`/calls/${c.id}`} className="font-medium text-gray-900 hover:text-brand-600 hover:underline">
+                          {c.name || "Sin nombre"}
+                        </Link>
+                        {c.linked_contact_id && (
+                          <>
+                            {" · "}
+                            <Link
+                              href={`/contacts/${c.linked_contact_id}`}
+                              className="text-xs text-brand-600 hover:underline"
+                            >
+                              historial de emails
+                            </Link>
+                          </>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
+                        {c.phone || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="font-semibold text-gray-900">{c.reservation_score ?? "—"}</span>
+                      </td>
+                      <td className="px-5 py-3 text-gray-500 text-xs max-w-[160px] truncate">
+                        {c.ad_source || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
+                        {linkFunnelLabel(c) || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
+                        {c.ultima_visita ? formatDate(c.ultima_visita) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-3">
+                        <button
+                          onClick={() => setEditing(c)}
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${meta.color} hover:opacity-80 transition-opacity`}
+                        >
+                          {meta.label}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
         {(hasPrevPage || hasNextPage) && (
           <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">

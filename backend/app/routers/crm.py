@@ -19,11 +19,19 @@ router = APIRouter()
 VALID_CALL_STATUSES = {"pending", "called", "no_answer", "booked", "not_interested"}
 
 
+SORT_COLUMNS = {
+    "score": ContactCRM.reservation_score,
+    "recent": ContactCRM.ultima_visita,
+    "updated": ContactCRM.updated_at,
+}
+
+
 @router.get("/contacts", response_model=List[ContactCRMRead])
 def list_crm_contacts(
     call_status: Optional[str] = None,
     min_score: Optional[int] = Query(None, ge=0, le=100),
     ad_source: Optional[str] = None,
+    sort: str = Query("score", pattern="^(score|recent|updated)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=200),
     session: Session = Depends(get_session),
@@ -36,7 +44,7 @@ def list_crm_contacts(
         query = query.where(ContactCRM.reservation_score >= min_score)
     if ad_source:
         query = query.where(ContactCRM.ad_source.ilike(f"%{ad_source}%"))
-    query = query.order_by(ContactCRM.reservation_score.desc().nullslast()).offset(skip).limit(limit)
+    query = query.order_by(SORT_COLUMNS[sort].desc().nullslast()).offset(skip).limit(limit)
     return session.exec(query).all()
 
 
