@@ -6,12 +6,15 @@ No toca `contacts` ni `sync_contacts()` (app/services/sync_hotboat.py) — reuti
 únicamente su helper `_source_engine()` para conectarse a las tablas de origen.
 
 Fuentes:
-  - whatsapp_leads       -> cubre leads que nunca reservaron (atribucion, ultimo contacto)
-  - all_appointments     -> cubre historial de reservas (veces_hotboat, ticket_medio, extras)
-  - whatsapp_carts       -> señal de carrito activo para el score
-  - contacts (local)     -> solo para resolver linked_contact_id por email (lectura)
+  - whatsapp_leads         -> cubre leads que nunca reservaron (atribucion, ultimo contacto)
+  - all_appointments       -> cubre historial de reservas (veces_hotboat, ticket_medio, extras)
+  - whatsapp_carts         -> señal de carrito activo para el score
+  - tracked_link_conversion -> embudo web (vio precios / eligio fecha) para leads a los que
+                               el bot les mando un link de seguimiento (tracked_quote_links)
+  - contacts (local)       -> solo para resolver linked_contact_id por email (lectura)
 """
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -32,7 +35,26 @@ SCORE_WEIGHTS = {
     "recent_contact_14d": 10,   # ultimo contacto hace <=14 dias
     "stale_30d_penalty": -15,   # ultimo contacto hace >30 dias
     "active_cart": 20,          # tiene un carrito de WhatsApp activo (ultimos 7 dias)
+    "link_clicked": 15,         # hizo click en el link de cotizacion que le mando el bot
+    "link_selected_date": 15,   # y llego a elegir fecha en el calendario (muy cerca de reservar)
 }
+
+
+def _normalize_phone_e164(raw: str | None, default_country: str = "+56") -> str | None:
+    """Misma logica que app/utils/phone.py de hotboat-whatsapp (duplicada a proposito:
+    evita un import cross-repo fragil por un par de reglas simples)."""
+    if not raw:
+        return None
+    digits = re.sub(r"[^\d+]", "", str(raw))
+    if not digits:
+        return None
+    if digits.startswith("+"):
+        return digits
+    if len(digits) == 9 and digits.startswith("9"):
+        return f"{default_country}{digits}"
+    if default_country == "+56" and len(digits) == 11 and digits.startswith("56"):
+        return f"+{digits}"
+    return digits
 
 ACTIVE_LEAD_STATUSES = {"potential_client", "customer"}
 
@@ -88,6 +110,16 @@ def _compute_score(d: dict, has_active_cart: bool, now: datetime) -> tuple[int, 
         score += w
         breakdown["active_cart"] = w
 
+    if d.get("link_clicked"):
+        w = SCORE_WEIGHTS["link_clicked"]
+        score += w
+        breakdown["link_clicked"] = w
+
+    if d.get("link_selected_date"):
+        w = SCORE_WEIGHTS["link_selected_date"]
+        score += w
+        breakdown["link_selected_date"] = w
+
     score = max(0, min(100, score))
     return score, breakdown
 
@@ -138,6 +170,16 @@ def run() -> dict:
             """)).fetchall()
         }
 
+        try:
+            link_conversions = conn.execute(text("""
+                SELECT phone, click_count, viewed_prices, selected_date, last_seen_at
+                FROM tracked_link_conversion
+                WHERE phone IS NOT NULL AND phone <> ''
+            """)).fetchall()
+        except Exception:
+            # Vista puede no existir aun en algunos entornos (feature reciente) — no bloquear el sync.
+            link_conversions = []
+
     for row in leads:
         phone = row.phone_number
         if not phone:
@@ -166,6 +208,16 @@ def run() -> dict:
         d["extras_favoritos"] = extras_by_phone.get(phone)
         if not d.get("ad_source"):
             d["ad_source"] = row.utm_campaign or row.como_supieron
+
+    for row in link_conversions:
+        phone = _normalize_phone_e164(row.phone)
+        if not phone:
+            continue
+        d = merged.setdefault(phone, {})
+        d["link_clicked"] = bool(row.click_count and row.click_count > 0)
+        d["link_viewed_prices"] = bool(row.viewed_prices)
+        d["link_selected_date"] = bool(row.selected_date)
+        d["link_last_seen_at"] = row.last_seen_at
 
     created = updated = 0
     with Session(local_engine) as session:
@@ -199,6 +251,10 @@ def run() -> dict:
                 existing.ultima_visita = d.get("ultima_visita") or existing.ultima_visita
                 existing.ticket_medio = d.get("ticket_medio") if d.get("ticket_medio") is not None else existing.ticket_medio
                 existing.extras_favoritos = d.get("extras_favoritos") or existing.extras_favoritos
+                existing.link_clicked = d.get("link_clicked", existing.link_clicked)
+                existing.link_viewed_prices = d.get("link_viewed_prices", existing.link_viewed_prices)
+                existing.link_selected_date = d.get("link_selected_date", existing.link_selected_date)
+                existing.link_last_seen_at = d.get("link_last_seen_at") or existing.link_last_seen_at
                 existing.reservation_score = score
                 existing.score_updated_at = now
                 existing.score_breakdown = breakdown
@@ -219,6 +275,10 @@ def run() -> dict:
                     ultima_visita=d.get("ultima_visita"),
                     ticket_medio=d.get("ticket_medio"),
                     extras_favoritos=d.get("extras_favoritos"),
+                    link_clicked=d.get("link_clicked", False),
+                    link_viewed_prices=d.get("link_viewed_prices", False),
+                    link_selected_date=d.get("link_selected_date", False),
+                    link_last_seen_at=d.get("link_last_seen_at"),
                     reservation_score=score,
                     score_updated_at=now,
                     score_breakdown=breakdown,

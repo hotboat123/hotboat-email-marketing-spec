@@ -47,6 +47,13 @@ class ContactCRM(SQLModel, table=True):
     call_status: str = Field(default="pending")
     call_status_updated_at: Optional[datetime] = None
 
+    # Seguimiento del link de cotización enviado por WhatsApp (tracked_quote_links
+    # en hotboat-whatsapp) — solo cubre leads a los que el bot les mandó ese link.
+    link_clicked: bool = Field(default=False)
+    link_viewed_prices: bool = Field(default=False)
+    link_selected_date: bool = Field(default=False)
+    link_last_seen_at: Optional[datetime] = None
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -71,6 +78,10 @@ class ContactCRMRead(SQLModel):
     score_breakdown: Optional[dict]
     call_status: str
     call_status_updated_at: Optional[datetime]
+    link_clicked: bool
+    link_viewed_prices: bool
+    link_selected_date: bool
+    link_last_seen_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
 

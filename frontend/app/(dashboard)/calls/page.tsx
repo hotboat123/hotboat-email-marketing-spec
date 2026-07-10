@@ -22,12 +22,20 @@ function statusMeta(status: string) {
   return CALL_STATUSES.find((s) => s.value === status) ?? CALL_STATUSES[0];
 }
 
+function linkFunnelLabel(c: ContactCRM): string | null {
+  if (c.link_selected_date) return "🗓️ Eligió fecha";
+  if (c.link_viewed_prices) return "💲 Vio precios";
+  if (c.link_clicked) return "🔗 Clic en link";
+  return null;
+}
+
 function SkeletonRow() {
   return (
     <tr className="border-b border-gray-100">
       <td className="px-5 py-3"><div className="h-4 bg-gray-200 rounded w-36 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-28 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-16 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-20 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-5 bg-gray-100 rounded-full w-20 animate-pulse" /></td>
@@ -208,6 +216,7 @@ export default function CallsPage() {
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Teléfono</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Anuncio</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actividad web</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última visita</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
             </tr>
@@ -217,7 +226,7 @@ export default function CallsPage() {
               [...Array(8)].map((_, i) => <SkeletonRow key={i} />)
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-16 text-center">
+                <td colSpan={7} className="px-5 py-16 text-center">
                   <PhoneCall size={36} className="mx-auto text-gray-300 mb-3" />
                   <p className="text-gray-500 font-medium">No hay contactos en esta vista</p>
                   <p className="text-gray-400 text-xs mt-1">Prueba cambiando los filtros, o espera a que corra la próxima sincronización</p>
@@ -247,6 +256,9 @@ export default function CallsPage() {
                     </td>
                     <td className="px-5 py-3 text-gray-500 text-xs max-w-[160px] truncate">
                       {c.ad_source || <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
+                      {linkFunnelLabel(c) || <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
                       {c.ultima_visita ? formatDate(c.ultima_visita) : <span className="text-gray-300">—</span>}

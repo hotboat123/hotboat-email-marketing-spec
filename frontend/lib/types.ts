@@ -246,6 +246,10 @@ export interface ContactCRM {
   score_breakdown: Record<string, number> | null;
   call_status: CallStatus;
   call_status_updated_at: string | null;
+  link_clicked: boolean;
+  link_viewed_prices: boolean;
+  link_selected_date: boolean;
+  link_last_seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
