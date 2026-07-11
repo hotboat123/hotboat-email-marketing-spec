@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { crmApi } from "@/lib/api";
 import { ContactCRM, CallStatus } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { PhoneCall, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { CALL_STATUSES, statusMeta, linkFunnelLabel, StatusModal } from "@/components/crm/StatusModal";
@@ -19,6 +19,7 @@ function SkeletonRow() {
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-16 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-20 animate-pulse" /></td>
       <td className="px-5 py-3"><div className="h-5 bg-gray-100 rounded-full w-20 animate-pulse" /></td>
     </tr>
@@ -29,7 +30,7 @@ export default function CallsPage() {
   const qc = useQueryClient();
   const [callStatus, setCallStatus] = useState<string>("");
   const [minScore, setMinScore] = useState<string>("");
-  const [sort, setSort] = useState<"score" | "recent" | "updated">("score");
+  const [sort, setSort] = useState<"score" | "last_interaction" | "booking">("score");
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ContactCRM | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -124,8 +125,8 @@ export default function CallsPage() {
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="score">Ordenar por score</option>
-            <option value="recent">Ordenar por última visita</option>
-            <option value="updated">Ordenar por más reciente</option>
+            <option value="last_interaction">Ordenar por último contacto</option>
+            <option value="booking">Ordenar por última reserva</option>
           </select>
           {!isLoading && (
             <span className="text-xs text-gray-400 ml-auto">
@@ -137,7 +138,7 @@ export default function CallsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[720px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Perfil</th>
@@ -145,7 +146,8 @@ export default function CallsPage() {
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Anuncio</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actividad web</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última visita</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Último contacto</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última reserva</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
               </tr>
             </thead>
@@ -154,7 +156,7 @@ export default function CallsPage() {
                 [...Array(8)].map((_, i) => <SkeletonRow key={i} />)
               ) : contacts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center">
+                  <td colSpan={8} className="px-5 py-16 text-center">
                     <PhoneCall size={36} className="mx-auto text-gray-300 mb-3" />
                     <p className="text-gray-500 font-medium">No hay contactos en esta vista</p>
                     <p className="text-gray-400 text-xs mt-1">Prueba cambiando los filtros, o espera a que corra la próxima sincronización</p>
@@ -192,6 +194,9 @@ export default function CallsPage() {
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {linkFunnelLabel(c) || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
+                        {c.last_interaction_at ? formatDateTime(c.last_interaction_at) : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {c.ultima_visita ? formatDate(c.ultima_visita) : <span className="text-gray-300">—</span>}

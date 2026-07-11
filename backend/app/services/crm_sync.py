@@ -283,6 +283,7 @@ def run() -> dict:
                 existing.ad_platform = d.get("ad_platform") or existing.ad_platform
                 existing.ad_creative_url = d.get("ad_creative_url") or existing.ad_creative_url
                 existing.lead_status = d.get("lead_status") or existing.lead_status
+                existing.last_interaction_at = d.get("last_interaction_at") or existing.last_interaction_at
                 existing.veces_hotboat = d.get("veces_hotboat", existing.veces_hotboat)
                 existing.ultima_visita = d.get("ultima_visita") or existing.ultima_visita
                 existing.ticket_medio = d.get("ticket_medio") if d.get("ticket_medio") is not None else existing.ticket_medio
@@ -307,6 +308,7 @@ def run() -> dict:
                     ad_platform=d.get("ad_platform"),
                     ad_creative_url=d.get("ad_creative_url"),
                     lead_status=d.get("lead_status"),
+                    last_interaction_at=d.get("last_interaction_at"),
                     veces_hotboat=d.get("veces_hotboat", 0),
                     ultima_visita=d.get("ultima_visita"),
                     ticket_medio=d.get("ticket_medio"),

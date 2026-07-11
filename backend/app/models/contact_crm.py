@@ -29,6 +29,7 @@ class ContactCRM(SQLModel, table=True):
     utm_campaign: Optional[str] = None
 
     lead_status: Optional[str] = None
+    last_interaction_at: Optional[datetime] = None  # ultimo mensaje de WhatsApp (whatsapp_leads)
 
     # Historial de reservas
     veces_hotboat: int = Field(default=0)
@@ -69,6 +70,7 @@ class ContactCRMRead(SQLModel):
     ad_creative_url: Optional[str]
     utm_campaign: Optional[str]
     lead_status: Optional[str]
+    last_interaction_at: Optional[datetime]
     veces_hotboat: int
     ultima_visita: Optional[date]
     ticket_medio: Optional[float]

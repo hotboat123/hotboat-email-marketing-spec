@@ -21,8 +21,8 @@ VALID_CALL_STATUSES = {"pending", "called", "no_answer", "booked", "not_interest
 
 SORT_COLUMNS = {
     "score": ContactCRM.reservation_score,
-    "recent": ContactCRM.ultima_visita,
-    "updated": ContactCRM.updated_at,
+    "last_interaction": ContactCRM.last_interaction_at,  # ultimo mensaje de WhatsApp
+    "booking": ContactCRM.ultima_visita,  # ultima reserva confirmada
 }
 
 
@@ -31,7 +31,7 @@ def list_crm_contacts(
     call_status: Optional[str] = None,
     min_score: Optional[int] = Query(None, ge=0, le=100),
     ad_source: Optional[str] = None,
-    sort: str = Query("score", pattern="^(score|recent|updated)$"),
+    sort: str = Query("score", pattern="^(score|last_interaction|booking)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=200),
     session: Session = Depends(get_session),
@@ -67,12 +67,12 @@ def export_crm_contacts_csv(
     writer = csv.writer(buf)
     writer.writerow([
         "phone", "name", "email", "reservation_score", "call_status",
-        "ad_source", "veces_hotboat", "ultima_visita",
+        "ad_source", "veces_hotboat", "last_interaction_at", "ultima_visita",
     ])
     for c in contacts:
         writer.writerow([
             c.phone, c.name, c.email, c.reservation_score, c.call_status,
-            c.ad_source, c.veces_hotboat, c.ultima_visita,
+            c.ad_source, c.veces_hotboat, c.last_interaction_at, c.ultima_visita,
         ])
 
     return Response(
