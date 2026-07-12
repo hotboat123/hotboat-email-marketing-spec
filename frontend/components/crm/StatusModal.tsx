@@ -17,6 +17,9 @@ export function statusMeta(status: string) {
 }
 
 export function linkFunnelLabel(c: ContactCRM): string | null {
+  // Preferir la clasificacion real de navegacion directa en la web (booking_visitor_summary)
+  // sobre el funnel booleano legacy, que solo cubre leads a los que el bot les mando un link.
+  if (c.web_classification) return c.web_classification;
   if (c.link_selected_date) return "🗓️ Eligió fecha";
   if (c.link_viewed_prices) return "💲 Vio precios";
   if (c.link_clicked) return "🔗 Clic en link";

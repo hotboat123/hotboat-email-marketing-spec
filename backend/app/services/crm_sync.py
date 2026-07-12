@@ -39,6 +39,26 @@ SCORE_WEIGHTS = {
     "link_selected_date": 15,   # y llego a elegir fecha en el calendario (muy cerca de reservar)
 }
 
+# Orden de avance del funnel web (booking_visitor_summary.classification), de menos a mas
+# interes — usado solo para derivar los flags legacy link_viewed_prices/link_selected_date
+# a partir de la clasificacion real. Debe reflejar el mismo orden que _classify_visitor()
+# en hotboat-whatsapp/app/booking/router.py.
+_WEB_CLASSIFICATION_RANK = [
+    "👀 Solo mirando",
+    "🔍 Explorando",
+    "🔍 Explorando activamente",
+    "⭐ Muy interesado",
+    "🎯 Listo para reservar",
+    "✅ Reservó",
+]
+
+
+def _web_rank(classification: str | None) -> int:
+    try:
+        return _WEB_CLASSIFICATION_RANK.index(classification or "")
+    except ValueError:
+        return -1
+
 
 def _normalize_phone_e164(raw: str | None, default_country: str = "+56") -> str | None:
     """Misma logica que app/utils/phone.py de hotboat-whatsapp (duplicada a proposito:
@@ -181,27 +201,18 @@ def run() -> dict:
             link_conversions = []
 
         try:
-            # Visitantes que llegaron directo a la web (hotboat.cl / whatsapp.hotboat.cl/booking,
-            # muchos desde ads de Meta) y en algun momento dejaron telefono al reservar.
-            # booking_visitor_identity liga esa sesion anonima al telefono; el join trae todo
-            # el recorrido (incluidas visitas previas del mismo visitor_id, antes de identificarse).
+            # Resumen precalculado por hotboat-whatsapp (booking_visitor_summary): una fila
+            # por telefono, ya con la clasificacion real del funnel (no solo 3 flags booleanos)
+            # y agregada sobre todo el recorrido — mucho mas liviano que el JOIN en vivo de antes.
             direct_web_conversions = conn.execute(text("""
-                SELECT
-                    bvi.phone AS phone,
-                    MIN(bve.recorded_at) AS first_seen_at,
-                    MAX(bve.recorded_at) AS last_seen_at,
-                    BOOL_OR(bve.event_type = 'view_prices') AS viewed_prices,
-                    BOOL_OR(bve.event_type = 'date_selected') AS selected_date,
-                    COUNT(DISTINCT bve.id) AS event_count
-                FROM booking_visitor_identity bvi
-                JOIN booking_visitor_events bve
-                  ON bve.session_id = bvi.session_id
-                     OR (bvi.visitor_id IS NOT NULL AND bve.visitor_id = bvi.visitor_id)
-                WHERE bvi.phone IS NOT NULL AND bvi.phone <> ''
-                GROUP BY bvi.phone
+                SELECT phone, visitor_id, session_count, event_count,
+                       first_seen_at, last_seen_at, classification, classification_desc
+                FROM booking_visitor_summary
+                WHERE phone IS NOT NULL AND phone <> ''
             """)).fetchall()
         except Exception:
-            # Tabla nueva (migracion 036) — puede no existir aun en algunos entornos.
+            # Tabla nueva — puede no existir aun en algunos entornos (falta correr el deploy
+            # de hotboat-whatsapp con ensure_db_columns()).
             direct_web_conversions = []
 
     for row in leads:
@@ -249,11 +260,16 @@ def run() -> dict:
             continue
         d = merged.setdefault(phone, {})
         d["link_clicked"] = True
-        d["link_viewed_prices"] = bool(d.get("link_viewed_prices")) or bool(row.viewed_prices)
-        d["link_selected_date"] = bool(d.get("link_selected_date")) or bool(row.selected_date)
+        d["link_viewed_prices"] = bool(d.get("link_viewed_prices")) or _web_rank(row.classification) >= _web_rank("🔍 Explorando")
+        d["link_selected_date"] = bool(d.get("link_selected_date")) or _web_rank(row.classification) >= _web_rank("⭐ Muy interesado")
         existing_seen = d.get("link_last_seen_at")
         if not existing_seen or (row.last_seen_at and row.last_seen_at > existing_seen):
             d["link_last_seen_at"] = row.last_seen_at
+
+        d["web_classification"] = row.classification
+        d["web_classification_desc"] = row.classification_desc
+        d["web_last_seen_at"] = row.last_seen_at
+        d["web_session_count"] = row.session_count
 
     created = updated = 0
     with Session(local_engine) as session:
@@ -292,6 +308,10 @@ def run() -> dict:
                 existing.link_viewed_prices = d.get("link_viewed_prices", existing.link_viewed_prices)
                 existing.link_selected_date = d.get("link_selected_date", existing.link_selected_date)
                 existing.link_last_seen_at = d.get("link_last_seen_at") or existing.link_last_seen_at
+                existing.web_classification = d.get("web_classification") or existing.web_classification
+                existing.web_classification_desc = d.get("web_classification_desc") or existing.web_classification_desc
+                existing.web_last_seen_at = d.get("web_last_seen_at") or existing.web_last_seen_at
+                existing.web_session_count = d.get("web_session_count", existing.web_session_count)
                 existing.reservation_score = score
                 existing.score_updated_at = now
                 existing.score_breakdown = breakdown
@@ -317,6 +337,10 @@ def run() -> dict:
                     link_viewed_prices=d.get("link_viewed_prices", False),
                     link_selected_date=d.get("link_selected_date", False),
                     link_last_seen_at=d.get("link_last_seen_at"),
+                    web_classification=d.get("web_classification"),
+                    web_classification_desc=d.get("web_classification_desc"),
+                    web_last_seen_at=d.get("web_last_seen_at"),
+                    web_session_count=d.get("web_session_count", 0),
                     reservation_score=score,
                     score_updated_at=now,
                     score_breakdown=breakdown,

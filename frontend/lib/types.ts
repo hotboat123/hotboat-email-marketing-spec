@@ -251,6 +251,10 @@ export interface ContactCRM {
   link_viewed_prices: boolean;
   link_selected_date: boolean;
   link_last_seen_at: string | null;
+  web_classification: string | null;
+  web_classification_desc: string | null;
+  web_last_seen_at: string | null;
+  web_session_count: number | null;
   created_at: string;
   updated_at: string;
 }

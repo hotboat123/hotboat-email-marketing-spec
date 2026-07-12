@@ -55,6 +55,15 @@ class ContactCRM(SQLModel, table=True):
     link_selected_date: bool = Field(default=False)
     link_last_seen_at: Optional[datetime] = None
 
+    # Resumen de actividad directa en la web (booking_visitor_summary en hotboat-whatsapp),
+    # cubre visitantes que llegaron directo al sitio (no via link de WhatsApp) y quedaron
+    # identificados al reservar. Mas rico que los link_* de arriba: clasificacion real
+    # (ej. "⭐ Muy interesado") en vez de solo 3 flags booleanos.
+    web_classification: Optional[str] = None
+    web_classification_desc: Optional[str] = None
+    web_last_seen_at: Optional[datetime] = None
+    web_session_count: Optional[int] = Field(default=0)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -84,6 +93,10 @@ class ContactCRMRead(SQLModel):
     link_viewed_prices: bool
     link_selected_date: bool
     link_last_seen_at: Optional[datetime]
+    web_classification: Optional[str]
+    web_classification_desc: Optional[str]
+    web_last_seen_at: Optional[datetime]
+    web_session_count: Optional[int]
     created_at: datetime
     updated_at: datetime
 
