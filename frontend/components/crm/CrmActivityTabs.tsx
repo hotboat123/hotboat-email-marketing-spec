@@ -8,7 +8,11 @@ import { MessageCircle, MousePointerClick, PhoneCall, Bot, User } from "lucide-r
 import { statusMeta } from "@/components/crm/StatusModal";
 
 export const EVENT_LABELS: Record<string, string> = {
-  page_visit: "Visitó la página",
+  // page_visit viene de hotboat.cl (tracker.js); page_visit_booking del
+  // sistema de reservas (booking-soft.html) — mismo booking_visitor_events,
+  // pero cada sitio manda un nombre distinto para poder distinguirlos.
+  page_visit: "Visitó hotboat.cl",
+  page_visit_booking: "Entró a la página de reservas",
   view_prices: "Vio precios",
   view_features: "Vio características",
   view_ubicacion: "Vio ubicación",
