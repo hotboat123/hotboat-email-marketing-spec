@@ -170,9 +170,12 @@ def get_crm_web_activity(
     session: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    """Eventos de navegacion web para este contacto — solo cubre sesiones que
-    llegaron via un link de seguimiento (tracked_quote_links), que es la unica
-    forma hoy de asociar navegacion anonima a un telefono identificado."""
+    """Eventos de navegacion web para este contacto. Combina las dos formas de
+    identidad que hoy existen en hotboat-whatsapp:
+    - link_token (tracked_quote_links): cubre a quien el bot le mando un link.
+    - booking_visitor_identity (session_id/visitor_id): cubre a quien llego
+      directo a la web (hotboat.cl, ads, organico) y quedo identificado al
+      reservar — sin haber pasado nunca por un link de WhatsApp."""
     contact = session.get(ContactCRM, contact_crm_id)
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
@@ -184,14 +187,23 @@ def get_crm_web_activity(
     try:
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT event_type, extra_date, time_label, recorded_at, session_id
-                FROM booking_visitor_activity
-                WHERE phone = :phone
-                ORDER BY recorded_at DESC
+                SELECT DISTINCT bve.event_type, bve.extra_date, bve.time_label,
+                       bve.recorded_at, bve.session_id
+                FROM booking_visitor_events bve
+                WHERE bve.link_token IN (
+                    SELECT token FROM tracked_quote_links WHERE phone IN (:phone, :phone_digits)
+                ) OR bve.session_id IN (
+                    SELECT session_id FROM booking_visitor_identity WHERE phone IN (:phone, :phone_digits)
+                ) OR bve.visitor_id IN (
+                    SELECT visitor_id FROM booking_visitor_identity
+                    WHERE phone IN (:phone, :phone_digits) AND visitor_id IS NOT NULL
+                )
+                ORDER BY bve.recorded_at DESC
                 LIMIT :limit
-            """), {"phone": phone_digits, "limit": limit}).fetchall()
+            """), {"phone": contact.phone, "phone_digits": phone_digits, "limit": limit}).fetchall()
     except Exception:
-        # Vista puede no existir en algunos entornos — no romper el detalle del contacto.
+        # Tabla/columnas pueden no existir aun en algunos entornos — no romper
+        # el detalle del contacto.
         return []
 
     return [
