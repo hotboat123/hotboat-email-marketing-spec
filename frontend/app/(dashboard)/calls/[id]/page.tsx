@@ -4,36 +4,35 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { crmApi } from "@/lib/api";
-import { ContactCRM, CallStatus } from "@/lib/types";
+import { crmApi, contactsApi } from "@/lib/api";
+import { ContactCRM, CallStatus, Contact } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
 import { statusMeta, StatusModal } from "@/components/crm/StatusModal";
 import { ConversationTab, WebActivityTab, CallHistoryTab } from "@/components/crm/CrmActivityTabs";
+import { Tab, DetailsTab, MetricsTab, SegmentsTab, ObjectsTab, EmptyTabPlaceholder } from "@/components/crm/ContactProfileTabs";
 
-function Tab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-        active ? "border-gray-900 text-gray-900" : "border-transparent text-gray-500 hover:text-gray-700"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
+type TabKey = "details" | "metrics" | "segments" | "objects" | "conversation" | "web" | "calls";
 
 export default function CallDetailPage() {
   const params = useParams();
   const contactId = Number(params.id);
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"conversation" | "web" | "calls">("conversation");
+  const [tab, setTab] = useState<TabKey>("details");
   const [editing, setEditing] = useState(false);
 
   const { data: contact, isLoading } = useQuery<ContactCRM>({
     queryKey: ["crm-contact", contactId],
     queryFn: () => crmApi.get(contactId).then((r) => r.data),
+  });
+
+  // Perfil de email marketing vinculado (mismo teléfono), si existe — null cuando
+  // este lead nunca se suscribió a email (aunque sí escriba por WhatsApp).
+  const linkedContactId = contact?.linked_contact_id ?? null;
+  const { data: linkedContact } = useQuery<Contact>({
+    queryKey: ["contact", linkedContactId],
+    queryFn: () => contactsApi.get(linkedContactId!).then((r) => r.data),
+    enabled: !!linkedContactId,
   });
 
   const statusMutation = useMutation({
@@ -46,9 +45,14 @@ export default function CallDetailPage() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (data: Partial<Contact>) => contactsApi.update(linkedContactId!, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["contact", linkedContactId] }),
+  });
+
   if (isLoading) {
     return (
-      <div className="p-8 max-w-4xl">
+      <div className="p-8 max-w-5xl">
         <div className="h-4 bg-gray-200 rounded w-28 animate-pulse mb-6" />
         <div className="h-24 bg-gray-100 rounded-xl animate-pulse" />
       </div>
@@ -72,7 +76,7 @@ export default function CallDetailPage() {
   const breakdown = contact.score_breakdown || {};
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-8 max-w-5xl">
       <Link href="/calls" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-5">
         <ArrowLeft size={14} /> Volver a llamadas
       </Link>
@@ -121,11 +125,42 @@ export default function CallDetailPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="flex gap-0 border-b border-gray-200 px-2">
+        <div className="flex gap-0 border-b border-gray-200 px-2 overflow-x-auto">
+          <Tab label="Detalles"            active={tab === "details"}     onClick={() => setTab("details")} />
+          <Tab label="Métricas e insights" active={tab === "metrics"}     onClick={() => setTab("metrics")} />
+          <Tab label="Listas y segmentos"  active={tab === "segments"}    onClick={() => setTab("segments")} />
+          <Tab label="Objetos"             active={tab === "objects"}     onClick={() => setTab("objects")} />
           <Tab label="Conversación WhatsApp" active={tab === "conversation"} onClick={() => setTab("conversation")} />
-          <Tab label="Actividad web" active={tab === "web"} onClick={() => setTab("web")} />
-          <Tab label="Historial de llamadas" active={tab === "calls"} onClick={() => setTab("calls")} />
+          <Tab label="Actividad web"       active={tab === "web"}         onClick={() => setTab("web")} />
+          <Tab label="Historial de llamadas" active={tab === "calls"}     onClick={() => setTab("calls")} />
         </div>
+
+        {tab === "details" && (
+          linkedContact ? (
+            <DetailsTab
+              contact={linkedContact}
+              saving={updateMutation.isPending}
+              onSave={(fields, notes, birthday) =>
+                updateMutation.mutate({ custom_fields: fields, notes: notes || null, birthday: birthday || null } as Partial<Contact>)
+              }
+            />
+          ) : <EmptyTabPlaceholder message="Este contacto no está suscrito a email marketing." />
+        )}
+        {tab === "metrics" && (
+          linkedContact
+            ? <MetricsTab contact={linkedContact} />
+            : <EmptyTabPlaceholder message="Este contacto no está suscrito a email marketing." />
+        )}
+        {tab === "segments" && (
+          linkedContact
+            ? <SegmentsTab contactId={linkedContact.id} />
+            : <EmptyTabPlaceholder message="Este contacto no está suscrito a email marketing." />
+        )}
+        {tab === "objects" && (
+          linkedContact
+            ? <ObjectsTab contactId={linkedContact.id} />
+            : <EmptyTabPlaceholder message="Este contacto no está suscrito a email marketing." />
+        )}
         {tab === "conversation" && <ConversationTab contactCrmId={contactId} />}
         {tab === "web" && <WebActivityTab contactCrmId={contactId} />}
         {tab === "calls" && <CallHistoryTab contactCrmId={contactId} />}
