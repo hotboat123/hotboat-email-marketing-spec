@@ -4,10 +4,17 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
+// Only append "Z" when the string has no timezone info at all — a naive
+// timestamp (no offset) is assumed UTC. Postgres TIMESTAMPTZ columns already
+// serialize with a numeric offset (e.g. "...+00:00"); appending "Z" to those
+// produces an invalid ISO string ("...+00:00Z") that Date() can't parse.
+function _withTz(date: string): string {
+  return /[Zz]$|[+-]\d{2}:\d{2}$/.test(date) ? date : date + "Z";
+}
+
 export function formatDate(date: string | null | undefined): string {
   if (!date) return "—";
-  const s = date.endsWith("Z") ? date : date + "Z";
-  return new Date(s).toLocaleDateString("es-CL", {
+  return new Date(_withTz(date)).toLocaleDateString("es-CL", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -16,8 +23,7 @@ export function formatDate(date: string | null | undefined): string {
 
 export function formatDateTime(date: string | null | undefined): string {
   if (!date) return "—";
-  const s = date.endsWith("Z") ? date : date + "Z";
-  return new Date(s).toLocaleString("es-CL", {
+  return new Date(_withTz(date)).toLocaleString("es-CL", {
     day: "2-digit",
     month: "short",
     year: "numeric",
