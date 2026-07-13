@@ -74,7 +74,10 @@ def _normalize_phone_e164(raw: str | None, default_country: str = "+56") -> str 
         return f"{default_country}{digits}"
     if default_country == "+56" and len(digits) == 11 and digits.startswith("56"):
         return f"+{digits}"
-    return digits
+    # Any other digit-only number (foreign country code already included, just
+    # missing the '+') — every phone-format duplicate found in contacts_crm was
+    # exactly this: the same number stored once with '+' and once without.
+    return f"+{digits}"
 
 ACTIVE_LEAD_STATUSES = {"potential_client", "customer"}
 
@@ -180,15 +183,17 @@ def run() -> dict:
               AND key NOT LIKE 'aloj__%%'
             GROUP BY telefono
         """)).fetchall():
-            extras_by_phone[r[0]] = [s for s in (r[1] or []) if s]
+            norm_phone = _normalize_phone_e164(r[0])
+            if norm_phone:
+                extras_by_phone[norm_phone] = [s for s in (r[1] or []) if s]
 
         active_cart_phones = {
-            r[0] for r in conn.execute(text("""
+            _normalize_phone_e164(r[0]) for r in conn.execute(text("""
                 SELECT DISTINCT phone_number FROM whatsapp_carts
                 WHERE cart_data IS NOT NULL AND cart_data::text <> '[]'
                   AND updated_at > NOW() - INTERVAL '7 days'
             """)).fetchall()
-        }
+        } - {None}
 
         try:
             link_conversions = conn.execute(text("""
@@ -216,7 +221,7 @@ def run() -> dict:
             direct_web_conversions = []
 
     for row in leads:
-        phone = row.phone_number
+        phone = _normalize_phone_e164(row.phone_number)
         if not phone:
             continue
         d = merged.setdefault(phone, {})
@@ -229,7 +234,7 @@ def run() -> dict:
         d["last_interaction_at"] = row.last_interaction_at
 
     for row in bookings:
-        phone = row.phone
+        phone = _normalize_phone_e164(row.phone)
         if not phone:
             continue
         d = merged.setdefault(phone, {})
