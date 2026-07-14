@@ -355,11 +355,17 @@ def run() -> dict:
         if not phone:
             continue
         d = merged.setdefault(phone, {})
-        d["link_clicked"] = bool(row.click_count and row.click_count > 0)
-        d["link_viewed_prices"] = bool(row.viewed_prices)
-        d["link_selected_date"] = bool(row.selected_date)
-        d["link_last_seen_at"] = row.last_seen_at
-        d["link_click_count"] = int(row.click_count or 0)
+        # Un mismo telefono puede tener mas de un token en tracked_quote_links (el bot
+        # genera uno nuevo cada vez que reenvia el link) — la vista trae una fila por
+        # token, asi que hay que combinarlas en vez de pisar: el link viejo sin clicks
+        # no debe borrar la señal del link nuevo que si se clickeo.
+        d["link_clicked"] = bool(d.get("link_clicked")) or bool(row.click_count and row.click_count > 0)
+        d["link_viewed_prices"] = bool(d.get("link_viewed_prices")) or bool(row.viewed_prices)
+        d["link_selected_date"] = bool(d.get("link_selected_date")) or bool(row.selected_date)
+        existing_link_seen = d.get("link_last_seen_at")
+        if not existing_link_seen or (row.last_seen_at and row.last_seen_at > existing_link_seen):
+            d["link_last_seen_at"] = row.last_seen_at
+        d["link_click_count"] = int(d.get("link_click_count") or 0) + int(row.click_count or 0)
         d["channel_whatsapp_link"] = True
 
     for row in direct_web_conversions:
