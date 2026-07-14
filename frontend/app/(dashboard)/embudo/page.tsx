@@ -2,8 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { crmApi } from "@/lib/api";
-import { FunnelAnalytics, FunnelRow } from "@/lib/types";
+import { FunnelAnalytics, FunnelRow, FunnelByAdSource } from "@/lib/types";
 import { Megaphone, Smartphone, Globe } from "lucide-react";
+
+function money(n: number | null) {
+  return n == null ? <span className="text-gray-300">—</span> : `$${n.toLocaleString("es-CL")}`;
+}
 
 function conversionClass(rate: number) {
   if (rate >= 15) return "text-green-600 font-bold";
@@ -35,6 +39,26 @@ function FunnelValueCells({ row }: { row: FunnelRow }) {
       <td className={`px-5 py-3 text-right ${conversionClass(row.conversion_rate)}`}>
         {row.conversion_rate.toFixed(1)}%
       </td>
+    </>
+  );
+}
+
+function AdSpendHeaderCells() {
+  return (
+    <>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Gasto</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">CPC</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Costo/conversación</th>
+    </>
+  );
+}
+
+function AdSpendValueCells({ row }: { row: FunnelByAdSource }) {
+  return (
+    <>
+      <td className="px-5 py-3 text-right text-gray-700">{money(row.spend)}</td>
+      <td className="px-5 py-3 text-right text-gray-500">{money(row.cpc)}</td>
+      <td className="px-5 py-3 text-right text-gray-500">{money(row.cost_per_conversation)}</td>
     </>
   );
 }
@@ -111,9 +135,12 @@ export default function EmbudoPage() {
 
       {/* Por anuncio */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
-          <Megaphone size={15} className="text-brand-600" />
-          <p className="font-semibold text-gray-800">Por anuncio</p>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Megaphone size={15} className="text-brand-600" />
+            <p className="font-semibold text-gray-800">Por anuncio</p>
+          </div>
+          <p className="text-xs text-gray-400">Gasto/CPC/costo por conversación: solo para anuncios de Meta con datos importados</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -121,14 +148,15 @@ export default function EmbudoPage() {
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Anuncio</th>
                 <FunnelHeaderCells />
+                <AdSpendHeaderCells />
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                [...Array(6)].map((_, i) => <SkeletonRow key={i} cols={7} />)
+                [...Array(6)].map((_, i) => <SkeletonRow key={i} cols={10} />)
               ) : byAdSource.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-gray-400 text-sm">
+                  <td colSpan={10} className="px-5 py-10 text-center text-gray-400 text-sm">
                     Sin datos todavía.
                   </td>
                 </tr>
@@ -139,6 +167,7 @@ export default function EmbudoPage() {
                       {row.ad_source}
                     </td>
                     <FunnelValueCells row={row} />
+                    <AdSpendValueCells row={row} />
                   </tr>
                 ))
               )}

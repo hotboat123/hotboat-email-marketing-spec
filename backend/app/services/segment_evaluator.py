@@ -8,6 +8,7 @@ from app.models.contact import Contact
 FIELD_MAP = {
     "id":               Contact.id,
     "email":            Contact.email,
+    "phone":            Contact.phone,
     "language":         Contact.language,
     "origin_utm":       Contact.origin_utm,
     "opted_in":         Contact.opted_in,

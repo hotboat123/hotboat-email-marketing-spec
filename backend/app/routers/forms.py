@@ -1,7 +1,7 @@
 import json
 import textwrap
-from datetime import datetime
-from typing import List
+from datetime import date, datetime
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import PlainTextResponse
 from sqlmodel import Session, select
@@ -112,6 +112,31 @@ def submit_preflight(form_id: int):
     return Response(status_code=204, headers=_cors_headers())
 
 
+def _extract_birthday(form: SignupForm, extra_data: Optional[dict]) -> Optional[date]:
+    """Los popups no tienen un campo 'birthday' fijo — es un custom_field cualquiera
+    de tipo 'date' que el admin nombra como quiera (hoy: 'fecha_nacimiento'). Se
+    identifica por tipo date + 'nacimiento'/'birthday' en la key o el label, en vez
+    de hardcodear la key, para no romperse si se renombra o se crea otro formulario."""
+    if not extra_data:
+        return None
+    for field in (form.custom_form_fields or []):
+        if field.get("type") != "date":
+            continue
+        key = field.get("key", "")
+        label = field.get("label", "")
+        haystack = f"{key} {label}".lower()
+        if "nacimiento" not in haystack and "birthday" not in haystack:
+            continue
+        raw = extra_data.get(key)
+        if not raw:
+            continue
+        try:
+            return date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            continue
+    return None
+
+
 @router.post("/{form_id}/submit")
 def submit_form(
     form_id: int,
@@ -131,6 +156,7 @@ def submit_form(
         raise HTTPException(status_code=422, detail="Email inválido")
 
     origin = payload.source_url or f"Formulario #{form_id}"
+    birthday = _extract_birthday(f, payload.extra_data)
 
     contact = session.exec(select(Contact).where(Contact.email == email)).first()
     if contact:
@@ -142,6 +168,8 @@ def submit_form(
             contact.name = payload.name.strip() or None
         if payload.phone and not contact.phone:
             contact.phone = payload.phone.strip() or None
+        if birthday and not contact.birthday:
+            contact.birthday = birthday
         if not contact.origin_utm:
             contact.origin_utm = origin
         contact.updated_at = datetime.utcnow()
@@ -154,6 +182,7 @@ def submit_form(
             origin_utm=origin,
             opted_in=True,
             opted_in_at=datetime.utcnow(),
+            birthday=birthday,
         ))
 
     session.add(FormSubmission(

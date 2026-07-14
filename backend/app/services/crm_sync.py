@@ -2,8 +2,12 @@
 Sincroniza contacts_crm desde las tablas fuente de hotboat-whatsapp (solo lectura,
 misma Postgres compartida) y calcula reservation_score.
 
-No toca `contacts` ni `sync_contacts()` (app/services/sync_hotboat.py) — reutiliza
-únicamente su helper `_source_engine()` para conectarse a las tablas de origen.
+No toca `contacts` ni `sync_contacts()` (app/services/sync_hotboat.py) más que una
+excepción puntual: marca `custom_fields.vio_precio_sin_reservar` en el contacto de
+email vinculado (ver price_seen_no_booking más abajo), para poder segmentarlo —
+reutiliza el soporte a custom_fields.* que segment_evaluator.py ya tenía, sin tocar
+ningún otro campo de `contacts`. Reutiliza `_source_engine()` de sync_hotboat.py
+para conectarse a las tablas de origen.
 
 Fuentes:
   - whatsapp_leads         -> cubre leads que nunca reservaron (atribucion, ultimo contacto)
@@ -12,7 +16,7 @@ Fuentes:
   - tracked_link_conversion -> embudo web (vio precios / eligio fecha / clicks) para leads a
                                los que el bot les mando un link de seguimiento (tracked_quote_links)
   - booking_visitor_summary -> cantidad de eventos (clicks/paginas) en la navegacion web directa
-  - contacts (local)       -> solo para resolver linked_contact_id por email (lectura)
+  - contacts (local)       -> resolver linked_contact_id por email, y marcar custom_fields.vio_precio_sin_reservar
 """
 import logging
 import re
@@ -22,6 +26,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.database import engine as local_engine
+from app.models.contact import Contact
 from app.models.contact_crm import ContactCRM
 from app.models.score_weight import ScoreWeight
 from app.services.sync_hotboat import _source_engine
@@ -433,6 +438,13 @@ def run() -> dict:
             for row in session.execute(text("SELECT id, email FROM contacts WHERE email IS NOT NULL")).all()
         }
 
+        # Telefonos que vieron el precio pero nunca llegaron a elegir fecha ni pagaron —
+        # usado para el segmento "vio el precio y no reservo" (probable objecion de precio).
+        # Se escribe como custom_fields.vio_precio_sin_reservar en el contacto de email
+        # vinculado, asi el segment_evaluator existente lo puede filtrar sin tocar su
+        # motor (ya soporta custom_fields.* de forma generica).
+        price_seen_no_booking: dict[int, bool] = {}
+
         for phone, d in merged.items():
             has_extras = phone in cart_extras_phones
             has_clicked_pay = phone in clicked_pay_phones
@@ -442,6 +454,11 @@ def run() -> dict:
             linked_id = contact_id_by_email.get(email) if email else None
 
             existing = existing_by_phone.get(phone)
+            if linked_id:
+                final_viewed_prices = d.get("link_viewed_prices", existing.link_viewed_prices if existing else False)
+                final_selected_date = d.get("link_selected_date", existing.link_selected_date if existing else False)
+                final_veces_hotboat = d.get("veces_hotboat", existing.veces_hotboat if existing else 0)
+                price_seen_no_booking[linked_id] = bool(final_viewed_prices) and not final_selected_date and not final_veces_hotboat
             if existing:
                 existing.name = d.get("name") or existing.name
                 existing.email = email or existing.email
@@ -507,6 +524,22 @@ def run() -> dict:
                     score_breakdown=breakdown,
                 ))
                 created += 1
+
+        if price_seen_no_booking:
+            contacts_to_flag = session.exec(
+                select(Contact).where(Contact.id.in_(price_seen_no_booking.keys()))
+            ).all()
+            for contact in contacts_to_flag:
+                flag = price_seen_no_booking.get(contact.id, False)
+                fields = dict(contact.custom_fields or {})
+                if flag:
+                    if fields.get("vio_precio_sin_reservar") != "true":
+                        fields["vio_precio_sin_reservar"] = "true"
+                        contact.custom_fields = fields
+                        session.add(contact)
+                elif fields.pop("vio_precio_sin_reservar", None) is not None:
+                    contact.custom_fields = fields
+                    session.add(contact)
 
         session.commit()
 

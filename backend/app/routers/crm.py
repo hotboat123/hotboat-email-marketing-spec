@@ -264,6 +264,48 @@ def _funnel_row(total: int, viewed_prices: int, selected_date: int, pending: int
     }
 
 
+def _ad_spend_by_name() -> dict:
+    """Gasto/CPC/costo por conversación real por anuncio de Meta, leído de
+    meta_ads_insights (misma Postgres compartida — un ETL aparte importa esto
+    directo desde la Marketing API de Meta). Se cruza por nombre de anuncio
+    contra contacts_crm.ad_source; no todos matchean — algunos ad_source son
+    canales autoreportados ("TV", "TripAdvisor", "boca a boca") que nunca
+    fueron un anuncio de Meta con gasto asociado, y esos quedan sin dato."""
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT a.name AS ad_name,
+                       SUM(i.spend) AS spend,
+                       SUM(i.clicks) AS clicks,
+                       SUM(meta_fn_action_types_sum(i.actions, ARRAY[
+                           'onsite_conversion.messaging_conversation_started_7d',
+                           'onsite_conversion.messaging_conversation_started',
+                           'messaging_conversation_started'
+                       ])) AS conversations_started
+                FROM meta_ads_insights i
+                LEFT JOIN meta_ads a ON a.id = i.ad_id
+                WHERE a.name IS NOT NULL
+                GROUP BY a.name
+            """)).all()
+    except Exception:
+        # meta_ads_insights/meta_ads pueden no existir en algunos entornos — no
+        # bloquear el resto del embudo por esto.
+        return {}
+
+    result = {}
+    for r in rows:
+        spend = float(r.spend or 0)
+        clicks = float(r.clicks or 0)
+        conversations = float(r.conversations_started or 0)
+        result[r.ad_name.strip().lower()] = {
+            "spend": round(spend),
+            "cpc": round(spend / clicks, 1) if clicks else None,
+            "cost_per_conversation": round(spend / conversations, 1) if conversations else None,
+        }
+    return result
+
+
 @router.get("/analytics/funnel")
 def get_funnel_analytics(
     session: Session = Depends(get_session),
@@ -306,9 +348,16 @@ def get_funnel_analytics(
         FROM contacts_crm WHERE channel_direct_web
     """)).all()
 
+    ad_spend = _ad_spend_by_name()
+    no_spend_data = {"spend": None, "cpc": None, "cost_per_conversation": None}
+
     return {
         "by_ad_source": [
-            {"ad_source": r.ad_source, **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.pending, r.paid)}
+            {
+                "ad_source": r.ad_source,
+                **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.pending, r.paid),
+                **ad_spend.get(r.ad_source.strip().lower(), no_spend_data),
+            }
             for r in by_ad_rows
         ],
         "by_channel": [

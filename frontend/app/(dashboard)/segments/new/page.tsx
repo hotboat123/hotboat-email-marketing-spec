@@ -10,6 +10,7 @@ import Link from "next/link";
 
 const FIELDS = [
   { value: "email",          label: "Email",                 type: "string" },
+  { value: "phone",          label: "Teléfono",              type: "string" },
   { value: "veces_hotboat",  label: "Experiencias HotBoat",  type: "number" },
   { value: "ha_alojamiento", label: "Con alojamiento",       type: "boolean" },
   { value: "ticket_medio",   label: "Ticket medio ($)",      type: "number" },
@@ -17,6 +18,16 @@ const FIELDS = [
   { value: "origin_utm",     label: "Origen UTM",            type: "string" },
   { value: "opted_in",       label: "Opt-in activo",         type: "boolean" },
   { value: "ultima_visita",  label: "Última visita",         type: "date" },
+  { value: "birthday",       label: "Fecha de nacimiento",   type: "date" },
+  { value: "custom_fields.vio_precio_sin_reservar", label: "Vio el precio y no reservó", type: "boolean" },
+];
+
+// "tiene dato"/"no tiene dato" se agregan a todos los tipos — el value del rule se
+// ignora para esos dos ops (ver OPS.is_null/not_null en segment_evaluator.py), sirven
+// para filtrar por presencia de dato sin importar el tipo del campo (ej. "tiene teléfono").
+const PRESENCE_OPS = [
+  { value: "not_null", label: "tiene dato" },
+  { value: "is_null",  label: "no tiene dato" },
 ];
 
 const OPS_BY_TYPE: Record<string, { value: string; label: string }[]> = {
@@ -26,18 +37,21 @@ const OPS_BY_TYPE: Record<string, { value: string; label: string }[]> = {
     { value: "gte", label: "mayor o igual que" },
     { value: "lt",  label: "menor que" },
     { value: "lte", label: "menor o igual que" },
+    ...PRESENCE_OPS,
   ],
   string:  [
     { value: "eq",       label: "es" },
     { value: "contains", label: "contiene" },
     { value: "starts",   label: "empieza por" },
+    ...PRESENCE_OPS,
   ],
-  boolean: [{ value: "eq", label: "es" }],
+  boolean: [{ value: "eq", label: "es" }, ...PRESENCE_OPS],
   date:    [
     { value: "gt",  label: "después de" },
     { value: "lt",  label: "antes de" },
     { value: "gte", label: "desde" },
     { value: "lte", label: "hasta" },
+    ...PRESENCE_OPS,
   ],
 };
 
@@ -275,7 +289,7 @@ export default function NewSegmentPage() {
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
-                    {fieldType === "boolean" ? (
+                    {rule.op === "not_null" || rule.op === "is_null" ? null : fieldType === "boolean" ? (
                       <select
                         value={String(rule.value)}
                         onChange={(e) => updateRule(i, { value: e.target.value === "true" })}

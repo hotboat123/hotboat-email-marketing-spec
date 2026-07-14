@@ -296,6 +296,9 @@ export interface FunnelRow {
 
 export interface FunnelByAdSource extends FunnelRow {
   ad_source: string;
+  spend: number | null;
+  cpc: number | null;
+  cost_per_conversation: number | null;
 }
 
 export interface FunnelByChannel extends FunnelRow {
