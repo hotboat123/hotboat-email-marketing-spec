@@ -5,9 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { crmApi } from "@/lib/api";
 import { ContactCRM, CallStatus } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { PhoneCall, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { PhoneCall, Download, Settings, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { CALL_STATUSES, statusMeta, linkFunnelLabel, StatusModal } from "@/components/crm/StatusModal";
+import { ScoreWeightsModal } from "@/components/crm/ScoreWeightsModal";
 
 const PAGE_SIZE = 50;
 
@@ -34,6 +35,7 @@ export default function CallsPage() {
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ContactCRM | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [showWeights, setShowWeights] = useState(false);
 
   const filters = {
     call_status: callStatus || undefined,
@@ -75,14 +77,23 @@ export default function CallsPage() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Llamadas</h1>
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="flex items-center gap-2 px-3.5 py-2 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          <Download size={14} />
-          {exporting ? "Exportando..." : "Exportar CSV"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowWeights(true)}
+            className="flex items-center gap-2 px-3.5 py-2 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            <Settings size={14} />
+            Configuración
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 px-3.5 py-2 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <Download size={14} />
+            {exporting ? "Exportando..." : "Exportar CSV"}
+          </button>
+        </div>
       </div>
 
       {isError && (
@@ -246,6 +257,8 @@ export default function CallsPage() {
           onSave={(status, note) => statusMutation.mutate({ id: editing.id, status, note })}
         />
       )}
+
+      {showWeights && <ScoreWeightsModal onClose={() => setShowWeights(false)} />}
     </div>
   );
 }

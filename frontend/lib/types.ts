@@ -307,6 +307,13 @@ export interface FunnelAnalytics {
   by_channel: FunnelByChannel[];
 }
 
+export interface ScoreWeight {
+  key: string;
+  label: string;
+  points: number;
+  updated_at: string;
+}
+
 export interface SubjectAnalytics {
   campaign_id: number;
   subject: string;

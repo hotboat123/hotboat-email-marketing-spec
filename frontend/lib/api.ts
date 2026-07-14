@@ -144,6 +144,8 @@ export const crmApi = {
   conversations: (id: number) => api.get(`/crm/contacts/${id}/conversations`),
   webActivity: (id: number) => api.get(`/crm/contacts/${id}/web_activity`),
   funnelAnalytics: () => api.get("/crm/analytics/funnel"),
+  scoreWeights: () => api.get("/crm/score-weights"),
+  updateScoreWeights: (weights: { key: string; points: number }[]) => api.put("/crm/score-weights", weights),
   updateCallStatus: (id: number, data: { call_status: string; note?: string }) =>
     api.patch(`/crm/contacts/${id}/call_status`, data),
   // Bearer token vive en localStorage, no en cookies, asi que la descarga no puede ser un <a href> plano:

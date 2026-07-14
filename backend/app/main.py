@@ -7,6 +7,7 @@ from app.routers import auth, contacts, segments, templates, campaigns, webhooks
 from app.models import brand_asset as _brand_asset_models  # noqa: registers table
 from app.models import contact_crm as _contact_crm_models  # noqa: registers table
 from app.models import call_activity as _call_activity_models  # noqa: registers table
+from app.models import score_weight as _score_weight_models  # noqa: registers table
 
 app = FastAPI(title="HotBoat Email Marketing API", version="1.0.0", redirect_slashes=False)
 

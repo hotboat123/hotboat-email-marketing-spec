@@ -8,9 +8,10 @@ No toca `contacts` ni `sync_contacts()` (app/services/sync_hotboat.py) — reuti
 Fuentes:
   - whatsapp_leads         -> cubre leads que nunca reservaron (atribucion, ultimo contacto)
   - all_appointments       -> cubre historial de reservas (veces_hotboat, ticket_medio, extras)
-  - whatsapp_carts         -> señal de carrito activo para el score
-  - tracked_link_conversion -> embudo web (vio precios / eligio fecha) para leads a los que
-                               el bot les mando un link de seguimiento (tracked_quote_links)
+  - whatsapp_carts         -> señal de extras agregados al carrito para el score
+  - tracked_link_conversion -> embudo web (vio precios / eligio fecha / clicks) para leads a
+                               los que el bot les mando un link de seguimiento (tracked_quote_links)
+  - booking_visitor_summary -> cantidad de eventos (clicks/paginas) en la navegacion web directa
   - contacts (local)       -> solo para resolver linked_contact_id por email (lectura)
 """
 import logging
@@ -22,22 +23,60 @@ from sqlmodel import Session, select
 
 from app.database import engine as local_engine
 from app.models.contact_crm import ContactCRM
+from app.models.score_weight import ScoreWeight
 from app.services.sync_hotboat import _source_engine
 
 logger = logging.getLogger(__name__)
 
-# Pesos ajustables del score 0-100. Cada regla suma como maximo una vez.
+# Pesos por defecto del score 0-100 (usados para sembrar la tabla score_weights la
+# primera vez, y como fallback si esa tabla esta vacia). Cada regla suma como maximo
+# una vez. Los puntos reales que usa run() se leen de score_weights — editables desde
+# el dashboard (Llamadas > Configuración) sin tocar código, ver _load_weights().
 SCORE_WEIGHTS = {
     "veces_hotboat": 25,        # cliente recurrente, señal mas fuerte
     "lead_status_active": 15,   # lead clasificado como potencial/cliente en whatsapp_leads
-    "ad_source_present": 10,    # llego por un anuncio (self-selected intent)
     "recent_contact_3d": 20,    # ultimo contacto hace <=3 dias
     "recent_contact_14d": 10,   # ultimo contacto hace <=14 dias
     "stale_30d_penalty": -15,   # ultimo contacto hace >30 dias
-    "active_cart": 20,          # tiene un carrito de WhatsApp activo (ultimos 7 dias)
     "link_clicked": 15,         # hizo click en el link de cotizacion que le mando el bot
     "link_selected_date": 15,   # y llego a elegir fecha en el calendario (muy cerca de reservar)
+    "engagement_high": 20,      # 10+ clicks/eventos en el sistema de reservas o la pagina web
+    "engagement_mid": 12,       # 4-9 clicks/eventos
+    "engagement_low": 6,        # 1-3 clicks/eventos
+    "cart_has_extras": 10,      # agrego algun extra (no solo la reserva base) al carrito de WhatsApp
+    "clicked_pay": 15,          # llego a apretar el boton "Pagar" en booking-soft.html (aunque no haya pagado)
 }
+
+SCORE_WEIGHT_LABELS = {
+    "veces_hotboat": "Ya reservó y pagó antes",
+    "lead_status_active": "Lead activo en whatsapp_leads",
+    "recent_contact_3d": "Contacto en los últimos 3 días",
+    "recent_contact_14d": "Contacto entre 4 y 14 días atrás",
+    "stale_30d_penalty": "Sin contacto hace más de 30 días",
+    "link_clicked": "Hizo clic en el link que le mandó el bot",
+    "link_selected_date": "Llegó a elegir fecha en el calendario",
+    "clicked_pay": "Hizo clic en \"Pagar\" (aunque no haya pagado)",
+    "engagement_high": "10+ clicks en el sistema de reservas o la web",
+    "engagement_mid": "4-9 clicks en el sistema de reservas o la web",
+    "engagement_low": "1-3 clicks en el sistema de reservas o la web",
+    "cart_has_extras": "Agregó extras al carrito de WhatsApp",
+}
+
+# Umbrales de clicks/eventos (suma de link_click_count + web_event_count) para
+# "engagement_*" — entre mas interactuo con el sistema de reservas y la web, mas cerca esta.
+_ENGAGEMENT_HIGH_MIN = 10
+_ENGAGEMENT_MID_MIN = 4
+
+
+def _load_weights(session: Session) -> dict[str, int]:
+    """Puntos reales a usar en este sync: lo que haya en score_weights, completado
+    con los defaults de SCORE_WEIGHTS para cualquier clave que todavia no exista ahi
+    (ej. una regla nueva agregada al código antes de que alguien la edite en el dashboard)."""
+    rows = session.exec(select(ScoreWeight)).all()
+    weights = {r.key: r.points for r in rows}
+    for key, default in SCORE_WEIGHTS.items():
+        weights.setdefault(key, default)
+    return weights
 
 # Orden de avance del funnel web (booking_visitor_summary.classification), de menos a mas
 # interes — usado solo para derivar los flags legacy link_viewed_prices/link_selected_date
@@ -94,54 +133,68 @@ def _days_since(ts, now: datetime) -> int | None:
     return (now - ts).days
 
 
-def _compute_score(d: dict, has_active_cart: bool, now: datetime) -> tuple[int, dict]:
+def _compute_score(d: dict, has_cart_extras: bool, has_clicked_pay: bool, weights: dict[str, int], now: datetime) -> tuple[int, dict]:
     score = 0
     breakdown: dict[str, int] = {}
 
     if (d.get("veces_hotboat") or 0) >= 1:
-        w = SCORE_WEIGHTS["veces_hotboat"]
+        w = weights["veces_hotboat"]
         score += w
         breakdown["veces_hotboat"] = w
 
     if d.get("lead_status") in ACTIVE_LEAD_STATUSES:
-        w = SCORE_WEIGHTS["lead_status_active"]
+        w = weights["lead_status_active"]
         score += w
         breakdown["lead_status_active"] = w
-
-    if d.get("ad_source"):
-        w = SCORE_WEIGHTS["ad_source_present"]
-        score += w
-        breakdown["ad_source_present"] = w
 
     days = _days_since(d.get("last_interaction_at"), now)
     if days is not None:
         if days <= 3:
-            w = SCORE_WEIGHTS["recent_contact_3d"]
+            w = weights["recent_contact_3d"]
             score += w
             breakdown["recent_contact_3d"] = w
         elif days <= 14:
-            w = SCORE_WEIGHTS["recent_contact_14d"]
+            w = weights["recent_contact_14d"]
             score += w
             breakdown["recent_contact_14d"] = w
         elif days > 30:
-            w = SCORE_WEIGHTS["stale_30d_penalty"]
+            w = weights["stale_30d_penalty"]
             score += w
             breakdown["stale_30d_penalty"] = w
 
-    if has_active_cart:
-        w = SCORE_WEIGHTS["active_cart"]
-        score += w
-        breakdown["active_cart"] = w
-
     if d.get("link_clicked"):
-        w = SCORE_WEIGHTS["link_clicked"]
+        w = weights["link_clicked"]
         score += w
         breakdown["link_clicked"] = w
 
     if d.get("link_selected_date"):
-        w = SCORE_WEIGHTS["link_selected_date"]
+        w = weights["link_selected_date"]
         score += w
         breakdown["link_selected_date"] = w
+
+    clicks = (d.get("link_click_count") or 0) + (d.get("web_event_count") or 0)
+    if clicks >= _ENGAGEMENT_HIGH_MIN:
+        w = weights["engagement_high"]
+        score += w
+        breakdown["engagement_high"] = w
+    elif clicks >= _ENGAGEMENT_MID_MIN:
+        w = weights["engagement_mid"]
+        score += w
+        breakdown["engagement_mid"] = w
+    elif clicks >= 1:
+        w = weights["engagement_low"]
+        score += w
+        breakdown["engagement_low"] = w
+
+    if has_cart_extras:
+        w = weights["cart_has_extras"]
+        score += w
+        breakdown["cart_has_extras"] = w
+
+    if has_clicked_pay:
+        w = weights["clicked_pay"]
+        score += w
+        breakdown["clicked_pay"] = w
 
     score = max(0, min(100, score))
     return score, breakdown
@@ -201,13 +254,40 @@ def run() -> dict:
             if norm_phone:
                 extras_by_phone[norm_phone] = [s for s in (r[1] or []) if s]
 
-        active_cart_phones = {
+        cart_extras_phones = {
             _normalize_phone_e164(r[0]) for r in conn.execute(text("""
                 SELECT DISTINCT phone_number FROM whatsapp_carts
                 WHERE cart_data IS NOT NULL AND cart_data::text <> '[]'
                   AND updated_at > NOW() - INTERVAL '7 days'
+                  AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(cart_data::jsonb) elem
+                    WHERE elem->>'item_type' = 'extra'
+                  )
             """)).fetchall()
         } - {None}
+
+        try:
+            # Cubre a cualquiera que llego a apretar "Pagar" en booking-soft.html — tanto
+            # via link de WhatsApp (link_token -> tracked_quote_links) como navegacion
+            # directa (session_id/visitor_id -> booking_visitor_identity), igual que el
+            # UNION de get_crm_web_activity en este mismo repo.
+            clicked_pay_phones = {
+                _normalize_phone_e164(r[0]) for r in conn.execute(text("""
+                    SELECT DISTINCT bvi.phone
+                    FROM booking_visitor_events bve
+                    JOIN booking_visitor_identity bvi
+                      ON bve.session_id = bvi.session_id
+                         OR (bvi.visitor_id IS NOT NULL AND bve.visitor_id = bvi.visitor_id)
+                    WHERE bve.event_type = 'click_pagar' AND bvi.phone IS NOT NULL AND bvi.phone <> ''
+                    UNION
+                    SELECT DISTINCT tql.phone
+                    FROM booking_visitor_events bve
+                    JOIN tracked_quote_links tql ON bve.link_token = tql.token
+                    WHERE bve.event_type = 'click_pagar' AND tql.phone IS NOT NULL AND tql.phone <> ''
+                """)).fetchall()
+            } - {None}
+        except Exception:
+            clicked_pay_phones = set()
 
         try:
             link_conversions = conn.execute(text("""
@@ -279,6 +359,7 @@ def run() -> dict:
         d["link_viewed_prices"] = bool(row.viewed_prices)
         d["link_selected_date"] = bool(row.selected_date)
         d["link_last_seen_at"] = row.last_seen_at
+        d["link_click_count"] = int(row.click_count or 0)
         d["channel_whatsapp_link"] = True
 
     for row in direct_web_conversions:
@@ -298,9 +379,12 @@ def run() -> dict:
         d["web_last_seen_at"] = row.last_seen_at
         d["channel_direct_web"] = True
         d["web_session_count"] = row.session_count
+        d["web_event_count"] = int(row.event_count or 0)
 
     created = updated = 0
     with Session(local_engine) as session:
+        weights = _load_weights(session)
+
         # Bulk-fetch once instead of one round-trip per contact (N+1 was the same
         # anti-pattern that made the phone backfill script slow against Railway).
         existing_by_phone = {
@@ -312,8 +396,9 @@ def run() -> dict:
         }
 
         for phone, d in merged.items():
-            has_cart = phone in active_cart_phones
-            score, breakdown = _compute_score(d, has_cart, now)
+            has_extras = phone in cart_extras_phones
+            has_clicked_pay = phone in clicked_pay_phones
+            score, breakdown = _compute_score(d, has_extras, has_clicked_pay, weights, now)
 
             email = d.get("email")
             linked_id = contact_id_by_email.get(email) if email else None
