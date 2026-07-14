@@ -13,14 +13,14 @@ const LEVELS: { value: AdLevel; label: string }[] = [
   { value: "campaign", label: "Campañas" },
 ];
 
-type SortKey = "spend" | "clicks" | "cpc" | "conversations_started" | "cost_per_conversation";
+type SortKey = "spend" | "clicks" | "cpc" | "bookings" | "cost_per_booking";
 
 const SORT_COLUMNS: { key: SortKey; label: string }[] = [
   { key: "spend", label: "Gasto" },
   { key: "clicks", label: "Clicks" },
   { key: "cpc", label: "CPC" },
-  { key: "conversations_started", label: "Conversaciones" },
-  { key: "cost_per_conversation", label: "Costo/conversación" },
+  { key: "bookings", label: "Reservas" },
+  { key: "cost_per_booking", label: "Costo/reserva" },
 ];
 
 function money(n: number | null) {
@@ -44,10 +44,12 @@ export default function AnunciosPage() {
   const [sortKey, setSortKey] = useState<SortKey>("spend");
   const [sortDesc, setSortDesc] = useState(true);
   const [minSpend, setMinSpend] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const { data, isLoading, isError } = useQuery<AdSummary[]>({
-    queryKey: ["ads-summary", level],
-    queryFn: () => adsApi.summary(level).then((r) => r.data),
+    queryKey: ["ads-summary", level, dateFrom, dateTo],
+    queryFn: () => adsApi.summary(level, dateFrom, dateTo).then((r) => r.data),
     staleTime: 5 * 60_000,
   });
 
@@ -75,11 +77,11 @@ export default function AnunciosPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Anuncios</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Gasto, CPC y costo por conversación desde Meta Ads — hacé clic en una fila para ver su evolución en el tiempo.
+          Gasto, CPC y costo por reserva pagada desde Meta Ads — hacé clic en una fila para ver su evolución en el tiempo.
         </p>
       </div>
 
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex bg-gray-100 rounded-lg p-1">
           {LEVELS.map((l) => (
             <button
@@ -100,6 +102,30 @@ export default function AnunciosPage() {
           onChange={(e) => setMinSpend(e.target.value)}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 w-40 focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
+        <div className="flex items-center gap-1.5 text-sm text-gray-500">
+          <span>Desde</span>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="px-2.5 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <span>Hasta</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="px-2.5 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
       </div>
 
       {isError && (
@@ -178,8 +204,8 @@ export default function AnunciosPage() {
                     <td className="px-5 py-3 text-right text-gray-700 tabular-nums">{money(row.spend)}</td>
                     <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{row.clicks.toLocaleString("es-CL")}</td>
                     <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{money(row.cpc)}</td>
-                    <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{row.conversations_started.toLocaleString("es-CL")}</td>
-                    <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{money(row.cost_per_conversation)}</td>
+                    <td className="px-5 py-3 text-right text-gray-700 font-medium tabular-nums">{row.bookings.toLocaleString("es-CL")}</td>
+                    <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{money(row.cost_per_booking)}</td>
                   </tr>
                 ))
               )}
@@ -187,6 +213,13 @@ export default function AnunciosPage() {
           </table>
         </div>
       </div>
+
+      <p className="text-xs text-gray-400 mt-3">
+        Reservas = pago confirmado real, atribuido por nombre exacto de anuncio (fecha confiable — nunca fechas de
+        importación masiva). Cuando dos anuncios distintos comparten el mismo nombre en Meta, la misma reserva puede
+        aparecer en ambas filas — sumar la columna entre filas puede sobrecontar. El dato recién empieza a acumularse
+        de forma confiable ahora que hay tracking en tiempo real; el historial viejo va a estar subrepresentado.
+      </p>
     </div>
   );
 }

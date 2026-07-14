@@ -315,6 +315,8 @@ export interface AdSummary {
   cpc: number | null;
   conversations_started: number;
   cost_per_conversation: number | null;
+  bookings: number;
+  cost_per_booking: number | null;
   first_date: string | null;
   last_date: string | null;
 }

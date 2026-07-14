@@ -4,7 +4,7 @@ directo de meta_ads_insights/meta_ads/meta_adsets/meta_campaigns en la
 Postgres compartida (mismo ETL de Meta Ads que ya alimenta esas tablas,
 ver hotboat-whatsapp). Solo lectura — no se escribe nada de vuelta.
 """
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
@@ -70,15 +70,29 @@ def _require_level(level: str) -> None:
 @router.get("/summary")
 def ads_summary(
     level: Level = Query("ad"),
+    date_from: Optional[str] = Query(None, description="YYYY-MM-DD, filtra por fecha del gasto"),
+    date_to: Optional[str] = Query(None, description="YYYY-MM-DD, filtra por fecha del gasto"),
     _: User = Depends(get_current_user),
 ):
-    """Gasto/CPC/costo por conversación acumulado por anuncio, conjunto de
+    """Gasto/CPC/reservas confirmadas acumulado por anuncio, conjunto de
     anuncios o campaña — según `level`. Sin rango de fechas: es todo el
-    historial importado (ver first_date/last_date por fila)."""
+    historial importado (ver first_date/last_date por fila). El rango de
+    fechas filtra el gasto por i.date_start y las reservas por su propia
+    fecha de conversión (no son la misma columna, pero es el filtro que
+    tiene sentido para cada una)."""
     _require_level(level)
     id_col, name_col, status_col = _LEVEL_COLS[level]
     adset_name_sel = "s.name" if level == "ad" else "NULL"
     adset_group = ", s.name" if level == "ad" else ""
+
+    date_where = ""
+    params: dict = {}
+    if date_from:
+        date_where += " AND i.date_start >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        date_where += " AND i.date_start <= :date_to"
+        params["date_to"] = date_to
 
     sql = f"""
         SELECT {id_col} AS id, {name_col} AS name, {status_col} AS status,
@@ -90,21 +104,22 @@ def ads_summary(
                MIN(i.date_start) AS first_date,
                MAX(i.date_start) AS last_date
         {_LEVEL_JOINS[level]}
-        WHERE {id_col} IS NOT NULL
+        WHERE {id_col} IS NOT NULL {date_where}
         GROUP BY {id_col}, {name_col}, {status_col}, c.name{adset_group}
         ORDER BY spend DESC
     """
     try:
         engine = _source_engine()
         with engine.connect() as conn:
-            rows = conn.execute(text(sql)).all()
+            rows = conn.execute(text(sql), params).all()
+            bookings_by_id = _bookings_by_level_id(conn, level, date_from, date_to)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"No se pudo leer meta_ads_insights: {exc}")
 
-    return [_summary_row(r) for r in rows]
+    return [_summary_row(r, bookings_by_id.get(r.id, 0)) for r in rows]
 
 
-def _summary_row(r) -> dict:
+def _summary_row(r, bookings: int = 0) -> dict:
     spend = float(r.spend or 0)
     clicks = float(r.clicks or 0)
     conversations = float(r.conversations_started or 0)
@@ -119,9 +134,68 @@ def _summary_row(r) -> dict:
         "cpc": round(spend / clicks, 1) if clicks else None,
         "conversations_started": int(conversations),
         "cost_per_conversation": round(spend / conversations, 1) if conversations else None,
+        # Reservas confirmadas reales (pago, no solo "conversación de WhatsApp
+        # iniciada") — ver _bookings_by_ad_name() para el criterio de fecha.
+        "bookings": bookings,
+        "cost_per_booking": round(spend / bookings, 1) if bookings else None,
         "first_date": r.first_date.isoformat() if r.first_date else None,
         "last_date": r.last_date.isoformat() if r.last_date else None,
     }
+
+
+def _bookings_by_ad_name(conn, date_from: Optional[str], date_to: Optional[str]) -> dict[str, int]:
+    """Reservas confirmadas por nombre de anuncio (en minúsculas), con fecha
+    confiable — paid_at si existe, si no created_at, excluyendo source='sheets'
+    (importa en bloque cientos de filas con la misma fecha ficticia). Esta es
+    la MISMA lógica que _booking_days_for_names() de /timeseries, pero
+    agrupada por nombre en vez de por día."""
+    date_where = ""
+    params: dict = {}
+    if date_from:
+        date_where += " AND COALESCE(a.paid_at, a.created_at)::date >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        date_where += " AND COALESCE(a.paid_at, a.created_at)::date <= :date_to"
+        params["date_to"] = date_to
+
+    rows = conn.execute(
+        text(f"""
+            SELECT lower(cc.ad_source) AS name, COUNT(*) AS bookings
+            FROM all_appointments a
+            JOIN contacts_crm cc ON cc.phone = a.telefono
+            WHERE a.status = 'confirmed'
+              AND a.source <> 'sheets'
+              AND cc.ad_source IS NOT NULL AND cc.ad_source <> ''
+              {date_where}
+            GROUP BY 1
+        """),
+        params,
+    ).all()
+    return {r.name: int(r.bookings) for r in rows}
+
+
+def _bookings_by_level_id(conn, level: str, date_from: Optional[str], date_to: Optional[str]) -> dict[str, int]:
+    """Enrolla _bookings_by_ad_name() al nivel pedido (ad/adset/campaign). Un
+    mismo nombre de anuncio puede repetirse en varios ad_id de Meta (anuncios
+    duplicados con el mismo nombre) — se deduplica por nombre DENTRO de cada
+    fila de salida antes de sumar, para no contar la misma reserva dos veces
+    si dos anuncios con igual nombre caen bajo el mismo conjunto/campaña."""
+    bookings_by_name = _bookings_by_ad_name(conn, date_from, date_to)
+    if not bookings_by_name:
+        return {}
+
+    ads = conn.execute(text("SELECT id, name, adset_id, campaign_id FROM meta_ads WHERE name IS NOT NULL")).all()
+    key_names: dict[str, set] = {}
+    for ad in ads:
+        name_lower = ad.name.lower()
+        if name_lower not in bookings_by_name:
+            continue
+        key = {"ad": ad.id, "adset": ad.adset_id, "campaign": ad.campaign_id}[level]
+        if key is None:
+            continue
+        key_names.setdefault(key, set()).add(name_lower)
+
+    return {key: sum(bookings_by_name[n] for n in names) for key, names in key_names.items()}
 
 
 @router.get("/timeseries")

@@ -164,7 +164,8 @@ export const crmApi = {
 };
 
 export const adsApi = {
-  summary: (level: "ad" | "adset" | "campaign") => api.get("/ads/summary", { params: { level } }),
+  summary: (level: "ad" | "adset" | "campaign", dateFrom?: string, dateTo?: string) =>
+    api.get("/ads/summary", { params: { level, date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
   timeseries: (level: "ad" | "adset" | "campaign", id: string) =>
     api.get("/ads/timeseries", { params: { level, id } }),
 };
