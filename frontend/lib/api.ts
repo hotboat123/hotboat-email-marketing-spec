@@ -168,6 +168,8 @@ export const adsApi = {
     api.get("/ads/summary", { params: { level, date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
   timeseries: (level: "ad" | "adset" | "campaign", id: string) =>
     api.get("/ads/timeseries", { params: { level, id } }),
+  bookings: (level: "ad" | "adset" | "campaign", id: string, dateFrom?: string, dateTo?: string) =>
+    api.get("/ads/bookings", { params: { level, id, date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
 };
 
 // Sync

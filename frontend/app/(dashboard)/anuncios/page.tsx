@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { adsApi } from "@/lib/api";
-import { AdLevel, AdSummary } from "@/lib/types";
-import { LineChart, ArrowUpDown } from "lucide-react";
+import { AdBooking, AdLevel, AdSummary } from "@/lib/types";
+import { LineChart, ArrowUpDown, X, Users } from "lucide-react";
 
 const LEVELS: { value: AdLevel; label: string }[] = [
   { value: "ad", label: "Anuncios" },
@@ -39,6 +39,80 @@ function SkeletonRow() {
   );
 }
 
+function formatDate(d: string | null) {
+  if (!d) return "—";
+  const [y, m, day] = d.split("-");
+  return `${day}/${m}/${y}`;
+}
+
+function BookingsModal({
+  level,
+  id,
+  name,
+  dateFrom,
+  dateTo,
+  onClose,
+}: {
+  level: AdLevel;
+  id: string;
+  name: string;
+  dateFrom: string;
+  dateTo: string;
+  onClose: () => void;
+}) {
+  const { data: bookings = [], isLoading } = useQuery<AdBooking[]>({
+    queryKey: ["ad-bookings", level, id, dateFrom, dateTo],
+    queryFn: () => adsApi.bookings(level, id, dateFrom, dateTo).then((r) => r.data),
+    staleTime: 60_000,
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Users size={15} className="text-brand-600" /> Reservas de "{name}"
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">Pago confirmado real, atribuido por nombre de anuncio.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-3">
+          {isLoading ? (
+            [...Array(3)].map((_, i) => (
+              <div key={i} className="h-14 bg-gray-100 rounded animate-pulse my-2" />
+            ))
+          ) : bookings.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">No hay reservas para este filtro.</p>
+          ) : (
+            bookings.map((b) => (
+              <div key={b.id} className="py-3 border-b border-gray-50 last:border-0">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-gray-900 text-sm">{b.name || "Sin nombre"}</p>
+                  <p className="text-sm text-gray-700 tabular-nums">
+                    {b.amount != null ? `$${Math.round(b.amount).toLocaleString("es-CL")}` : "—"}
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {b.phone || "sin teléfono"}{b.email ? ` · ${b.email}` : ""}
+                </p>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Pagó el {formatDate(b.conversion_date)} · paseo {formatDate(b.trip_date)}
+                  {b.ad_source && b.ad_source.toLowerCase() !== name.toLowerCase() ? ` · anuncio: ${b.ad_source}` : ""}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AnunciosPage() {
   const [level, setLevel] = useState<AdLevel>("ad");
   const [sortKey, setSortKey] = useState<SortKey>("spend");
@@ -46,6 +120,7 @@ export default function AnunciosPage() {
   const [minSpend, setMinSpend] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [bookingsModal, setBookingsModal] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading, isError } = useQuery<AdSummary[]>({
     queryKey: ["ads-summary", level, dateFrom, dateTo],
@@ -204,7 +279,18 @@ export default function AnunciosPage() {
                     <td className="px-5 py-3 text-right text-gray-700 tabular-nums">{money(row.spend)}</td>
                     <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{row.clicks.toLocaleString("es-CL")}</td>
                     <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{money(row.cpc)}</td>
-                    <td className="px-5 py-3 text-right text-gray-700 font-medium tabular-nums">{row.bookings.toLocaleString("es-CL")}</td>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      {row.bookings > 0 ? (
+                        <button
+                          onClick={() => setBookingsModal({ id: row.id, name: row.name })}
+                          className="font-medium text-brand-600 hover:underline"
+                        >
+                          {row.bookings.toLocaleString("es-CL")}
+                        </button>
+                      ) : (
+                        <span className="text-gray-700 font-medium">0</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{money(row.cost_per_booking)}</td>
                   </tr>
                 ))
@@ -220,6 +306,17 @@ export default function AnunciosPage() {
         aparecer en ambas filas — sumar la columna entre filas puede sobrecontar. El dato recién empieza a acumularse
         de forma confiable ahora que hay tracking en tiempo real; el historial viejo va a estar subrepresentado.
       </p>
+
+      {bookingsModal && (
+        <BookingsModal
+          level={level}
+          id={bookingsModal.id}
+          name={bookingsModal.name}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onClose={() => setBookingsModal(null)}
+        />
+      )}
     </div>
   );
 }

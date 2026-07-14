@@ -335,6 +335,17 @@ export interface AdBookingDay {
   count: number;
 }
 
+export interface AdBooking {
+  id: number;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  amount: number | null;
+  trip_date: string | null;
+  conversion_date: string | null;
+  ad_source: string | null;
+}
+
 export interface AdTimeseries {
   id: string;
   name: string;

@@ -67,6 +67,17 @@ def _require_level(level: str) -> None:
         raise HTTPException(status_code=400, detail="level debe ser ad, adset o campaign")
 
 
+def _ad_names_sql_for_level(level: str) -> str:
+    """Nombres de anuncio bajo este nivel (para nivel "ad" es solo el propio;
+    para adset/campaign, todos los anuncios que caen adentro) — se usan para
+    buscar reservas confirmadas cuyo ad_source matchea exactamente alguno."""
+    if level == "ad":
+        return "SELECT name FROM meta_ads WHERE id = :id AND name IS NOT NULL"
+    if level == "adset":
+        return "SELECT DISTINCT name FROM meta_ads WHERE adset_id = :id AND name IS NOT NULL"
+    return "SELECT DISTINCT name FROM meta_ads WHERE campaign_id = :id AND name IS NOT NULL"
+
+
 @router.get("/summary")
 def ads_summary(
     level: Level = Query("ad"),
@@ -198,6 +209,70 @@ def _bookings_by_level_id(conn, level: str, date_from: Optional[str], date_to: O
     return {key: sum(bookings_by_name[n] for n in names) for key, names in key_names.items()}
 
 
+@router.get("/bookings")
+def ads_bookings(
+    level: Level = Query("ad"),
+    id: str = Query(...),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    _: User = Depends(get_current_user),
+):
+    """Detalle de las reservas detrás del número en la columna 'Reservas' del
+    resumen (o del 'Reservas confirmadas' del detalle) — mismos criterios de
+    atribución (nombre exacto de anuncio) y fecha confiable (paid_at, o
+    created_at excluyendo source='sheets')."""
+    _require_level(level)
+    ad_names_sql = _ad_names_sql_for_level(level)
+
+    date_where = ""
+    params: dict = {"id": id}
+    if date_from:
+        date_where += " AND COALESCE(a.paid_at, a.created_at)::date >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        date_where += " AND COALESCE(a.paid_at, a.created_at)::date <= :date_to"
+        params["date_to"] = date_to
+
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            ad_names = [r[0] for r in conn.execute(text(ad_names_sql), {"id": id}).all()]
+            if not ad_names:
+                return []
+            rows = conn.execute(
+                text(f"""
+                    SELECT DISTINCT a.id, a.nombre_cliente, a.telefono, a.email,
+                           a.ingreso_total, a.fecha AS trip_date,
+                           COALESCE(a.paid_at, a.created_at)::date AS conversion_date,
+                           cc.ad_source
+                    FROM all_appointments a
+                    JOIN contacts_crm cc ON cc.phone = a.telefono
+                    WHERE a.status = 'confirmed'
+                      AND a.source <> 'sheets'
+                      AND lower(cc.ad_source) = ANY(:names)
+                      {date_where}
+                    ORDER BY conversion_date DESC
+                """),
+                {**params, "names": [n.lower() for n in ad_names]},
+            ).all()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"No se pudo leer reservas: {exc}")
+
+    return [
+        {
+            "id": r.id,
+            "name": r.nombre_cliente,
+            "phone": r.telefono,
+            "email": r.email,
+            "amount": float(r.ingreso_total) if r.ingreso_total is not None else None,
+            "trip_date": r.trip_date.isoformat() if r.trip_date else None,
+            "conversion_date": r.conversion_date.isoformat() if r.conversion_date else None,
+            "ad_source": r.ad_source,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/timeseries")
 def ads_timeseries(
     level: Level = Query("ad"),
@@ -220,16 +295,7 @@ def ads_timeseries(
         ORDER BY i.date_start
     """
     name_sql = f"SELECT DISTINCT {name_col} AS name {_LEVEL_JOINS[level]} WHERE {id_col} = :id LIMIT 1"
-
-    # Nombres de anuncio bajo este nivel (para nivel "ad" es solo el propio; para
-    # adset/campaign, todos los anuncios que caen adentro) — se usan para buscar
-    # reservas confirmadas cuyo ad_source matchea exactamente alguno de estos.
-    if level == "ad":
-        ad_names_sql = "SELECT name FROM meta_ads WHERE id = :id AND name IS NOT NULL"
-    elif level == "adset":
-        ad_names_sql = "SELECT DISTINCT name FROM meta_ads WHERE adset_id = :id AND name IS NOT NULL"
-    else:
-        ad_names_sql = "SELECT DISTINCT name FROM meta_ads WHERE campaign_id = :id AND name IS NOT NULL"
+    ad_names_sql = _ad_names_sql_for_level(level)
 
     try:
         engine = _source_engine()
