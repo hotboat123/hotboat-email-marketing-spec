@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { crmApi } from "@/lib/api";
 import { ContactCRM, CallStatus } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { PhoneCall, Download, Settings, ChevronLeft, ChevronRight } from "lucide-react";
+import { PhoneCall, Download, Settings, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { CALL_STATUSES, statusMeta, linkFunnelLabel, StatusModal } from "@/components/crm/StatusModal";
 import { ScoreWeightsModal } from "@/components/crm/ScoreWeightsModal";
@@ -36,17 +36,31 @@ export default function CallsPage() {
   const [editing, setEditing] = useState<ContactCRM | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showWeights, setShowWeights] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Simple debounce on search
+  function handleSearch(val: string) {
+    setSearch(val);
+    setPage(0);
+    clearTimeout((window as unknown as { _callsSt?: ReturnType<typeof setTimeout> })._callsSt);
+    (window as unknown as { _callsSt?: ReturnType<typeof setTimeout> })._callsSt = setTimeout(
+      () => setDebouncedSearch(val),
+      300,
+    );
+  }
 
   const filters = {
     call_status: callStatus || undefined,
     min_score: minScore ? Number(minScore) : undefined,
+    q: debouncedSearch || undefined,
     sort,
     skip: page * PAGE_SIZE,
     limit: PAGE_SIZE,
   };
 
   const { data: contacts = [], isLoading, isError, refetch } = useQuery<ContactCRM[]>({
-    queryKey: ["crm-contacts", callStatus, minScore, sort, page],
+    queryKey: ["crm-contacts", callStatus, minScore, debouncedSearch, sort, page],
     queryFn: () => crmApi.list(filters).then((r) => r.data),
     staleTime: 60_000,
     retry: 1,
@@ -109,7 +123,16 @@ export default function CallsPage() {
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-3">
+        <div className="px-5 py-3.5 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+              placeholder="Buscar por nombre o teléfono..."
+              className="pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 w-56 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+            />
+          </div>
           <select
             value={callStatus}
             onChange={(e) => { setCallStatus(e.target.value); setPage(0); }}

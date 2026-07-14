@@ -1,10 +1,11 @@
 import csv
 import io
+import re
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import text
+from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
 from app.database import get_session
@@ -33,6 +34,7 @@ def list_crm_contacts(
     call_status: Optional[str] = None,
     min_score: Optional[int] = Query(None, ge=0, le=100),
     ad_source: Optional[str] = None,
+    q: Optional[str] = Query(None, description="Busca por nombre o teléfono"),
     sort: str = Query("score", pattern="^(score|last_interaction|booking)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=200),
@@ -46,6 +48,14 @@ def list_crm_contacts(
         query = query.where(ContactCRM.reservation_score >= min_score)
     if ad_source:
         query = query.where(ContactCRM.ad_source.ilike(f"%{ad_source}%"))
+    if q:
+        # El teléfono se compara solo por dígitos (mismo criterio E.164 del
+        # resto del sync) para que buscar "977577307" matchee "+56977577307".
+        digits = re.sub(r"\D", "", q)
+        conditions = [ContactCRM.name.ilike(f"%{q}%")]
+        if digits:
+            conditions.append(func.regexp_replace(ContactCRM.phone, r"[^0-9]", "", "g").ilike(f"%{digits}%"))
+        query = query.where(or_(*conditions))
     query = query.order_by(SORT_COLUMNS[sort].desc().nullslast()).offset(skip).limit(limit)
     return session.exec(query).all()
 

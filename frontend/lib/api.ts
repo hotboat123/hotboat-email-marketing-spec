@@ -136,7 +136,7 @@ export const automationsApi = {
 
 // CRM (cola de llamadas)
 export const crmApi = {
-  list: (params?: { call_status?: string; min_score?: number; ad_source?: string; sort?: string; skip?: number; limit?: number }) =>
+  list: (params?: { call_status?: string; min_score?: number; ad_source?: string; q?: string; sort?: string; skip?: number; limit?: number }) =>
     api.get("/crm/contacts", { params }),
   get: (id: number) => api.get(`/crm/contacts/${id}`),
   getByContact: (contactId: number) => api.get(`/crm/contacts/by_contact/${contactId}`),
