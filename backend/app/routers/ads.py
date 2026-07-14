@@ -147,11 +147,23 @@ def ads_timeseries(
     """
     name_sql = f"SELECT DISTINCT {name_col} AS name {_LEVEL_JOINS[level]} WHERE {id_col} = :id LIMIT 1"
 
+    # Nombres de anuncio bajo este nivel (para nivel "ad" es solo el propio; para
+    # adset/campaign, todos los anuncios que caen adentro) — se usan para buscar
+    # reservas confirmadas cuyo ad_source matchea exactamente alguno de estos.
+    if level == "ad":
+        ad_names_sql = "SELECT name FROM meta_ads WHERE id = :id AND name IS NOT NULL"
+    elif level == "adset":
+        ad_names_sql = "SELECT DISTINCT name FROM meta_ads WHERE adset_id = :id AND name IS NOT NULL"
+    else:
+        ad_names_sql = "SELECT DISTINCT name FROM meta_ads WHERE campaign_id = :id AND name IS NOT NULL"
+
     try:
         engine = _source_engine()
         with engine.connect() as conn:
             rows = conn.execute(text(sql), {"id": id}).all()
             name_row = conn.execute(text(name_sql), {"id": id}).first()
+            ad_names = [r[0] for r in conn.execute(text(ad_names_sql), {"id": id}).all()]
+            bookings = _booking_days_for_names(conn, ad_names)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"No se pudo leer meta_ads_insights: {exc}")
 
@@ -175,4 +187,31 @@ def ads_timeseries(
             }
             for r in rows
         ],
+        # Reservas confirmadas reales cuyo ad_source matchea el/los nombre(s) de
+        # este anuncio/conjunto/campaña, con fecha confiable (paid_at, o
+        # created_at excluyendo 'sheets' — esa fuente importa en bloque con una
+        # sola fecha ficticia compartida para cientos de filas, así que se
+        # excluye para no fabricar un pico falso). Son pocas — se muestran como
+        # marcas puntuales sobre los gráficos, no como una tasa diaria (con esta
+        # densidad de datos, una tasa % por día sería casi siempre 0 o 100%).
+        "bookings": bookings,
     }
+
+
+def _booking_days_for_names(conn, ad_names: list[str]) -> list[dict]:
+    if not ad_names:
+        return []
+    rows = conn.execute(
+        text("""
+            SELECT COALESCE(a.paid_at, a.created_at)::date AS day, COUNT(*) AS bookings
+            FROM all_appointments a
+            JOIN contacts_crm cc ON cc.phone = a.telefono
+            WHERE a.status = 'confirmed'
+              AND a.source <> 'sheets'
+              AND lower(cc.ad_source) = ANY(:names)
+            GROUP BY 1
+            ORDER BY 1
+        """),
+        {"names": [n.lower() for n in ad_names]},
+    ).all()
+    return [{"date": r.day.isoformat(), "count": int(r.bookings)} for r in rows]

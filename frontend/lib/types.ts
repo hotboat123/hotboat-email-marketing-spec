@@ -328,10 +328,16 @@ export interface AdTimeseriesPoint {
   cost_per_conversation: number | null;
 }
 
+export interface AdBookingDay {
+  date: string;
+  count: number;
+}
+
 export interface AdTimeseries {
   id: string;
   name: string;
   points: AdTimeseriesPoint[];
+  bookings: AdBookingDay[];
 }
 
 export interface FunnelByChannel extends FunnelRow {
