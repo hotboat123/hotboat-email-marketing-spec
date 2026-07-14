@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -19,6 +19,7 @@ import {
 import { adsApi } from "@/lib/api";
 import { AdLevel, AdSummary, AdTimeseries } from "@/lib/types";
 import { ArrowLeft } from "lucide-react";
+import { BookingsModal } from "@/components/ads/BookingsModal";
 
 const LEVEL_LABEL: Record<AdLevel, string> = {
   ad: "Anuncio",
@@ -35,12 +36,16 @@ function shortDate(d: string) {
   return `${day}/${m}`;
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
+  const Comp = onClick ? "button" : "div";
   return (
-    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+    <Comp
+      onClick={onClick}
+      className={`bg-white border border-gray-200 rounded-xl px-4 py-3 text-left ${onClick ? "hover:border-brand-300 hover:bg-brand-50/40 transition-colors" : ""}`}
+    >
       <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-lg font-semibold text-gray-900 tabular-nums">{value}</p>
-    </div>
+      <p className={`text-lg font-semibold tabular-nums ${onClick ? "text-brand-600" : "text-gray-900"}`}>{value}</p>
+    </Comp>
   );
 }
 
@@ -127,6 +132,8 @@ export default function AdDetailPage() {
   const bookings = series?.bookings ?? [];
   const totalBookings = useMemo(() => bookings.reduce((s, b) => s + b.count, 0), [bookings]);
 
+  const [showBookings, setShowBookings] = useState(false);
+
   return (
     <div className="p-8">
       <Link href="/anuncios" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-4">
@@ -160,7 +167,11 @@ export default function AdDetailPage() {
             <StatCard label="CPC promedio" value={money(totals.cpc)} />
             <StatCard label="Conversaciones" value={totals.conversations.toLocaleString("es-CL")} />
             <StatCard label="Costo/conversación" value={money(totals.costPerConversation)} />
-            <StatCard label="Reservas confirmadas" value={totalBookings.toLocaleString("es-CL")} />
+            <StatCard
+              label="Reservas confirmadas"
+              value={totalBookings.toLocaleString("es-CL")}
+              onClick={totalBookings > 0 ? () => setShowBookings(true) : undefined}
+            />
           </div>
 
           {chartData.length === 0 ? (
@@ -237,6 +248,15 @@ export default function AdDetailPage() {
             🎉 marca un día con reserva confirmada real (fecha de pago, o de creación si no está el nombre del origen exacto — nunca fechas de importación masiva).
             No se muestra como % diario porque hay muy pocos puntos por anuncio; con esa densidad una tasa por día sería casi siempre 0% o 100%, no una señal real.
           </p>
+
+          {showBookings && (
+            <BookingsModal
+              level={level}
+              id={id}
+              name={series.name}
+              onClose={() => setShowBookings(false)}
+            />
+          )}
         </>
       )}
     </div>
