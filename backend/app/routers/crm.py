@@ -251,11 +251,12 @@ def update_call_status(
     return contact
 
 
-def _funnel_row(total: int, viewed_prices: int, selected_date: int, paid: int) -> dict:
+def _funnel_row(total: int, viewed_prices: int, selected_date: int, pending: int, paid: int) -> dict:
     return {
         "total": total,
         "viewed_prices": viewed_prices,
         "selected_date": selected_date,
+        "pending_payment": pending,
         "paid": paid,
         "conversion_rate": round(paid / total * 100, 1) if total else 0.0,
     }
@@ -266,16 +267,20 @@ def get_funnel_analytics(
     session: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    """Embudo (vio precios -> eligió fecha -> pagó) agrupado por anuncio y por
-    canal de llegada (WhatsApp vs web directo). Usa los campos ya fusionados
-    por crm_sync (link_viewed_prices/link_selected_date/veces_hotboat) y los
-    dos flags de origen (channel_whatsapp_link/channel_direct_web) que marcan
-    de cual fuente vino la señal, sin duplicar la lógica de conteo."""
+    """Embudo (vio precios -> eligió fecha -> por pagar -> pago confirmado)
+    agrupado por anuncio y por canal de llegada (WhatsApp vs web directo). Usa
+    los campos ya fusionados por crm_sync (link_viewed_prices/link_selected_date/
+    veces_hotboat/veces_pendiente) y los dos flags de origen
+    (channel_whatsapp_link/channel_direct_web), sin duplicar la lógica de conteo.
+    veces_hotboat solo cuenta pago confirmado — veces_pendiente son reservas
+    web que todavía están esperando pago (existen hasta 120 min antes del
+    auto-cleanup en hotboat-whatsapp)."""
     by_ad_rows = session.execute(text("""
         SELECT COALESCE(NULLIF(ad_source, ''), 'Sin anuncio') AS ad_source,
                COUNT(*) AS total,
                COUNT(*) FILTER (WHERE link_viewed_prices) AS viewed_prices,
                COUNT(*) FILTER (WHERE link_selected_date)  AS selected_date,
+               COUNT(*) FILTER (WHERE veces_pendiente > 0) AS pending,
                COUNT(*) FILTER (WHERE veces_hotboat > 0)   AS paid
         FROM contacts_crm
         GROUP BY 1
@@ -287,23 +292,25 @@ def get_funnel_analytics(
         SELECT 'WhatsApp' AS channel, COUNT(*) AS total,
                COUNT(*) FILTER (WHERE link_viewed_prices) AS viewed_prices,
                COUNT(*) FILTER (WHERE link_selected_date)  AS selected_date,
+               COUNT(*) FILTER (WHERE veces_pendiente > 0) AS pending,
                COUNT(*) FILTER (WHERE veces_hotboat > 0)   AS paid
         FROM contacts_crm WHERE channel_whatsapp_link
         UNION ALL
         SELECT 'Web directo', COUNT(*),
                COUNT(*) FILTER (WHERE link_viewed_prices),
                COUNT(*) FILTER (WHERE link_selected_date),
+               COUNT(*) FILTER (WHERE veces_pendiente > 0),
                COUNT(*) FILTER (WHERE veces_hotboat > 0)
         FROM contacts_crm WHERE channel_direct_web
     """)).all()
 
     return {
         "by_ad_source": [
-            {"ad_source": r.ad_source, **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.paid)}
+            {"ad_source": r.ad_source, **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.pending, r.paid)}
             for r in by_ad_rows
         ],
         "by_channel": [
-            {"channel": r.channel, **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.paid)}
+            {"channel": r.channel, **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.pending, r.paid)}
             for r in by_channel_rows
         ],
     }

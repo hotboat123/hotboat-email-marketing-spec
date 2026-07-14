@@ -31,8 +31,12 @@ class ContactCRM(SQLModel, table=True):
     lead_status: Optional[str] = None
     last_interaction_at: Optional[datetime] = None  # ultimo mensaje de WhatsApp (whatsapp_leads)
 
-    # Historial de reservas
+    # Historial de reservas. veces_hotboat solo cuenta reservas con pago
+    # confirmado (status not in cancelled/no_show/pending_payment) — veces_pendiente
+    # cuenta las que estan esperando pago ahora mismo (existen hasta 120 min antes
+    # del auto-cleanup en hotboat-whatsapp), para no confundir "reservo" con "pago".
     veces_hotboat: int = Field(default=0)
+    veces_pendiente: int = Field(default=0)
     ultima_visita: Optional[date] = None
     ticket_medio: Optional[float] = None
     extras_favoritos: Optional[List[str]] = Field(
@@ -89,6 +93,7 @@ class ContactCRMRead(SQLModel):
     lead_status: Optional[str]
     last_interaction_at: Optional[datetime]
     veces_hotboat: int
+    veces_pendiente: int
     ultima_visita: Optional[date]
     ticket_medio: Optional[float]
     extras_favoritos: Optional[List[str]]

@@ -289,6 +289,7 @@ export interface FunnelRow {
   total: number;
   viewed_prices: number;
   selected_date: number;
+  pending_payment: number;
   paid: number;
   conversion_rate: number;
 }

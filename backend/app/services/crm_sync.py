@@ -168,7 +168,21 @@ def run() -> dict:
                    MAX(como_supieron) AS como_supieron
             FROM all_appointments
             WHERE telefono IS NOT NULL AND telefono <> ''
-              AND status NOT IN ('cancelled', 'no_show', 'pending')
+              AND status NOT IN ('cancelled', 'no_show', 'pending', 'pending_payment')
+            GROUP BY telefono
+        """)).fetchall()
+
+        # Reservas web que todavia estan esperando pago (dentro de la ventana de
+        # 120 min antes del auto-cleanup en hotboat-whatsapp/app/main.py) — antes
+        # se contaban como "pago" en veces_hotboat de arriba porque el filtro
+        # excluia el status 'pending' que nunca se usa, no 'pending_payment' que
+        # es el real.
+        pending_bookings = conn.execute(text("""
+            SELECT telefono AS phone, COUNT(*) AS veces_pendiente
+            FROM all_appointments
+            WHERE telefono IS NOT NULL AND telefono <> ''
+              AND source = 'hotboat_web'
+              AND status = 'pending_payment'
             GROUP BY telefono
         """)).fetchall()
 
@@ -249,6 +263,13 @@ def run() -> dict:
         if not d.get("ad_source"):
             d["ad_source"] = row.utm_campaign or row.como_supieron
 
+    for row in pending_bookings:
+        phone = _normalize_phone_e164(row.phone)
+        if not phone:
+            continue
+        d = merged.setdefault(phone, {})
+        d["veces_pendiente"] = int(row.veces_pendiente or 0)
+
     for row in link_conversions:
         phone = _normalize_phone_e164(row.phone)
         if not phone:
@@ -308,6 +329,11 @@ def run() -> dict:
                 existing.lead_status = d.get("lead_status") or existing.lead_status
                 existing.last_interaction_at = d.get("last_interaction_at") or existing.last_interaction_at
                 existing.veces_hotboat = d.get("veces_hotboat", existing.veces_hotboat)
+                # A diferencia de veces_hotboat (arriba), esto SI se resetea a 0 cada
+                # corrida si el telefono no aparece en pending_bookings — una reserva
+                # pendiente vive como mucho 120 min (auto-cleanup), asi que "no aparece"
+                # significa que ya se pago o se borro, no que hay que preservar el valor viejo.
+                existing.veces_pendiente = d.get("veces_pendiente", 0)
                 existing.ultima_visita = d.get("ultima_visita") or existing.ultima_visita
                 existing.ticket_medio = d.get("ticket_medio") if d.get("ticket_medio") is not None else existing.ticket_medio
                 existing.extras_favoritos = d.get("extras_favoritos") or existing.extras_favoritos
@@ -339,6 +365,7 @@ def run() -> dict:
                     lead_status=d.get("lead_status"),
                     last_interaction_at=d.get("last_interaction_at"),
                     veces_hotboat=d.get("veces_hotboat", 0),
+                    veces_pendiente=d.get("veces_pendiente", 0),
                     ultima_visita=d.get("ultima_visita"),
                     ticket_medio=d.get("ticket_medio"),
                     extras_favoritos=d.get("extras_favoritos"),

@@ -17,7 +17,8 @@ function FunnelHeaderCells() {
       <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Total</th>
       <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Vio precios</th>
       <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Eligió fecha</th>
-      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Pagó</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Por pagar</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Pago confirmado</th>
       <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Conversión</th>
     </>
   );
@@ -29,6 +30,7 @@ function FunnelValueCells({ row }: { row: FunnelRow }) {
       <td className="px-5 py-3 text-right text-gray-700">{row.total.toLocaleString("es-CL")}</td>
       <td className="px-5 py-3 text-right text-gray-500">{row.viewed_prices.toLocaleString("es-CL")}</td>
       <td className="px-5 py-3 text-right text-gray-500">{row.selected_date.toLocaleString("es-CL")}</td>
+      <td className="px-5 py-3 text-right text-yellow-600">{row.pending_payment.toLocaleString("es-CL")}</td>
       <td className="px-5 py-3 text-right text-gray-500">{row.paid.toLocaleString("es-CL")}</td>
       <td className={`px-5 py-3 text-right ${conversionClass(row.conversion_rate)}`}>
         {row.conversion_rate.toFixed(1)}%
@@ -84,10 +86,10 @@ export default function EmbudoPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                [...Array(2)].map((_, i) => <SkeletonRow key={i} cols={6} />)
+                [...Array(2)].map((_, i) => <SkeletonRow key={i} cols={7} />)
               ) : byChannel.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-gray-400 text-sm">
+                  <td colSpan={7} className="px-5 py-10 text-center text-gray-400 text-sm">
                     Todavía no hay actividad web o de links de seguimiento registrada.
                   </td>
                 </tr>
@@ -123,10 +125,10 @@ export default function EmbudoPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                [...Array(6)].map((_, i) => <SkeletonRow key={i} cols={6} />)
+                [...Array(6)].map((_, i) => <SkeletonRow key={i} cols={7} />)
               ) : byAdSource.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-gray-400 text-sm">
+                  <td colSpan={7} className="px-5 py-10 text-center text-gray-400 text-sm">
                     Sin datos todavía.
                   </td>
                 </tr>
