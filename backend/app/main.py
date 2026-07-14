@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.database import create_db_and_tables
-from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync, automations, forms, admin, brand_assets, crm
+from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync, automations, forms, admin, brand_assets, crm, ads
 from app.models import brand_asset as _brand_asset_models  # noqa: registers table
 from app.models import contact_crm as _contact_crm_models  # noqa: registers table
 from app.models import call_activity as _call_activity_models  # noqa: registers table
@@ -36,6 +36,7 @@ app.include_router(forms.router, prefix="/api/forms", tags=["forms"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(brand_assets.router, prefix="/api/marca", tags=["marca"])
 app.include_router(crm.router, prefix="/api/crm", tags=["crm"])
+app.include_router(ads.router, prefix="/api/ads", tags=["ads"])
 
 
 @app.on_event("startup")

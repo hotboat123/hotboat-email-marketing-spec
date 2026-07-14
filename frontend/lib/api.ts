@@ -163,6 +163,12 @@ export const crmApi = {
   },
 };
 
+export const adsApi = {
+  summary: (level: "ad" | "adset" | "campaign") => api.get("/ads/summary", { params: { level } }),
+  timeseries: (level: "ad" | "adset" | "campaign", id: string) =>
+    api.get("/ads/timeseries", { params: { level, id } }),
+};
+
 // Sync
 export const syncApi = {
   run: () => api.post("/sync/run"),

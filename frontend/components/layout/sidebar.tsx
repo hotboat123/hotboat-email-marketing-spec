@@ -17,6 +17,7 @@ import {
   LogOut,
   PhoneCall,
   TrendingUp,
+  LineChart,
 } from "lucide-react";
 import { clearToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ const nav = [
   { href: "/contacts",     label: "Contactos",        icon: Users },
   { href: "/calls",        label: "Llamadas",         icon: PhoneCall },
   { href: "/embudo",       label: "Embudo",           icon: TrendingUp },
+  { href: "/anuncios",     label: "Anuncios",         icon: LineChart },
   { href: "/segments",     label: "Segmentos",        icon: Filter },
   { href: "/templates",    label: "Plantillas",       icon: FileText },
   { href: "/campaigns",    label: "Campañas",         icon: Send },

@@ -276,6 +276,7 @@ def _ad_spend_by_name() -> dict:
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT a.name AS ad_name,
+                       MIN(a.id) AS ad_id,
                        SUM(i.spend) AS spend,
                        SUM(i.clicks) AS clicks,
                        SUM(meta_fn_action_types_sum(i.actions, ARRAY[
@@ -299,6 +300,7 @@ def _ad_spend_by_name() -> dict:
         clicks = float(r.clicks or 0)
         conversations = float(r.conversations_started or 0)
         result[r.ad_name.strip().lower()] = {
+            "ad_id": r.ad_id,
             "spend": round(spend),
             "cpc": round(spend / clicks, 1) if clicks else None,
             "cost_per_conversation": round(spend / conversations, 1) if conversations else None,
@@ -349,7 +351,7 @@ def get_funnel_analytics(
     """)).all()
 
     ad_spend = _ad_spend_by_name()
-    no_spend_data = {"spend": None, "cpc": None, "cost_per_conversation": None}
+    no_spend_data = {"ad_id": None, "spend": None, "cpc": None, "cost_per_conversation": None}
 
     return {
         "by_ad_source": [

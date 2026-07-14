@@ -296,9 +296,42 @@ export interface FunnelRow {
 
 export interface FunnelByAdSource extends FunnelRow {
   ad_source: string;
+  ad_id: string | null;
   spend: number | null;
   cpc: number | null;
   cost_per_conversation: number | null;
+}
+
+export type AdLevel = "ad" | "adset" | "campaign";
+
+export interface AdSummary {
+  id: string;
+  name: string;
+  status: string | null;
+  campaign_name: string | null;
+  adset_name: string | null;
+  spend: number;
+  clicks: number;
+  cpc: number | null;
+  conversations_started: number;
+  cost_per_conversation: number | null;
+  first_date: string | null;
+  last_date: string | null;
+}
+
+export interface AdTimeseriesPoint {
+  date: string;
+  spend: number;
+  clicks: number;
+  cpc: number | null;
+  conversations_started: number;
+  cost_per_conversation: number | null;
+}
+
+export interface AdTimeseries {
+  id: string;
+  name: string;
+  points: AdTimeseriesPoint[];
 }
 
 export interface FunnelByChannel extends FunnelRow {

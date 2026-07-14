@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { crmApi } from "@/lib/api";
 import { FunnelAnalytics, FunnelRow, FunnelByAdSource } from "@/lib/types";
 import { Megaphone, Smartphone, Globe } from "lucide-react";
@@ -76,6 +77,7 @@ function SkeletonRow({ cols }: { cols: number }) {
 }
 
 export default function EmbudoPage() {
+  const router = useRouter();
   const { data, isLoading } = useQuery<FunnelAnalytics>({
     queryKey: ["crm-funnel-analytics"],
     queryFn: () => crmApi.funnelAnalytics().then((r) => r.data),
@@ -86,7 +88,7 @@ export default function EmbudoPage() {
   const byChannel = data?.by_channel ?? [];
 
   return (
-    <div className="p-8 max-w-6xl">
+    <div className="p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Embudo de conversión</h1>
         <p className="text-sm text-gray-500 mt-1">
@@ -95,7 +97,7 @@ export default function EmbudoPage() {
       </div>
 
       {/* Por canal */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-8">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-8 max-w-4xl">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
           <Smartphone size={15} className="text-brand-600" />
           <p className="font-semibold text-gray-800">Web directo vs WhatsApp</p>
@@ -140,13 +142,15 @@ export default function EmbudoPage() {
             <Megaphone size={15} className="text-brand-600" />
             <p className="font-semibold text-gray-800">Por anuncio</p>
           </div>
-          <p className="text-xs text-gray-400">Gasto/CPC/costo por conversación: solo para anuncios de Meta con datos importados</p>
+          <p className="text-xs text-gray-400">
+            Gasto/CPC/costo por conversación: solo para anuncios de Meta con datos importados. Click en la fila → evolución en el tiempo.
+          </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[1100px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Anuncio</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase sticky left-0 bg-gray-50 z-10">Anuncio</th>
                 <FunnelHeaderCells />
                 <AdSpendHeaderCells />
               </tr>
@@ -161,15 +165,31 @@ export default function EmbudoPage() {
                   </td>
                 </tr>
               ) : (
-                byAdSource.map((row) => (
-                  <tr key={row.ad_source} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-3 font-medium text-gray-900 max-w-[240px] truncate" title={row.ad_source}>
-                      {row.ad_source}
-                    </td>
-                    <FunnelValueCells row={row} />
-                    <AdSpendValueCells row={row} />
-                  </tr>
-                ))
+                byAdSource.map((row) => {
+                  const clickable = !!row.ad_id;
+                  const rowContent = (
+                    <>
+                      <td className="px-5 py-3 font-medium text-gray-900 max-w-[240px] truncate sticky left-0 bg-white group-hover:bg-gray-50" title={row.ad_source}>
+                        {row.ad_source}
+                      </td>
+                      <FunnelValueCells row={row} />
+                      <AdSpendValueCells row={row} />
+                    </>
+                  );
+                  return clickable ? (
+                    <tr
+                      key={row.ad_source}
+                      className="group border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => router.push(`/anuncios/ad/${encodeURIComponent(row.ad_id!)}`)}
+                    >
+                      {rowContent}
+                    </tr>
+                  ) : (
+                    <tr key={row.ad_source} className="group border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      {rowContent}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
