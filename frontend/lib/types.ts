@@ -285,6 +285,27 @@ export interface CrmWebActivityEvent {
   session_id: string | null;
 }
 
+export interface FunnelRow {
+  total: number;
+  viewed_prices: number;
+  selected_date: number;
+  paid: number;
+  conversion_rate: number;
+}
+
+export interface FunnelByAdSource extends FunnelRow {
+  ad_source: string;
+}
+
+export interface FunnelByChannel extends FunnelRow {
+  channel: string;
+}
+
+export interface FunnelAnalytics {
+  by_ad_source: FunnelByAdSource[];
+  by_channel: FunnelByChannel[];
+}
+
 export interface SubjectAnalytics {
   campaign_id: number;
   subject: string;

@@ -1,0 +1,149 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { crmApi } from "@/lib/api";
+import { FunnelAnalytics, FunnelRow } from "@/lib/types";
+import { Megaphone, Smartphone, Globe } from "lucide-react";
+
+function conversionClass(rate: number) {
+  if (rate >= 15) return "text-green-600 font-bold";
+  if (rate >= 5) return "text-yellow-600 font-semibold";
+  return "text-gray-400";
+}
+
+function FunnelHeaderCells() {
+  return (
+    <>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Total</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Vio precios</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Eligió fecha</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Pagó</th>
+      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Conversión</th>
+    </>
+  );
+}
+
+function FunnelValueCells({ row }: { row: FunnelRow }) {
+  return (
+    <>
+      <td className="px-5 py-3 text-right text-gray-700">{row.total.toLocaleString("es-CL")}</td>
+      <td className="px-5 py-3 text-right text-gray-500">{row.viewed_prices.toLocaleString("es-CL")}</td>
+      <td className="px-5 py-3 text-right text-gray-500">{row.selected_date.toLocaleString("es-CL")}</td>
+      <td className="px-5 py-3 text-right text-gray-500">{row.paid.toLocaleString("es-CL")}</td>
+      <td className={`px-5 py-3 text-right ${conversionClass(row.conversion_rate)}`}>
+        {row.conversion_rate.toFixed(1)}%
+      </td>
+    </>
+  );
+}
+
+function SkeletonRow({ cols }: { cols: number }) {
+  return (
+    <tr className="border-b border-gray-100">
+      {[...Array(cols)].map((_, i) => (
+        <td key={i} className="px-5 py-3">
+          <div className="h-4 bg-gray-100 rounded animate-pulse ml-auto w-16" />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+export default function EmbudoPage() {
+  const { data, isLoading } = useQuery<FunnelAnalytics>({
+    queryKey: ["crm-funnel-analytics"],
+    queryFn: () => crmApi.funnelAnalytics().then((r) => r.data),
+    staleTime: 2 * 60_000,
+  });
+
+  const byAdSource = data?.by_ad_source ?? [];
+  const byChannel = data?.by_channel ?? [];
+
+  return (
+    <div className="p-8 max-w-6xl">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">Embudo de conversión</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Quién llega a cada etapa (vio precios → eligió fecha → pagó), por anuncio y por canal de llegada.
+        </p>
+      </div>
+
+      {/* Por canal */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-8">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+          <Smartphone size={15} className="text-brand-600" />
+          <p className="font-semibold text-gray-800">Web directo vs WhatsApp</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Canal</th>
+                <FunnelHeaderCells />
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                [...Array(2)].map((_, i) => <SkeletonRow key={i} cols={6} />)
+              ) : byChannel.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-gray-400 text-sm">
+                    Todavía no hay actividad web o de links de seguimiento registrada.
+                  </td>
+                </tr>
+              ) : (
+                byChannel.map((row) => (
+                  <tr key={row.channel} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-gray-900 flex items-center gap-2">
+                      {row.channel === "WhatsApp" ? <Smartphone size={14} className="text-green-500" /> : <Globe size={14} className="text-blue-500" />}
+                      {row.channel}
+                    </td>
+                    <FunnelValueCells row={row} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Por anuncio */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+          <Megaphone size={15} className="text-brand-600" />
+          <p className="font-semibold text-gray-800">Por anuncio</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Anuncio</th>
+                <FunnelHeaderCells />
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                [...Array(6)].map((_, i) => <SkeletonRow key={i} cols={6} />)
+              ) : byAdSource.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-gray-400 text-sm">
+                    Sin datos todavía.
+                  </td>
+                </tr>
+              ) : (
+                byAdSource.map((row) => (
+                  <tr key={row.ad_source} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-gray-900 max-w-[240px] truncate" title={row.ad_source}>
+                      {row.ad_source}
+                    </td>
+                    <FunnelValueCells row={row} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

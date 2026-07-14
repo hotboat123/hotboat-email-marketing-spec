@@ -258,6 +258,7 @@ def run() -> dict:
         d["link_viewed_prices"] = bool(row.viewed_prices)
         d["link_selected_date"] = bool(row.selected_date)
         d["link_last_seen_at"] = row.last_seen_at
+        d["channel_whatsapp_link"] = True
 
     for row in direct_web_conversions:
         phone = _normalize_phone_e164(row.phone)
@@ -274,6 +275,7 @@ def run() -> dict:
         d["web_classification"] = row.classification
         d["web_classification_desc"] = row.classification_desc
         d["web_last_seen_at"] = row.last_seen_at
+        d["channel_direct_web"] = True
         d["web_session_count"] = row.session_count
 
     created = updated = 0
@@ -317,6 +319,8 @@ def run() -> dict:
                 existing.web_classification_desc = d.get("web_classification_desc") or existing.web_classification_desc
                 existing.web_last_seen_at = d.get("web_last_seen_at") or existing.web_last_seen_at
                 existing.web_session_count = d.get("web_session_count", existing.web_session_count)
+                existing.channel_whatsapp_link = existing.channel_whatsapp_link or d.get("channel_whatsapp_link", False)
+                existing.channel_direct_web = existing.channel_direct_web or d.get("channel_direct_web", False)
                 existing.reservation_score = score
                 existing.score_updated_at = now
                 existing.score_breakdown = breakdown
@@ -346,6 +350,8 @@ def run() -> dict:
                     web_classification_desc=d.get("web_classification_desc"),
                     web_last_seen_at=d.get("web_last_seen_at"),
                     web_session_count=d.get("web_session_count", 0),
+                    channel_whatsapp_link=d.get("channel_whatsapp_link", False),
+                    channel_direct_web=d.get("channel_direct_web", False),
                     reservation_score=score,
                     score_updated_at=now,
                     score_breakdown=breakdown,

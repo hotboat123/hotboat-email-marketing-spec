@@ -64,6 +64,14 @@ class ContactCRM(SQLModel, table=True):
     web_last_seen_at: Optional[datetime] = None
     web_session_count: Optional[int] = Field(default=0)
 
+    # De cual mecanismo vino la senal de actividad web de este contacto — un
+    # mismo telefono puede tener ambos (ej. le mandaron un link y ademas
+    # visito la web despues). Usado para comparar conversion por canal
+    # (ver /api/crm/analytics/funnel), sin depender de los link_*/web_*
+    # ya fusionados arriba.
+    channel_whatsapp_link: bool = Field(default=False)
+    channel_direct_web: bool = Field(default=False)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -97,6 +105,8 @@ class ContactCRMRead(SQLModel):
     web_classification_desc: Optional[str]
     web_last_seen_at: Optional[datetime]
     web_session_count: Optional[int]
+    channel_whatsapp_link: bool
+    channel_direct_web: bool
     created_at: datetime
     updated_at: datetime
 
