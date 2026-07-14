@@ -318,6 +318,25 @@ def get_funnel_analytics(
     }
 
 
+def _seed_missing_score_weights(session: Session, existing_rows: list) -> list:
+    """Inserta cualquier clave de SCORE_WEIGHTS que todavia no este en la tabla —
+    tanto la primera vez (tabla vacia) como cuando se agrega una regla nueva al
+    código después de que alguien ya edito el panel (tabla parcialmente sembrada)."""
+    now = datetime.utcnow()
+    have = {r.key for r in existing_rows}
+    missing = [
+        ScoreWeight(key=key, label=SCORE_WEIGHT_LABELS.get(key, key), points=points, updated_at=now)
+        for key, points in SCORE_WEIGHTS.items()
+        if key not in have
+    ]
+    if not missing:
+        return existing_rows
+    for row in missing:
+        session.add(row)
+    session.commit()
+    return session.exec(select(ScoreWeight)).all()
+
+
 @router.get("/score-weights", response_model=List[ScoreWeightRead])
 def list_score_weights(
     session: Session = Depends(get_session),
@@ -326,17 +345,7 @@ def list_score_weights(
     """Puntos que usa reservation_score (crm_sync._compute_score). Si nunca se
     editaron desde el dashboard, siembra la tabla con los defaults de crm_sync.py
     para que el panel de Configuración parta con valores sensatos."""
-    rows = session.exec(select(ScoreWeight)).all()
-    if not rows:
-        now = datetime.utcnow()
-        rows = [
-            ScoreWeight(key=key, label=SCORE_WEIGHT_LABELS.get(key, key), points=points, updated_at=now)
-            for key, points in SCORE_WEIGHTS.items()
-        ]
-        for row in rows:
-            session.add(row)
-        session.commit()
-        rows = session.exec(select(ScoreWeight)).all()
+    rows = _seed_missing_score_weights(session, session.exec(select(ScoreWeight)).all())
     return sorted(rows, key=lambda r: -r.points)
 
 
@@ -349,15 +358,7 @@ def update_score_weights(
     """Guarda los puntos editados. Los toma el próximo crm_sync — no recalcula
     scores existentes al toque, para no bloquear la request con un sync completo."""
     now = datetime.utcnow()
-    existing_rows = session.exec(select(ScoreWeight)).all()
-    if not existing_rows:
-        existing_rows = [
-            ScoreWeight(key=key, label=SCORE_WEIGHT_LABELS.get(key, key), points=points, updated_at=now)
-            for key, points in SCORE_WEIGHTS.items()
-        ]
-        for row in existing_rows:
-            session.add(row)
-        session.flush()
+    existing_rows = _seed_missing_score_weights(session, session.exec(select(ScoreWeight)).all())
     by_key = {r.key: r for r in existing_rows}
     for item in payload:
         row = by_key.get(item.key)

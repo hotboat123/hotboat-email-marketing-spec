@@ -45,6 +45,8 @@ SCORE_WEIGHTS = {
     "engagement_low": 6,        # 1-3 clicks/eventos
     "cart_has_extras": 10,      # agrego algun extra (no solo la reserva base) al carrito de WhatsApp
     "clicked_pay": 15,          # llego a apretar el boton "Pagar" en booking-soft.html (aunque no haya pagado)
+    "messages_3_7": 2,          # envio entre 3 y 7 mensajes por WhatsApp
+    "messages_8_plus": 10,      # envio 8 o mas mensajes por WhatsApp
 }
 
 SCORE_WEIGHT_LABELS = {
@@ -60,12 +62,18 @@ SCORE_WEIGHT_LABELS = {
     "engagement_mid": "4-9 clicks en el sistema de reservas o la web",
     "engagement_low": "1-3 clicks en el sistema de reservas o la web",
     "cart_has_extras": "Agregó extras al carrito de WhatsApp",
+    "messages_3_7": "Envió 3 a 7 mensajes por WhatsApp",
+    "messages_8_plus": "Envió 8+ mensajes por WhatsApp",
 }
 
 # Umbrales de clicks/eventos (suma de link_click_count + web_event_count) para
 # "engagement_*" — entre mas interactuo con el sistema de reservas y la web, mas cerca esta.
 _ENGAGEMENT_HIGH_MIN = 10
 _ENGAGEMENT_MID_MIN = 4
+
+# Umbrales de mensajes entrantes de WhatsApp para "messages_*".
+_MESSAGES_8_PLUS_MIN = 8
+_MESSAGES_3_7_MIN = 3
 
 
 def _load_weights(session: Session) -> dict[str, int]:
@@ -196,6 +204,16 @@ def _compute_score(d: dict, has_cart_extras: bool, has_clicked_pay: bool, weight
         score += w
         breakdown["clicked_pay"] = w
 
+    msg_count = d.get("whatsapp_message_count") or 0
+    if msg_count >= _MESSAGES_8_PLUS_MIN:
+        w = weights["messages_8_plus"]
+        score += w
+        breakdown["messages_8_plus"] = w
+    elif msg_count >= _MESSAGES_3_7_MIN:
+        w = weights["messages_3_7"]
+        score += w
+        breakdown["messages_3_7"] = w
+
     score = max(0, min(100, score))
     return score, breakdown
 
@@ -211,6 +229,13 @@ def run() -> dict:
                    ad_creative_url, last_interaction_at
             FROM whatsapp_leads
             WHERE phone_number IS NOT NULL AND phone_number <> ''
+        """)).fetchall()
+
+        message_counts = conn.execute(text("""
+            SELECT phone_number, COUNT(*) AS msg_count
+            FROM whatsapp_conversations
+            WHERE direction = 'incoming' AND phone_number IS NOT NULL AND phone_number <> ''
+            GROUP BY phone_number
         """)).fetchall()
 
         bookings = conn.execute(text("""
@@ -326,6 +351,13 @@ def run() -> dict:
         d["ad_platform"] = row.ad_platform
         d["ad_creative_url"] = row.ad_creative_url
         d["last_interaction_at"] = row.last_interaction_at
+
+    for row in message_counts:
+        phone = _normalize_phone_e164(row.phone_number)
+        if not phone:
+            continue
+        d = merged.setdefault(phone, {})
+        d["whatsapp_message_count"] = int(row.msg_count or 0)
 
     for row in bookings:
         phone = _normalize_phone_e164(row.phone)
