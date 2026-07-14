@@ -201,6 +201,40 @@ def embed_js(form_id: int, session: Session = Depends(get_session)):
 
 # ── Embed JS builder ──────────────────────────────────────────────────────────
 
+_BDAY_MONTHS = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
+
+
+def _date_field_html(key: str, label: str, label_star: str) -> str:
+    """Día/Mes/Año dropdowns — mismo patrón que birthdayPickerHtml() en
+    hotboat-whatsapp/app/static/booking-soft.html, en vez del <input type="date">
+    nativo (calendario del navegador). Los 3 <select> no llevan name propio —
+    se componen en un <input type="hidden" name="{key}"> para que el colector
+    generico del submit (querySelectorAll('[name]')) siga mandando un solo
+    valor YYYY-MM-DD bajo la key del campo, sin tocar esa logica."""
+    days_html = '<option value="">Día</option>' + "".join(
+        f'<option value="{d}">{d}</option>' for d in range(1, 32)
+    )
+    months_html = '<option value="">Mes</option>' + "".join(
+        f'<option value="{i + 1}">{name}</option>' for i, name in enumerate(_BDAY_MONTHS)
+    )
+    now_year = datetime.utcnow().year
+    years_html = '<option value="">Año</option>' + "".join(
+        f'<option value="{y}">{y}</option>' for y in range(now_year, 1939, -1)
+    )
+    return (
+        f'<label style="display:block;font-size:12px;color:#64748b;margin-bottom:4px">{label}{label_star}</label>'
+        f'<div style="display:flex;gap:6px;margin-bottom:10px">'
+        f'<select class="hb-input hb-bday-part" data-bday="{key}" data-part="day" style="margin-bottom:0;flex:1">{days_html}</select>'
+        f'<select class="hb-input hb-bday-part" data-bday="{key}" data-part="month" style="margin-bottom:0;flex:1.6">{months_html}</select>'
+        f'<select class="hb-input hb-bday-part" data-bday="{key}" data-part="year" style="margin-bottom:0;flex:1.2">{years_html}</select>'
+        f'</div>'
+        f'<input type="hidden" name="{key}" data-bday-hidden="{key}" />'
+    )
+
+
 def _custom_field_html(field: dict) -> str:
     key = field.get("key", "")
     label = field.get("label", key)
@@ -211,6 +245,8 @@ def _custom_field_html(field: dict) -> str:
     req_attr = "required" if required else ""
     label_star = " *" if required else ""
 
+    if ftype == "date":
+        return _date_field_html(key, label, label_star)
     if ftype == "select":
         opts_html = f'<option value="">{placeholder or "Seleccionar…"}</option>'
         for opt in options:
@@ -378,6 +414,22 @@ def _build_embed_js(cfg: dict) -> str:
 
         var form = document.getElementById('hb-popup-form');
         if (!form) return;
+
+        // Día/Mes/Año dropdowns (custom fields de tipo "date"): componen su valor
+        // en el <input type="hidden"> que sí tiene name, cada vez que cambia una parte.
+        form.querySelectorAll('.hb-bday-part').forEach(function(sel) {{
+          sel.addEventListener('change', function() {{
+            var key = sel.getAttribute('data-bday');
+            var day = form.querySelector('.hb-bday-part[data-bday="' + key + '"][data-part="day"]');
+            var month = form.querySelector('.hb-bday-part[data-bday="' + key + '"][data-part="month"]');
+            var year = form.querySelector('.hb-bday-part[data-bday="' + key + '"][data-part="year"]');
+            var hidden = form.querySelector('[data-bday-hidden="' + key + '"]');
+            if (!day || !month || !year || !hidden) return;
+            hidden.value = (day.value && month.value && year.value)
+              ? (year.value + '-' + String(month.value).padStart(2, '0') + '-' + String(day.value).padStart(2, '0'))
+              : '';
+          }});
+        }});
 
         form.addEventListener('submit', function(e) {{
           e.preventDefault();
