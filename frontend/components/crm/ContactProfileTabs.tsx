@@ -198,9 +198,9 @@ export function DetailsTab({ contact, onSave, saving }: {
           <p className="text-xs font-semibold text-gray-500 mb-2">Cómo te encontró</p>
           <div className="space-y-2 mb-5">
             {[
-              ["Fuente",    contact.origin_utm],
-              ["Campaña",   null],
-              ["Medio",     null],
+              ["Fuente",    contact.ad_source ?? contact.origin_utm],
+              ["Campaña",   contact.utm_campaign],
+              ["Medio",     contact.utm_medium],
             ].map(([label, value]) => (
               <div key={label} className="flex gap-3 text-sm">
                 <span className="w-28 text-gray-400 shrink-0">{label}</span>

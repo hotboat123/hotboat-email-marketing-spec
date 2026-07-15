@@ -15,6 +15,7 @@ from app.models.form import (
     SignupForm, SignupFormCreate, SignupFormRead, SignupFormUpdate,
 )
 from app.models.user import User
+from app.services.utm_attribution import parse_ad_attribution
 
 router = APIRouter()
 
@@ -157,6 +158,7 @@ def submit_form(
 
     origin = payload.source_url or f"Formulario #{form_id}"
     birthday = _extract_birthday(f, payload.extra_data)
+    attribution = parse_ad_attribution(payload.source_url)
 
     contact = session.exec(select(Contact).where(Contact.email == email)).first()
     if contact:
@@ -172,6 +174,10 @@ def submit_form(
             contact.birthday = birthday
         if not contact.origin_utm:
             contact.origin_utm = origin
+        if not contact.ad_source and attribution["ad_source"]:
+            contact.ad_source = attribution["ad_source"]
+            contact.utm_campaign = attribution["utm_campaign"]
+            contact.utm_medium = attribution["utm_medium"]
         contact.updated_at = datetime.utcnow()
         session.add(contact)
     else:
@@ -180,6 +186,9 @@ def submit_form(
             name=(payload.name or "").strip() or None,
             phone=(payload.phone or "").strip() or None,
             origin_utm=origin,
+            ad_source=attribution["ad_source"],
+            utm_campaign=attribution["utm_campaign"],
+            utm_medium=attribution["utm_medium"],
             opted_in=True,
             opted_in_at=datetime.utcnow(),
             birthday=birthday,

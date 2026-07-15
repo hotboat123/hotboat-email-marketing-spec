@@ -13,6 +13,9 @@ export interface Contact {
   phone: string | null;
   language: string | null;
   origin_utm: string | null;
+  ad_source: string | null;
+  utm_campaign: string | null;
+  utm_medium: string | null;
   location: string | null;
   opted_in: boolean;
   opted_in_at: string | null;

@@ -14,7 +14,10 @@ class Contact(SQLModel, table=True):
     name: Optional[str] = None
     phone: Optional[str] = None
     language: Optional[str] = None          # es | en
-    origin_utm: Optional[str] = None        # fuente del lead
+    origin_utm: Optional[str] = None        # URL cruda de la página al momento del registro
+    ad_source: Optional[str] = None         # etiqueta legible derivada de origin_utm (ver app/services/utm_attribution.py)
+    utm_campaign: Optional[str] = None
+    utm_medium: Optional[str] = None
 
     # opt-in
     opted_in: bool = Field(default=True)
@@ -84,6 +87,9 @@ class ContactRead(SQLModel):
     phone: Optional[str]
     language: Optional[str]
     origin_utm: Optional[str]
+    ad_source: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    utm_medium: Optional[str] = None
     location: Optional[str] = None
     opted_in: bool
     opted_in_at: Optional[datetime]
