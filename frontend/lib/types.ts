@@ -258,6 +258,24 @@ export interface ContactCRM {
   created_at: string;
   updated_at: string;
   is_anonymous: boolean;
+  session_id: string | null;
+}
+
+export interface AnonymousVisitEvent {
+  event: string;
+  date: string | null;
+  time: string | null;
+}
+
+export interface AnonymousVisit {
+  session_id: string;
+  classification: string | null;
+  classification_desc: string | null;
+  referrer: string | null;
+  is_returning: boolean;
+  started_at: string;
+  ended_at: string | null;
+  events: AnonymousVisitEvent[];
 }
 
 export interface CallActivity {

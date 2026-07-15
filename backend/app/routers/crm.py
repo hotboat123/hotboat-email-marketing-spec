@@ -89,6 +89,7 @@ def _fetch_anonymous_visitors(skip: int, limit: int) -> List[dict]:
         out.append({
             **_ANON_ROW_DEFAULTS,
             "id": _anon_session_id_to_int(r.session_id),
+            "session_id": r.session_id,
             "name": "Visitante anónimo",
             "web_classification": r.classification,
             "web_classification_desc": r.classification_desc,
@@ -202,6 +203,39 @@ def list_crm_contacts(
             result.extend(_fetch_anonymous_visitors(anon_skip, remaining))
 
     return result
+
+
+@router.get("/anonymous-visits/{session_id}")
+def get_anonymous_visit(
+    session_id: str,
+    _: User = Depends(get_current_user),
+):
+    """Event-by-event detail of one anonymous website visit (what an
+    unidentified visitor actually did), for the Llamadas drill-down click."""
+    engine = _source_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT session_id, classification, classification_desc, referrer,
+                   is_returning, started_at, ended_at, events_json
+            FROM booking_visitor_sessions
+            WHERE session_id = :sid
+            ORDER BY started_at DESC
+            LIMIT 1
+        """), {"sid": session_id}).first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+
+    return {
+        "session_id": row.session_id,
+        "classification": row.classification,
+        "classification_desc": row.classification_desc,
+        "referrer": row.referrer,
+        "is_returning": row.is_returning,
+        "started_at": row.started_at,
+        "ended_at": row.ended_at,
+        "events": row.events_json or [],
+    }
 
 
 @router.get("/contacts/export/csv")

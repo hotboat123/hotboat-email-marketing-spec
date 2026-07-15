@@ -9,6 +9,7 @@ import { PhoneCall, Download, Settings, Search, ChevronLeft, ChevronRight } from
 import Link from "next/link";
 import { CALL_STATUSES, statusMeta, linkFunnelLabel, StatusModal } from "@/components/crm/StatusModal";
 import { ScoreWeightsModal } from "@/components/crm/ScoreWeightsModal";
+import { AnonymousVisitModal } from "@/components/crm/AnonymousVisitModal";
 
 const PAGE_SIZE = 50;
 
@@ -38,6 +39,7 @@ export default function CallsPage() {
   const [showWeights, setShowWeights] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [viewingVisit, setViewingVisit] = useState<string | null>(null);
 
   // Simple debounce on search
   function handleSearch(val: string) {
@@ -235,7 +237,16 @@ export default function CallsPage() {
                         {c.ad_source || <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
-                        {linkFunnelLabel(c) || <span className="text-gray-300">—</span>}
+                        {c.is_anonymous && c.session_id ? (
+                          <button
+                            onClick={() => setViewingVisit(c.session_id)}
+                            className="text-brand-600 hover:underline"
+                          >
+                            {linkFunnelLabel(c) || "Ver actividad"}
+                          </button>
+                        ) : (
+                          linkFunnelLabel(c) || <span className="text-gray-300">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {c.is_anonymous
@@ -298,6 +309,10 @@ export default function CallsPage() {
       )}
 
       {showWeights && <ScoreWeightsModal onClose={() => setShowWeights(false)} />}
+
+      {viewingVisit && (
+        <AnonymousVisitModal sessionId={viewingVisit} onClose={() => setViewingVisit(null)} />
+      )}
     </div>
   );
 }

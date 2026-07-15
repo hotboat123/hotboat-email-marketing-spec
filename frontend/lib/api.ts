@@ -143,6 +143,7 @@ export const crmApi = {
   callActivity: (id: number) => api.get(`/crm/contacts/${id}/call_activity`),
   conversations: (id: number) => api.get(`/crm/contacts/${id}/conversations`),
   webActivity: (id: number) => api.get(`/crm/contacts/${id}/web_activity`),
+  anonymousVisit: (sessionId: string) => api.get(`/crm/anonymous-visits/${sessionId}`),
   funnelAnalytics: () => api.get("/crm/analytics/funnel"),
   scoreWeights: () => api.get("/crm/score-weights"),
   updateScoreWeights: (weights: { key: string; points: number }[]) => api.put("/crm/score-weights", weights),

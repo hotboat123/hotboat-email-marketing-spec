@@ -121,6 +121,10 @@ class ContactCRMRead(SQLModel):
     # what an anonymous visitor did on the site, even though there's no way
     # to contact them. `id` is a negative synthetic value for these rows.
     is_anonymous: bool = False
+    # Real booking_visitor_sessions.session_id for anonymous rows (None for
+    # real contacts) — the negative synthetic `id` above is a one-way hash,
+    # so this is what the frontend needs to fetch the visit's event detail.
+    session_id: Optional[str] = None
 
 
 class CallStatusUpdate(SQLModel):
