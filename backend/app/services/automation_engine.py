@@ -792,6 +792,9 @@ def start_scheduler() -> None:
                 if tick % CRM_SYNC_EVERY_N_TICKS == 0:
                     from app.services.crm_sync import run as run_crm_sync
                     run_crm_sync()
+                    from app.services.sync_hotboat import sync_contacts
+                    with Session(db_engine) as sync_session:
+                        sync_contacts(sync_session)
             except Exception as exc:
                 logger.exception("Automation scheduler error: %s", exc)
             tick += 1

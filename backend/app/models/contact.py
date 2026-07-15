@@ -40,6 +40,11 @@ class Contact(SQLModel, table=True):
     birthday: Optional[date] = None
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     custom_fields: Optional[Any] = Field(default=None, sa_column=Column(JSON))
+    # System-computed snapshot of the most recent HotBoat trip (extras,
+    # observaciones, etc.) — kept separate from custom_fields because that
+    # column is directly bound to the admin's free-text property editor in
+    # the contact profile UI, which would mangle a nested object.
+    ultima_reserva_hotboat: Optional[Any] = Field(default=None, sa_column=Column(JSON))
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -102,6 +107,7 @@ class ContactRead(SQLModel):
     birthday: Optional[date] = None
     notes: Optional[str] = None
     custom_fields: Optional[dict] = None
+    ultima_reserva_hotboat: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 

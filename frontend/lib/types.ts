@@ -28,8 +28,20 @@ export interface Contact {
   birthday: string | null;
   notes: string | null;
   custom_fields: Record<string, string> | null;
+  ultima_reserva_hotboat: UltimaReservaHotboat | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface UltimaReservaHotboat {
+  booking_ref: string;
+  fecha: string | null;
+  hora: string | null;
+  servicio: string | null;
+  num_personas: string | null;
+  observaciones: string | null;
+  extras: Record<string, { qty: number; unit_price: number }>;
+  ingreso_total: number | null;
 }
 
 export interface ContactBooking {

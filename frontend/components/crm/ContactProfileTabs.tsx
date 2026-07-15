@@ -225,6 +225,38 @@ export function DetailsTab({ contact, onSave, saving }: {
           </div>
         </div>
 
+        {contact.ultima_reserva_hotboat && (
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-5">
+            <div className="px-5 py-3.5 border-b border-gray-100">
+              <span className="text-sm font-semibold text-gray-700">Última reserva HotBoat</span>
+            </div>
+            <div className="p-5 space-y-2 text-sm">
+              {[
+                ["Referencia", contact.ultima_reserva_hotboat.booking_ref],
+                ["Fecha", contact.ultima_reserva_hotboat.fecha ? formatDate(contact.ultima_reserva_hotboat.fecha) : null],
+                ["Servicio", contact.ultima_reserva_hotboat.servicio],
+                ["Personas", contact.ultima_reserva_hotboat.num_personas],
+                ["Observaciones", contact.ultima_reserva_hotboat.observaciones],
+              ].map(([label, value]) => value ? (
+                <div key={label} className="flex gap-3">
+                  <span className="w-28 text-gray-400 shrink-0">{label}</span>
+                  <span className="text-gray-700">{value}</span>
+                </div>
+              ) : null)}
+              {Object.keys(contact.ultima_reserva_hotboat.extras || {}).length > 0 && (
+                <div className="flex gap-3">
+                  <span className="w-28 text-gray-400 shrink-0">Extras</span>
+                  <span className="text-gray-700">
+                    {Object.entries(contact.ultima_reserva_hotboat.extras)
+                      .map(([k, v]) => `${k.replace(/_/g, " ")} (x${v.qty})`)
+                      .join(", ")}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Custom properties */}
         <CustomPropertiesCard contact={contact} onSave={onSave} saving={saving} />
       </div>
