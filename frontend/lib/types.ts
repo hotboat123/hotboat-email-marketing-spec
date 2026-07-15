@@ -245,7 +245,7 @@ export interface ContactCRM {
   reservation_score: number | null;
   score_updated_at: string | null;
   score_breakdown: Record<string, number> | null;
-  call_status: CallStatus;
+  call_status: CallStatus | "anonymous";
   call_status_updated_at: string | null;
   link_clicked: boolean;
   link_viewed_prices: boolean;
@@ -257,6 +257,7 @@ export interface ContactCRM {
   web_session_count: number | null;
   created_at: string;
   updated_at: string;
+  is_anonymous: boolean;
 }
 
 export interface CallActivity {

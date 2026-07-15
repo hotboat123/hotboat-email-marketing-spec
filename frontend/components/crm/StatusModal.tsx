@@ -37,7 +37,7 @@ export function StatusModal({
   onSave: (status: CallStatus, note: string) => void;
   saving: boolean;
 }) {
-  const [status, setStatus] = useState<CallStatus>(contact.call_status);
+  const [status, setStatus] = useState<CallStatus>(contact.call_status as CallStatus);
   const [note, setNote] = useState("");
 
   return (

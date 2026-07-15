@@ -31,7 +31,7 @@ export default function CallsPage() {
   const qc = useQueryClient();
   const [callStatus, setCallStatus] = useState<string>("");
   const [minScore, setMinScore] = useState<string>("");
-  const [sort, setSort] = useState<"score" | "last_interaction" | "booking">("score");
+  const [sort, setSort] = useState<"score" | "last_interaction" | "booking" | "recent">("score");
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ContactCRM | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -161,6 +161,7 @@ export default function CallsPage() {
             <option value="score">Ordenar por score</option>
             <option value="last_interaction">Ordenar por último contacto</option>
             <option value="booking">Ordenar por última reserva</option>
+            <option value="recent">Actividad reciente (incluye visitantes web)</option>
           </select>
           {!isLoading && (
             <span className="text-xs text-gray-400 ml-auto">
@@ -200,11 +201,18 @@ export default function CallsPage() {
                 contacts.map((c) => {
                   const meta = statusMeta(c.call_status);
                   return (
-                    <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <tr
+                      key={c.id}
+                      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${c.is_anonymous ? "opacity-70" : ""}`}
+                    >
                       <td className="px-5 py-3">
-                        <Link href={`/calls/${c.id}`} className="font-medium text-gray-900 hover:text-brand-600 hover:underline">
-                          {c.name || "Sin nombre"}
-                        </Link>
+                        {c.is_anonymous ? (
+                          <span className="font-medium text-gray-500 italic">Visitante anónimo</span>
+                        ) : (
+                          <Link href={`/calls/${c.id}`} className="font-medium text-gray-900 hover:text-brand-600 hover:underline">
+                            {c.name || "Sin nombre"}
+                          </Link>
+                        )}
                         {c.linked_contact_id && (
                           <>
                             {" · "}
@@ -230,18 +238,26 @@ export default function CallsPage() {
                         {linkFunnelLabel(c) || <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
-                        {c.last_interaction_at ? formatDateTime(c.last_interaction_at) : <span className="text-gray-300">—</span>}
+                        {c.is_anonymous
+                          ? (c.web_last_seen_at ? formatDateTime(c.web_last_seen_at) : <span className="text-gray-300">—</span>)
+                          : (c.last_interaction_at ? formatDateTime(c.last_interaction_at) : <span className="text-gray-300">—</span>)}
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {c.ultima_visita ? formatDate(c.ultima_visita) : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-5 py-3">
-                        <button
-                          onClick={() => setEditing(c)}
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${meta.color} hover:opacity-80 transition-opacity`}
-                        >
-                          {meta.label}
-                        </button>
+                        {c.is_anonymous ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400">
+                            No contactable
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setEditing(c)}
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${meta.color} hover:opacity-80 transition-opacity`}
+                          >
+                            {meta.label}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

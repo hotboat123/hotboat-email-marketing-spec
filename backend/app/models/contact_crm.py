@@ -115,6 +115,13 @@ class ContactCRMRead(SQLModel):
     created_at: datetime
     updated_at: datetime
 
+    # True for synthetic rows built from anonymous website sessions that
+    # never left a phone/email (booking_visitor_sessions in hotboat-whatsapp,
+    # not a real contacts_crm row) — surfaced in Llamadas so the team can see
+    # what an anonymous visitor did on the site, even though there's no way
+    # to contact them. `id` is a negative synthetic value for these rows.
+    is_anonymous: bool = False
+
 
 class CallStatusUpdate(SQLModel):
     call_status: str

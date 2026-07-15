@@ -1,7 +1,7 @@
 import csv
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -29,19 +29,77 @@ SORT_COLUMNS = {
 }
 
 
-@router.get("/contacts", response_model=List[ContactCRMRead])
-def list_crm_contacts(
-    call_status: Optional[str] = None,
-    min_score: Optional[int] = Query(None, ge=0, le=100),
-    ad_source: Optional[str] = None,
-    q: Optional[str] = Query(None, description="Busca por nombre o teléfono"),
-    sort: str = Query("score", pattern="^(score|last_interaction|booking)$"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, le=200),
-    session: Session = Depends(get_session),
-    _: User = Depends(get_current_user),
-):
-    query = select(ContactCRM)
+_ANON_ROW_DEFAULTS = dict(
+    phone=None, email=None, linked_contact_id=None,
+    ad_source=None, ad_platform=None, ad_creative_url=None, utm_campaign=None,
+    lead_status=None, last_interaction_at=None,
+    veces_hotboat=0, veces_pendiente=0, ultima_visita=None, ticket_medio=None,
+    extras_favoritos=None, reservation_score=None, score_updated_at=None,
+    score_breakdown=None, call_status="anonymous", call_status_updated_at=None,
+    link_clicked=False, link_viewed_prices=False, link_selected_date=False,
+    link_last_seen_at=None, web_session_count=1,
+    channel_whatsapp_link=False, channel_direct_web=True,
+    is_anonymous=True,
+)
+
+
+def _anon_session_id_to_int(session_id: str) -> int:
+    """Stable negative synthetic id so anonymous rows never collide with a
+    real contacts_crm id (a positive serial)."""
+    import hashlib
+    return -int(hashlib.md5(session_id.encode()).hexdigest()[:8], 16)
+
+
+def _count_anonymous_visitors() -> int:
+    engine = _source_engine()
+    with engine.connect() as conn:
+        return conn.execute(text("""
+            SELECT COUNT(*) FROM (
+                SELECT DISTINCT session_id FROM booking_visitor_sessions
+                WHERE session_id NOT IN (SELECT session_id FROM booking_visitor_identity)
+            ) sub
+        """)).scalar_one()
+
+
+def _fetch_anonymous_visitors(skip: int, limit: int) -> List[dict]:
+    """Anonymous website visitors (no phone/email captured) as rows shaped
+    like ContactCRMRead, sourced from hotboat-whatsapp's booking_visitor_sessions.
+    One row per unique session_id (its latest snapshot), excluding sessions
+    already linked to a real phone in booking_visitor_identity — those already
+    show up as normal contacts_crm rows via channel_direct_web."""
+    if limit <= 0:
+        return []
+    engine = _source_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT * FROM (
+                SELECT DISTINCT ON (session_id)
+                    session_id, classification, classification_desc,
+                    event_count, referrer, started_at
+                FROM booking_visitor_sessions
+                WHERE session_id NOT IN (SELECT session_id FROM booking_visitor_identity)
+                ORDER BY session_id, started_at DESC
+            ) sub
+            ORDER BY started_at DESC
+            OFFSET :skip LIMIT :limit
+        """), {"skip": skip, "limit": limit}).all()
+
+    out = []
+    for r in rows:
+        out.append({
+            **_ANON_ROW_DEFAULTS,
+            "id": _anon_session_id_to_int(r.session_id),
+            "name": "Visitante anónimo",
+            "web_classification": r.classification,
+            "web_classification_desc": r.classification_desc,
+            "web_last_seen_at": r.started_at,
+            "created_at": r.started_at,
+            "updated_at": r.started_at,
+        })
+    return out
+
+
+def _apply_filters(query, call_status, min_score, ad_source, q):
     if call_status:
         query = query.where(ContactCRM.call_status == call_status)
     if min_score is not None:
@@ -56,8 +114,94 @@ def list_crm_contacts(
         if digits:
             conditions.append(func.regexp_replace(ContactCRM.phone, r"[^0-9]", "", "g").ilike(f"%{digits}%"))
         query = query.where(or_(*conditions))
-    query = query.order_by(SORT_COLUMNS[sort].desc().nullslast()).offset(skip).limit(limit)
-    return session.exec(query).all()
+    return query
+
+
+_EPOCH = datetime(1970, 1, 1)
+
+
+def _naive(dt: Optional[datetime]) -> datetime:
+    """contacts_crm timestamps come back tz-naive, booking_visitor_sessions'
+    tz-aware (UTC) — strip tzinfo so both sides can be compared/sorted."""
+    if dt is None:
+        return _EPOCH
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _fetch_recent_activity(session: Session, query, skip: int, limit: int, include_anon: bool) -> List[dict]:
+    """"Actividad reciente" sort — interleaves real contacts and anonymous
+    website visits by their own most-recent-touch timestamp, most recent
+    first. Plain SORT_COLUMNS sorts (score/last_interaction/booking) can't
+    do this: with every contacts_crm row already scored, appending
+    anonymous rows only after the real ones run out buried them ~160 pages
+    deep. Fetches the top (skip+limit) candidates from each source
+    pre-sorted by recency in SQL, merge-sorts them in Python, then slices —
+    avoids a fragile hand-written cross-table UNION."""
+    fetch_n = skip + limit
+    recency = func.greatest(
+        func.coalesce(ContactCRM.last_interaction_at, _EPOCH),
+        func.coalesce(ContactCRM.web_last_seen_at, _EPOCH),
+    )
+    real_rows = session.exec(query.order_by(recency.desc()).limit(fetch_n)).all()
+    merged: List[dict] = []
+    for c in real_rows:
+        d = c.model_dump()
+        d["_sort_ts"] = max(_naive(c.last_interaction_at), _naive(c.web_last_seen_at))
+        merged.append(d)
+
+    # A min_score/call_status/q filter has no meaning for an anonymous
+    # visitor (no score, never in the call queue) — leave them out rather
+    # than show rows that don't actually match what was asked for.
+    if include_anon:
+        anon_rows = _fetch_anonymous_visitors(0, fetch_n)
+        for d in anon_rows:
+            d["_sort_ts"] = _naive(d["web_last_seen_at"])
+        merged.extend(anon_rows)
+
+    merged.sort(key=lambda d: d["_sort_ts"], reverse=True)
+    page = merged[skip: skip + limit]
+    for d in page:
+        d.pop("_sort_ts", None)
+    return page
+
+
+@router.get("/contacts", response_model=List[ContactCRMRead])
+def list_crm_contacts(
+    call_status: Optional[str] = None,
+    min_score: Optional[int] = Query(None, ge=0, le=100),
+    ad_source: Optional[str] = None,
+    q: Optional[str] = Query(None, description="Busca por nombre o teléfono"),
+    sort: str = Query("score", pattern="^(score|last_interaction|booking|recent)$"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, le=200),
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    query = _apply_filters(select(ContactCRM), call_status, min_score, ad_source, q)
+    filtered = bool(call_status or min_score is not None or ad_source or q)
+
+    if sort == "recent":
+        return _fetch_recent_activity(session, query, skip, limit, include_anon=not filtered)
+
+    ordered = query.order_by(SORT_COLUMNS[sort].desc().nullslast())
+    contacts = session.exec(ordered.offset(skip).limit(limit)).all()
+    result: List[dict] = [c.model_dump() for c in contacts]
+
+    # Anonymous website visits only make sense to mix in when browsing the
+    # unfiltered queue — a "score >= 60" or call_status filter has no
+    # meaning for someone who was never scored or ever put in the queue.
+    # They're appended after all real contacts are exhausted, sorted by
+    # most recent visit, and keep paginating from there on later pages.
+    if not filtered:
+        remaining = limit - len(result)
+        if remaining > 0:
+            total_real = session.exec(
+                select(func.count()).select_from(query.subquery())
+            ).one()
+            anon_skip = max(0, skip - total_real)
+            result.extend(_fetch_anonymous_visitors(anon_skip, remaining))
+
+    return result
 
 
 @router.get("/contacts/export/csv")
