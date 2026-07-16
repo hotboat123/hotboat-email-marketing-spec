@@ -391,9 +391,15 @@ export interface FunnelByChannel extends FunnelRow {
   channel: string;
 }
 
+export interface FunnelByVariant extends FunnelRow {
+  variant_key: string;
+  label: string;
+}
+
 export interface FunnelAnalytics {
   by_ad_source: FunnelByAdSource[];
   by_channel: FunnelByChannel[];
+  by_bot_variant: FunnelByVariant[];
 }
 
 export interface ScoreWeight {

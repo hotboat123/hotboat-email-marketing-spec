@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { crmApi } from "@/lib/api";
 import { FunnelAnalytics, FunnelRow, FunnelByAdSource } from "@/lib/types";
-import { Megaphone, Smartphone, Globe } from "lucide-react";
+import { Megaphone, Smartphone, Globe, FlaskConical } from "lucide-react";
 
 function money(n: number | null) {
   return n == null ? <span className="text-gray-300">—</span> : `$${n.toLocaleString("es-CL")}`;
@@ -86,6 +86,7 @@ export default function EmbudoPage() {
 
   const byAdSource = data?.by_ad_source ?? [];
   const byChannel = data?.by_channel ?? [];
+  const byVariant = data?.by_bot_variant ?? [];
 
   return (
     <div className="p-8">
@@ -126,6 +127,42 @@ export default function EmbudoPage() {
                       {row.channel === "WhatsApp" ? <Smartphone size={14} className="text-green-500" /> : <Globe size={14} className="text-blue-500" />}
                       {row.channel}
                     </td>
+                    <FunnelValueCells row={row} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Por variante de Popeye (A/B) */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-8 max-w-4xl">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+          <FlaskConical size={15} className="text-brand-600" />
+          <p className="font-semibold text-gray-800">Por variante de Popeye (test A/B)</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Variante</th>
+                <FunnelHeaderCells />
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                [...Array(2)].map((_, i) => <SkeletonRow key={i} cols={7} />)
+              ) : byVariant.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-gray-400 text-sm">
+                    Todavía no hay ningún test A/B configurado en el bot de WhatsApp.
+                  </td>
+                </tr>
+              ) : (
+                byVariant.map((row) => (
+                  <tr key={row.variant_key} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-gray-900">{row.label}</td>
                     <FunnelValueCells row={row} />
                   </tr>
                 ))

@@ -231,7 +231,7 @@ def run() -> dict:
     with engine.connect() as conn:
         leads = conn.execute(text("""
             SELECT phone_number, customer_name, lead_status, ad_source, ad_platform,
-                   ad_creative_url, last_interaction_at
+                   ad_creative_url, last_interaction_at, bot_variant
             FROM whatsapp_leads
             WHERE phone_number IS NOT NULL AND phone_number <> ''
         """)).fetchall()
@@ -356,6 +356,7 @@ def run() -> dict:
         d["ad_platform"] = row.ad_platform
         d["ad_creative_url"] = row.ad_creative_url
         d["last_interaction_at"] = row.last_interaction_at
+        d["bot_variant"] = row.bot_variant
 
     for row in message_counts:
         phone = _normalize_phone_e164(row.phone_number)
@@ -487,6 +488,7 @@ def run() -> dict:
                 existing.web_session_count = d.get("web_session_count", existing.web_session_count)
                 existing.channel_whatsapp_link = existing.channel_whatsapp_link or d.get("channel_whatsapp_link", False)
                 existing.channel_direct_web = existing.channel_direct_web or d.get("channel_direct_web", False)
+                existing.bot_variant = d.get("bot_variant") or existing.bot_variant
                 existing.reservation_score = score
                 existing.score_updated_at = now
                 existing.score_breakdown = breakdown
@@ -519,6 +521,7 @@ def run() -> dict:
                     web_session_count=d.get("web_session_count", 0),
                     channel_whatsapp_link=d.get("channel_whatsapp_link", False),
                     channel_direct_web=d.get("channel_direct_web", False),
+                    bot_variant=d.get("bot_variant"),
                     reservation_score=score,
                     score_updated_at=now,
                     score_breakdown=breakdown,

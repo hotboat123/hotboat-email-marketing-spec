@@ -496,6 +496,22 @@ def _ad_spend_by_name() -> dict:
     return result
 
 
+def _bot_variant_labels() -> dict:
+    """Map bot_ab_variants.variant_key -> label, read from hotboat-whatsapp's
+    own DB (same shared Postgres, cross-repo query — same pattern as
+    _ad_spend_by_name above). Returns {} if the table doesn't exist yet
+    (no A/B test has ever been configured)."""
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT variant_key, label FROM bot_ab_variants"
+            )).all()
+        return {r.variant_key: r.label for r in rows}
+    except Exception:
+        return {}
+
+
 @router.get("/analytics/funnel")
 def get_funnel_analytics(
     session: Session = Depends(get_session),
@@ -538,8 +554,21 @@ def get_funnel_analytics(
         FROM contacts_crm WHERE channel_direct_web
     """)).all()
 
+    by_variant_rows = session.execute(text("""
+        SELECT bot_variant, COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE link_viewed_prices) AS viewed_prices,
+               COUNT(*) FILTER (WHERE link_selected_date)  AS selected_date,
+               COUNT(*) FILTER (WHERE veces_pendiente > 0) AS pending,
+               COUNT(*) FILTER (WHERE veces_hotboat > 0)   AS paid
+        FROM contacts_crm
+        WHERE bot_variant IS NOT NULL AND bot_variant <> ''
+        GROUP BY bot_variant
+        ORDER BY total DESC
+    """)).all()
+
     ad_spend = _ad_spend_by_name()
     no_spend_data = {"ad_id": None, "spend": None, "cpc": None, "cost_per_conversation": None}
+    variant_labels = _bot_variant_labels()
 
     return {
         "by_ad_source": [
@@ -553,6 +582,14 @@ def get_funnel_analytics(
         "by_channel": [
             {"channel": r.channel, **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.pending, r.paid)}
             for r in by_channel_rows
+        ],
+        "by_bot_variant": [
+            {
+                "variant_key": r.bot_variant,
+                "label": variant_labels.get(r.bot_variant, r.bot_variant),
+                **_funnel_row(r.total, r.viewed_prices, r.selected_date, r.pending, r.paid),
+            }
+            for r in by_variant_rows
         ],
     }
 

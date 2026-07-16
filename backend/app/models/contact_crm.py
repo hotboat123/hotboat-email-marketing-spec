@@ -76,6 +76,12 @@ class ContactCRM(SQLModel, table=True):
     channel_whatsapp_link: bool = Field(default=False)
     channel_direct_web: bool = Field(default=False)
 
+    # A/B variant of Popeye's messages this lead was randomly assigned to at
+    # creation time (whatsapp_leads.bot_variant) — NULL if no experiment was
+    # running when they first messaged. Used to compare conversion by
+    # variant in /api/crm/analytics/funnel.
+    bot_variant: Optional[str] = None
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -112,6 +118,7 @@ class ContactCRMRead(SQLModel):
     web_session_count: Optional[int]
     channel_whatsapp_link: bool
     channel_direct_web: bool
+    bot_variant: Optional[str]
     created_at: datetime
     updated_at: datetime
 
