@@ -131,6 +131,36 @@ def _normalize_phone_e164(raw: str | None, default_country: str = "+56") -> str 
     # exactly this: the same number stored once with '+' and once without.
     return f"+{digits}"
 
+def _derive_platform(ad_platform: str | None, utm_source: str | None, ad_source: str | None) -> str | None:
+    """Best-effort normalized ad platform (google/instagram/facebook/tiktok/
+    whatsapp) for the "Anuncio" filter in Llamadas. ad_platform (from a Meta
+    Click-to-WhatsApp referral) is authoritative when present — it's only
+    ever "instagram"/"facebook", set from the ad's own source_url in
+    hotboat-whatsapp/app/db/leads.py. Otherwise keyword-match utm_source
+    (only populated for real bookings with tracked UTM params) or, as a last
+    resort, the free-text ad_source/campaign name itself — many campaigns
+    literally have the platform in their name (e.g. "Instagram")."""
+    if ad_platform:
+        p = ad_platform.strip().lower()
+        if p in ("instagram", "facebook"):
+            return p
+    for candidate in (utm_source, ad_source):
+        if not candidate:
+            continue
+        c = candidate.strip().lower()
+        if "tiktok" in c:
+            return "tiktok"
+        if "google" in c or "adwords" in c:
+            return "google"
+        if "instagram" in c:
+            return "instagram"
+        if "facebook" in c or c in ("fb", "meta"):
+            return "facebook"
+        if "whatsapp" in c:
+            return "whatsapp"
+    return None
+
+
 ACTIVE_LEAD_STATUSES = {"potential_client", "customer"}
 
 
@@ -248,7 +278,8 @@ def run() -> dict:
                    COUNT(*) AS veces_hotboat, MAX(fecha) AS ultima_visita,
                    ROUND(AVG(ingreso_total)::numeric, 0) AS ticket_medio,
                    MAX(NULLIF(utm_campaign, '')) AS utm_campaign,
-                   MAX(como_supieron) AS como_supieron
+                   MAX(como_supieron) AS como_supieron,
+                   MAX(NULLIF(utm_source, ''))   AS utm_source
             FROM all_appointments
             WHERE telefono IS NOT NULL AND telefono <> ''
               AND status NOT IN ('cancelled', 'no_show', 'pending', 'pending_payment')
@@ -380,6 +411,8 @@ def run() -> dict:
         d["extras_favoritos"] = extras_by_phone.get(phone)
         if not d.get("ad_source"):
             d["ad_source"] = row.utm_campaign or row.como_supieron
+        if row.utm_source:
+            d["utm_source"] = row.utm_source
 
     for row in pending_bookings:
         phone = _normalize_phone_e164(row.phone)
@@ -447,6 +480,7 @@ def run() -> dict:
         price_seen_no_booking: dict[int, bool] = {}
 
         for phone, d in merged.items():
+            d["platform"] = _derive_platform(d.get("ad_platform"), d.get("utm_source"), d.get("ad_source"))
             has_extras = phone in cart_extras_phones
             has_clicked_pay = phone in clicked_pay_phones
             score, breakdown = _compute_score(d, has_extras, has_clicked_pay, weights, now)
@@ -489,6 +523,7 @@ def run() -> dict:
                 existing.channel_whatsapp_link = existing.channel_whatsapp_link or d.get("channel_whatsapp_link", False)
                 existing.channel_direct_web = existing.channel_direct_web or d.get("channel_direct_web", False)
                 existing.bot_variant = d.get("bot_variant") or existing.bot_variant
+                existing.platform = d.get("platform") or existing.platform
                 existing.reservation_score = score
                 existing.score_updated_at = now
                 existing.score_breakdown = breakdown
@@ -522,6 +557,7 @@ def run() -> dict:
                     channel_whatsapp_link=d.get("channel_whatsapp_link", False),
                     channel_direct_web=d.get("channel_direct_web", False),
                     bot_variant=d.get("bot_variant"),
+                    platform=d.get("platform"),
                     reservation_score=score,
                     score_updated_at=now,
                     score_breakdown=breakdown,

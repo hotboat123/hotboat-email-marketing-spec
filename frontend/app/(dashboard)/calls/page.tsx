@@ -13,6 +13,22 @@ import { AnonymousVisitModal } from "@/components/crm/AnonymousVisitModal";
 
 const PAGE_SIZE = 50;
 
+const PLATFORMS: { value: string; label: string }[] = [
+  { value: "google", label: "🔍 Google" },
+  { value: "instagram", label: "📸 Instagram" },
+  { value: "facebook", label: "👥 Facebook" },
+  { value: "tiktok", label: "🎵 TikTok" },
+  { value: "whatsapp", label: "💬 WhatsApp" },
+];
+
+const PLATFORM_ICON: Record<string, string> = {
+  google: "🔍",
+  instagram: "📸",
+  facebook: "👥",
+  tiktok: "🎵",
+  whatsapp: "💬",
+};
+
 function SkeletonRow() {
   return (
     <tr className="border-b border-gray-100">
@@ -32,6 +48,7 @@ export default function CallsPage() {
   const qc = useQueryClient();
   const [callStatus, setCallStatus] = useState<string>("");
   const [minScore, setMinScore] = useState<string>("");
+  const [platform, setPlatform] = useState<string>("");
   const [sort, setSort] = useState<"score" | "last_interaction" | "booking" | "recent">("score");
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ContactCRM | null>(null);
@@ -55,6 +72,7 @@ export default function CallsPage() {
   const filters = {
     call_status: callStatus || undefined,
     min_score: minScore ? Number(minScore) : undefined,
+    platform: platform || undefined,
     q: debouncedSearch || undefined,
     sort,
     skip: page * PAGE_SIZE,
@@ -62,7 +80,7 @@ export default function CallsPage() {
   };
 
   const { data: contacts = [], isLoading, isError, refetch } = useQuery<ContactCRM[]>({
-    queryKey: ["crm-contacts", callStatus, minScore, debouncedSearch, sort, page],
+    queryKey: ["crm-contacts", callStatus, minScore, platform, debouncedSearch, sort, page],
     queryFn: () => crmApi.list(filters).then((r) => r.data),
     staleTime: 60_000,
     retry: 1,
@@ -156,6 +174,16 @@ export default function CallsPage() {
             <option value="40">Score ≥ 40</option>
           </select>
           <select
+            value={platform}
+            onChange={(e) => { setPlatform(e.target.value); setPage(0); }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Cualquier plataforma</option>
+            {PLATFORMS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
+          <select
             value={sort}
             onChange={(e) => { setSort(e.target.value as typeof sort); setPage(0); }}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -234,7 +262,14 @@ export default function CallsPage() {
                         <span className="font-semibold text-gray-900">{c.reservation_score ?? "—"}</span>
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs max-w-[160px] truncate">
-                        {c.ad_source || <span className="text-gray-300">—</span>}
+                        {c.ad_source ? (
+                          <>
+                            {c.platform && PLATFORM_ICON[c.platform] ? `${PLATFORM_ICON[c.platform]} ` : ""}
+                            {c.ad_source}
+                          </>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {c.is_anonymous && c.session_id ? (

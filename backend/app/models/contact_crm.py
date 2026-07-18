@@ -27,6 +27,11 @@ class ContactCRM(SQLModel, table=True):
     ad_platform: Optional[str] = None
     ad_creative_url: Optional[str] = None
     utm_campaign: Optional[str] = None
+    # Plataforma normalizada (google/instagram/facebook/tiktok/whatsapp) para
+    # el filtro de "Anuncio" en Llamadas — derivada en crm_sync.py desde
+    # ad_platform (Meta CTWA) o, si no hay, keyword-match sobre utm_source/
+    # ad_source. None cuando no se pudo determinar.
+    platform: Optional[str] = None
 
     lead_status: Optional[str] = None
     last_interaction_at: Optional[datetime] = None  # ultimo mensaje de WhatsApp (whatsapp_leads)
@@ -96,6 +101,7 @@ class ContactCRMRead(SQLModel):
     ad_platform: Optional[str]
     ad_creative_url: Optional[str]
     utm_campaign: Optional[str]
+    platform: Optional[str]
     lead_status: Optional[str]
     last_interaction_at: Optional[datetime]
     veces_hotboat: int

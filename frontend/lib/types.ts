@@ -251,6 +251,7 @@ export interface ContactCRM {
   ad_platform: string | null;
   ad_creative_url: string | null;
   utm_campaign: string | null;
+  platform: string | null;
   lead_status: string | null;
   last_interaction_at: string | null;
   veces_hotboat: number;

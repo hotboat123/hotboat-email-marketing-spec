@@ -100,13 +100,15 @@ def _fetch_anonymous_visitors(skip: int, limit: int) -> List[dict]:
     return out
 
 
-def _apply_filters(query, call_status, min_score, ad_source, q):
+def _apply_filters(query, call_status, min_score, ad_source, platform, q):
     if call_status:
         query = query.where(ContactCRM.call_status == call_status)
     if min_score is not None:
         query = query.where(ContactCRM.reservation_score >= min_score)
     if ad_source:
         query = query.where(ContactCRM.ad_source.ilike(f"%{ad_source}%"))
+    if platform:
+        query = query.where(ContactCRM.platform == platform)
     if q:
         # El teléfono se compara solo por dígitos (mismo criterio E.164 del
         # resto del sync) para que buscar "977577307" matchee "+56977577307".
@@ -171,6 +173,7 @@ def list_crm_contacts(
     call_status: Optional[str] = None,
     min_score: Optional[int] = Query(None, ge=0, le=100),
     ad_source: Optional[str] = None,
+    platform: Optional[str] = Query(None, description="google|instagram|facebook|tiktok|whatsapp"),
     q: Optional[str] = Query(None, description="Busca por nombre o teléfono"),
     sort: str = Query("score", pattern="^(score|last_interaction|booking|recent)$"),
     skip: int = Query(0, ge=0),
@@ -178,8 +181,8 @@ def list_crm_contacts(
     session: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    query = _apply_filters(select(ContactCRM), call_status, min_score, ad_source, q)
-    filtered = bool(call_status or min_score is not None or ad_source or q)
+    query = _apply_filters(select(ContactCRM), call_status, min_score, ad_source, platform, q)
+    filtered = bool(call_status or min_score is not None or ad_source or platform or q)
 
     if sort == "recent":
         return _fetch_recent_activity(session, query, skip, limit, include_anon=not filtered)
