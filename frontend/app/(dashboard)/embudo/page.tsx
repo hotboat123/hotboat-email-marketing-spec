@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { crmApi } from "@/lib/api";
@@ -78,9 +79,12 @@ function SkeletonRow({ cols }: { cols: number }) {
 
 export default function EmbudoPage() {
   const router = useRouter();
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
   const { data, isLoading } = useQuery<FunnelAnalytics>({
-    queryKey: ["crm-funnel-analytics"],
-    queryFn: () => crmApi.funnelAnalytics().then((r) => r.data),
+    queryKey: ["crm-funnel-analytics", dateFrom, dateTo],
+    queryFn: () => crmApi.funnelAnalytics(dateFrom, dateTo).then((r) => r.data),
     staleTime: 2 * 60_000,
   });
 
@@ -90,11 +94,37 @@ export default function EmbudoPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Embudo de conversión</h1>
         <p className="text-sm text-gray-500 mt-1">
           Quién llega a cada etapa (vio precios → eligió fecha → pagó), por anuncio y por canal de llegada.
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 text-sm text-gray-500 mb-8">
+        <span>Desde</span>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          className="px-2.5 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        <span>Hasta</span>
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          className="px-2.5 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => { setDateFrom(""); setDateTo(""); }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            Limpiar
+          </button>
+        )}
+        <span className="text-xs text-gray-400 ml-1">Filtra por la actividad más reciente conocida de cada contacto</span>
       </div>
 
       {/* Por canal */}

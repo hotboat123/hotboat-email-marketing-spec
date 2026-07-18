@@ -514,6 +514,8 @@ def _bot_variant_labels() -> dict:
 
 @router.get("/analytics/funnel")
 def get_funnel_analytics(
+    date_from: Optional[str] = Query(None, description="YYYY-MM-DD, filters by each contact's most recent known activity"),
+    date_to: Optional[str] = Query(None, description="YYYY-MM-DD, inclusive"),
     session: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
@@ -524,8 +526,21 @@ def get_funnel_analytics(
     (channel_whatsapp_link/channel_direct_web), sin duplicar la lógica de conteo.
     veces_hotboat solo cuenta pago confirmado — veces_pendiente son reservas
     web que todavía están esperando pago (existen hasta 120 min antes del
-    auto-cleanup en hotboat-whatsapp)."""
-    by_ad_rows = session.execute(text("""
+    auto-cleanup en hotboat-whatsapp).
+
+    date_from/date_to filtran por la actividad más reciente conocida del
+    contacto — COALESCE(link_last_seen_at, web_last_seen_at,
+    last_interaction_at, created_at) — no hay una única columna de "fecha del
+    evento" para vio-precios/eligió-fecha, así que se usa la señal de
+    actividad más reciente disponible como aproximación."""
+    activity_expr = "COALESCE(link_last_seen_at, web_last_seen_at, last_interaction_at, created_at)"
+    date_filter = f"""
+        AND (CAST(:date_from AS date) IS NULL OR {activity_expr} >= CAST(:date_from AS date))
+        AND (CAST(:date_to AS date) IS NULL OR {activity_expr} < CAST(:date_to AS date) + INTERVAL '1 day')
+    """
+    params = {"date_from": date_from, "date_to": date_to}
+
+    by_ad_rows = session.execute(text(f"""
         SELECT COALESCE(NULLIF(ad_source, ''), 'Sin anuncio') AS ad_source,
                COUNT(*) AS total,
                COUNT(*) FILTER (WHERE link_viewed_prices) AS viewed_prices,
@@ -533,38 +548,39 @@ def get_funnel_analytics(
                COUNT(*) FILTER (WHERE veces_pendiente > 0) AS pending,
                COUNT(*) FILTER (WHERE veces_hotboat > 0)   AS paid
         FROM contacts_crm
+        WHERE 1=1 {date_filter}
         GROUP BY 1
         ORDER BY total DESC
         LIMIT 20
-    """)).all()
+    """), params).all()
 
-    by_channel_rows = session.execute(text("""
+    by_channel_rows = session.execute(text(f"""
         SELECT 'WhatsApp' AS channel, COUNT(*) AS total,
                COUNT(*) FILTER (WHERE link_viewed_prices) AS viewed_prices,
                COUNT(*) FILTER (WHERE link_selected_date)  AS selected_date,
                COUNT(*) FILTER (WHERE veces_pendiente > 0) AS pending,
                COUNT(*) FILTER (WHERE veces_hotboat > 0)   AS paid
-        FROM contacts_crm WHERE channel_whatsapp_link
+        FROM contacts_crm WHERE channel_whatsapp_link {date_filter}
         UNION ALL
         SELECT 'Web directo', COUNT(*),
                COUNT(*) FILTER (WHERE link_viewed_prices),
                COUNT(*) FILTER (WHERE link_selected_date),
                COUNT(*) FILTER (WHERE veces_pendiente > 0),
                COUNT(*) FILTER (WHERE veces_hotboat > 0)
-        FROM contacts_crm WHERE channel_direct_web
-    """)).all()
+        FROM contacts_crm WHERE channel_direct_web {date_filter}
+    """), params).all()
 
-    by_variant_rows = session.execute(text("""
+    by_variant_rows = session.execute(text(f"""
         SELECT bot_variant, COUNT(*) AS total,
                COUNT(*) FILTER (WHERE link_viewed_prices) AS viewed_prices,
                COUNT(*) FILTER (WHERE link_selected_date)  AS selected_date,
                COUNT(*) FILTER (WHERE veces_pendiente > 0) AS pending,
                COUNT(*) FILTER (WHERE veces_hotboat > 0)   AS paid
         FROM contacts_crm
-        WHERE bot_variant IS NOT NULL AND bot_variant <> ''
+        WHERE bot_variant IS NOT NULL AND bot_variant <> '' {date_filter}
         GROUP BY bot_variant
         ORDER BY total DESC
-    """)).all()
+    """), params).all()
 
     ad_spend = _ad_spend_by_name()
     no_spend_data = {"ad_id": None, "spend": None, "cpc": None, "cost_per_conversation": None}

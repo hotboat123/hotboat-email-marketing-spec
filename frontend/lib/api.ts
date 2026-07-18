@@ -144,7 +144,8 @@ export const crmApi = {
   conversations: (id: number) => api.get(`/crm/contacts/${id}/conversations`),
   webActivity: (id: number) => api.get(`/crm/contacts/${id}/web_activity`),
   anonymousVisit: (sessionId: string) => api.get(`/crm/anonymous-visits/${sessionId}`),
-  funnelAnalytics: () => api.get("/crm/analytics/funnel"),
+  funnelAnalytics: (dateFrom?: string, dateTo?: string) =>
+    api.get("/crm/analytics/funnel", { params: { date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
   scoreWeights: () => api.get("/crm/score-weights"),
   updateScoreWeights: (weights: { key: string; points: number }[]) => api.put("/crm/score-weights", weights),
   updateCallStatus: (id: number, data: { call_status: string; note?: string }) =>
