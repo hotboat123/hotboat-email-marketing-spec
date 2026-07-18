@@ -452,17 +452,31 @@ def _funnel_row(total: int, viewed_prices: int, selected_date: int, pending: int
     }
 
 
-def _ad_spend_by_name() -> dict:
+def _ad_spend_by_name(date_from: Optional[str] = None, date_to: Optional[str] = None) -> dict:
     """Gasto/CPC/costo por conversación real por anuncio de Meta, leído de
     meta_ads_insights (misma Postgres compartida — un ETL aparte importa esto
     directo desde la Marketing API de Meta). Se cruza por nombre de anuncio
     contra contacts_crm.ad_source; no todos matchean — algunos ad_source son
     canales autoreportados ("TV", "TripAdvisor", "boca a boca") que nunca
-    fueron un anuncio de Meta con gasto asociado, y esos quedan sin dato."""
+    fueron un anuncio de Meta con gasto asociado, y esos quedan sin dato.
+
+    date_from/date_to filtran por i.date_start (mismo campo y misma
+    convención que /api/ads/summary) — independiente del filtro de actividad
+    de contacts_crm usado en get_funnel_analytics, porque son dos tablas con
+    su propia noción de "fecha del evento"."""
+    date_where = ""
+    params: dict = {}
+    if date_from:
+        date_where += " AND i.date_start >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        date_where += " AND i.date_start <= :date_to"
+        params["date_to"] = date_to
+
     try:
         engine = _source_engine()
         with engine.connect() as conn:
-            rows = conn.execute(text("""
+            rows = conn.execute(text(f"""
                 SELECT a.name AS ad_name,
                        MIN(a.id) AS ad_id,
                        SUM(i.spend) AS spend,
@@ -474,9 +488,9 @@ def _ad_spend_by_name() -> dict:
                        ])) AS conversations_started
                 FROM meta_ads_insights i
                 LEFT JOIN meta_ads a ON a.id = i.ad_id
-                WHERE a.name IS NOT NULL
+                WHERE a.name IS NOT NULL {date_where}
                 GROUP BY a.name
-            """)).all()
+            """), params).all()
     except Exception:
         # meta_ads_insights/meta_ads pueden no existir en algunos entornos — no
         # bloquear el resto del embudo por esto.
@@ -582,7 +596,7 @@ def get_funnel_analytics(
         ORDER BY total DESC
     """), params).all()
 
-    ad_spend = _ad_spend_by_name()
+    ad_spend = _ad_spend_by_name(date_from, date_to)
     no_spend_data = {"ad_id": None, "spend": None, "cpc": None, "cost_per_conversation": None}
     variant_labels = _bot_variant_labels()
 
