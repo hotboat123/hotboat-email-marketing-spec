@@ -41,7 +41,7 @@ const TRIGGERS: { value: AutomationTrigger; label: string; description: string; 
     label: "Cumpleaños",
     description:
       "Se dispara N días antes del cumpleaños de cada contacto (solo funciona para contactos que tengan la fecha de nacimiento cargada). Se envía una sola vez por año, aunque la automatización quede corriendo permanentemente. " +
-      "El \"N días antes\" solo define cuándo se manda el mail — no afecta la validez del cupón. Cada envío genera un cupón nuevo y único para esa persona, siempre válido para reservar cualquier día dentro de su mes de cumpleaños (sin importar el N elegido).",
+      "Cada envío genera un cupón nuevo y único para esa persona. Sus dos plazos (días para usar el código, días de plazo para la fecha de la reserva) se cuentan desde el día del envío del mail, no desde el \"N días antes\" ni desde el cumpleaños en sí.",
     fields: <></>,
   },
 ];
@@ -85,7 +85,13 @@ function ConfigFields({
         </>
       );
     case "birthday":
-      return <>{field("days_before", "Enviar N días antes del cumpleaños", 0, 5)}</>;
+      return (
+        <>
+          {field("days_before", "Enviar N días antes del cumpleaños", 0, 5)}
+          {field("coupon_valid_days", "Días de validez del cupón (para usar el código)", 1, 7)}
+          {field("coupon_booking_window_days", "Plazo para la fecha de la reserva (días)", 1, 30)}
+        </>
+      );
     default:
       return null;
   }

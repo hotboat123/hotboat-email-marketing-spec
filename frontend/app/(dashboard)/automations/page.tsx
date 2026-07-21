@@ -48,7 +48,7 @@ function configSummary(auto: Automation): string {
     case "reactivation":
       return `Sin visitar ${c.inactivity_days ?? 90}+ días`;
     case "birthday":
-      return `${c.days_before ?? 5} días antes del cumpleaños`;
+      return `${c.days_before ?? 5} días antes · cupón ${c.coupon_valid_days ?? 7}d, reserva dentro de ${c.coupon_booking_window_days ?? 30}d`;
     default:
       return "";
   }
@@ -185,14 +185,34 @@ function EditPanel({
         </div>
       )}
       {auto.trigger_type === "birthday" && (
-        <div className="max-w-xs">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Días antes del cumpleaños</label>
-          <input
-            type="number" min={0} max={60}
-            value={cfg.days_before ?? 5}
-            onChange={(e) => setConfig("days_before", Number(e.target.value))}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
+        <div className="grid grid-cols-3 gap-3 max-w-lg">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Días antes del cumpleaños</label>
+            <input
+              type="number" min={0} max={60}
+              value={cfg.days_before ?? 5}
+              onChange={(e) => setConfig("days_before", Number(e.target.value))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Validez del cupón (días)</label>
+            <input
+              type="number" min={1} max={90}
+              value={cfg.coupon_valid_days ?? 7}
+              onChange={(e) => setConfig("coupon_valid_days", Number(e.target.value))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Plazo de reserva (días)</label>
+            <input
+              type="number" min={1} max={180}
+              value={cfg.coupon_booking_window_days ?? 30}
+              onChange={(e) => setConfig("coupon_booking_window_days", Number(e.target.value))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
         </div>
       )}
 

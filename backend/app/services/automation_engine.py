@@ -368,18 +368,24 @@ def _check_reactivation(auto: Automation, session: Session) -> None:
         _send_email(session, auto, contact, trigger_key)
 
 
-def _create_birthday_coupon(contact: Contact, month: int, year: int) -> str | None:
+def _create_birthday_coupon(contact: Contact, redeem_days: int, booking_window_days: int) -> str | None:
     """Mint a one-time, one-person coupon directly in hotboat-whatsapp's shared
     `coupons` table (same physical Postgres, no schema change needed — this
     table already has everything a birthday offer needs: discount_percent,
     extra_description, max_uses, expires_at, booking_date_from/to). Scoped so
-    only this contact can realistically guess it (random 4-char suffix),
-    usable once, and only for a trip taken during their birthday month.
+    only this contact can realistically guess it (random 4-char suffix) and
+    usable once. Two independent relative windows, both counted from today
+    (the send date), not from the calendar birthday:
+      - redeem_days: how many days the CODE itself can be entered/redeemed
+        (coupons.expires_at — checked against "today" at redemption time).
+      - booking_window_days: how many days out the actual BOAT TRIP can be
+        scheduled for (coupons.booking_date_from/to — checked against the
+        booking's own date, independent of when it's redeemed).
     Returns None (never raises) if the source DB is unreachable — the caller
     treats that as "try again next tick" rather than sending a broken code."""
-    last_day = calendar.monthrange(year, month)[1]
-    month_start = date(year, month, 1)
-    month_end = date(year, month, last_day)
+    today = date.today()
+    redeem_by = today + timedelta(days=redeem_days)
+    booking_by = today + timedelta(days=booking_window_days)
     try:
         engine = _source_engine()
         with engine.connect() as conn:
@@ -403,9 +409,9 @@ def _create_birthday_coupon(contact: Contact, month: int, year: int) -> str | No
                 "code": code,
                 "name": f"Cumpleaños — {contact.name or contact.email}",
                 "extra": "Video con drone + foto con marco de regalo",
-                "expires_at": month_end,
-                "booking_from": month_start,
-                "booking_to": month_end,
+                "expires_at": redeem_by,
+                "booking_from": today,
+                "booking_to": booking_by,
             })
             conn.commit()
             return code
@@ -419,10 +425,13 @@ def _check_birthday(auto: Automation, session: Session) -> None:
     Contact.birthday stores the actual birth year, only month/day matter here).
     Feb 29 birthdays fire on Feb 28 in non-leap target years so they're not
     skipped 3 years out of 4. Mints a personal one-time coupon (see
-    _create_birthday_coupon) right before sending, valid only for a booking
-    during the contact's birthday month."""
+    _create_birthday_coupon) right before sending — its redemption window and
+    booking window are both relative to the send date, not the calendar
+    birthday month."""
     config = auto.trigger_config or {}
     days_before = int(config.get("days_before", 5))
+    coupon_valid_days = int(config.get("coupon_valid_days", 7))
+    coupon_booking_window_days = int(config.get("coupon_booking_window_days", 30))
     target = (datetime.utcnow() + timedelta(days=days_before)).date()
 
     contacts = session.exec(
@@ -441,10 +450,14 @@ def _check_birthday(auto: Automation, session: Session) -> None:
         trigger_key = f"birthday:{contact.id}:{target.year}"
         if _already_sent(session, auto.id, trigger_key):
             continue
-        coupon_code = _create_birthday_coupon(contact, target.month, target.year)
+        coupon_code = _create_birthday_coupon(contact, coupon_valid_days, coupon_booking_window_days)
         if not coupon_code:
             continue  # source DB unreachable right now — retry on a later tick
-        _send_email(session, auto, contact, trigger_key, extra_vars={"coupon_code": coupon_code})
+        _send_email(session, auto, contact, trigger_key, extra_vars={
+            "coupon_code": coupon_code,
+            "coupon_valid_days": coupon_valid_days,
+            "coupon_booking_window_days": coupon_booking_window_days,
+        })
 
 
 def _normalize_categoria_cliente(cat: str) -> str | None:
