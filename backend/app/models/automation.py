@@ -16,6 +16,10 @@ class Automation(SQLModel, table=True):
     subject: str
     # active | paused
     status: str = Field(default="active")
+    # "Modo test" — cuando está prendido, cada envío real también le llega en
+    # copia (BCC) a NOTIFY_EMAIL, al mismo tiempo que al cliente. Por
+    # automatización, no global.
+    bcc_admin: bool = Field(default=False)
     created_by: Optional[int] = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -53,6 +57,7 @@ class AutomationUpdate(SQLModel):
     template_id: Optional[int] = None
     subject: Optional[str] = None
     status: Optional[str] = None
+    bcc_admin: Optional[bool] = None
 
 
 class AutomationRead(SQLModel):
@@ -63,6 +68,7 @@ class AutomationRead(SQLModel):
     template_id: int
     subject: str
     status: str
+    bcc_admin: bool = False
     created_by: Optional[int]
     created_at: datetime
     updated_at: datetime

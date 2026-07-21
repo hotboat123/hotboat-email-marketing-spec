@@ -112,8 +112,11 @@ def _send_email(
     contact: Contact,
     trigger_key: str,
     extra_vars: dict | None = None,
-    bcc: str | None = None,
 ) -> None:
+    # "Modo test" — toggle por automatización (automation.bcc_admin). Cuando
+    # está prendido, cada envío real también le llega en copia al admin al
+    # mismo tiempo que al cliente, para poder revisar sin esperar el /test manual.
+    bcc = (settings.NOTIFY_EMAIL or "tomasdamjanic@gmail.com") if automation.bcc_admin else None
     tpl = session.get(Template, automation.template_id)
     if not tpl:
         logger.warning("Automation %d: template %d not found", automation.id, automation.template_id)
@@ -457,14 +460,11 @@ def _check_birthday(auto: Automation, session: Session) -> None:
         coupon_code = _create_birthday_coupon(contact, coupon_valid_days, coupon_booking_window_days)
         if not coupon_code:
             continue  # source DB unreachable right now — retry on a later tick
-        # BCC al admin en cada envío real (no solo en el /test) — pedido explícito
-        # para poder chequear que la automatización de cumpleaños esté funcionando
-        # bien sin depender de que llegue el cumpleaños de alguien más para verlo.
         _send_email(session, auto, contact, trigger_key, extra_vars={
             "coupon_code": coupon_code,
             "coupon_valid_days": coupon_valid_days,
             "coupon_booking_window_days": coupon_booking_window_days,
-        }, bcc=settings.NOTIFY_EMAIL or "tomasdamjanic@gmail.com")
+        })
 
 
 def _normalize_categoria_cliente(cat: str) -> str | None:
