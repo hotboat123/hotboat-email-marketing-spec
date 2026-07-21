@@ -40,7 +40,8 @@ const TRIGGERS: { value: AutomationTrigger; label: string; description: string; 
     value: "birthday",
     label: "Cumpleaños",
     description:
-      "Se dispara N días antes del cumpleaños de cada contacto (solo funciona para contactos que tengan la fecha de nacimiento cargada). Se envía una sola vez por año, aunque la automatización quede corriendo permanentemente.",
+      "Se dispara N días antes del cumpleaños de cada contacto (solo funciona para contactos que tengan la fecha de nacimiento cargada). Se envía una sola vez por año, aunque la automatización quede corriendo permanentemente. " +
+      "El \"N días antes\" solo define cuándo se manda el mail — no afecta la validez del cupón. Cada envío genera un cupón nuevo y único para esa persona, siempre válido para reservar cualquier día dentro de su mes de cumpleaños (sin importar el N elegido).",
     fields: <></>,
   },
 ];
