@@ -23,6 +23,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _hotboat_engine():
+    """Engine hacia la DB fuente de HotBoat, con timeout de conexión corto —
+    sin esto, un problema de red deja el request colgado indefinidamente en
+    vez de fallar rápido (esta DB es compartida con el sistema de reservas
+    en vivo, así que un connect() colgado no debe acumularse request tras
+    request)."""
+    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    return create_engine(src_url, connect_args={"connect_timeout": 5}, pool_pre_ping=True)
+
+
 @router.get("", response_model=List[ContactRead])
 def list_contacts(
     skip: int = Query(0, ge=0),
@@ -200,9 +210,8 @@ def contact_bookings(
     if not contact:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
-    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    engine = _hotboat_engine()
     try:
-        engine = create_engine(src_url)
         with engine.connect() as conn:
             # Une reservas donde el contacto es el titular (aa.email) con
             # reservas donde solo firmó los T&C como pasajero (hotboat_signatures)
@@ -238,6 +247,8 @@ def contact_bookings(
     except Exception as exc:
         # Source DB not available — return empty without crashing
         return []
+    finally:
+        engine.dispose()
 
 
 @router.get("/available-bookings")
@@ -252,9 +263,8 @@ def available_bookings(
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido, usa YYYY-MM-DD")
 
-    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    engine = _hotboat_engine()
     try:
-        engine = create_engine(src_url)
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT id, nombre_cliente, hora, num_personas, source, source_id
@@ -265,6 +275,8 @@ def available_bookings(
             """), {"date": target}).fetchall()
     except Exception:
         return []
+    finally:
+        engine.dispose()
 
     out = []
     for r in rows:
@@ -298,33 +310,37 @@ def attach_booking(
     if not contact.email:
         raise HTTPException(status_code=400, detail="Este contacto no tiene email registrado")
 
-    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
-    engine = create_engine(src_url)
-    with engine.connect() as conn:
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS hotboat_signatures (
-                id               SERIAL PRIMARY KEY,
-                booking_ref      VARCHAR(50)  NOT NULL,
-                passenger_name   VARCHAR(255) NOT NULL,
-                passenger_email  VARCHAR(255),
-                passenger_phone  VARCHAR(50),
-                passenger_birthday DATE,
-                accepted_tc      BOOLEAN      DEFAULT TRUE,
-                ip_address       VARCHAR(50),
-                created_at       TIMESTAMPTZ  DEFAULT NOW()
-            )
-        """))
-        conn.execute(text("""
-            INSERT INTO hotboat_signatures
-                (booking_ref, passenger_name, passenger_email, passenger_phone, accepted_tc, ip_address)
-            VALUES (:booking_ref, :passenger_name, :passenger_email, :passenger_phone, TRUE, 'admin-manual')
-        """), {
-            "booking_ref": booking_ref,
-            "passenger_name": contact.name or contact.email,
-            "passenger_email": contact.email,
-            "passenger_phone": contact.phone,
-        })
-        conn.commit()
+    engine = _hotboat_engine()
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS hotboat_signatures (
+                    id               SERIAL PRIMARY KEY,
+                    booking_ref      VARCHAR(50)  NOT NULL,
+                    passenger_name   VARCHAR(255) NOT NULL,
+                    passenger_email  VARCHAR(255),
+                    passenger_phone  VARCHAR(50),
+                    passenger_birthday DATE,
+                    accepted_tc      BOOLEAN      DEFAULT TRUE,
+                    ip_address       VARCHAR(50),
+                    created_at       TIMESTAMPTZ  DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO hotboat_signatures
+                    (booking_ref, passenger_name, passenger_email, passenger_phone, accepted_tc, ip_address)
+                VALUES (:booking_ref, :passenger_name, :passenger_email, :passenger_phone, TRUE, 'admin-manual')
+            """), {
+                "booking_ref": booking_ref,
+                "passenger_name": contact.name or contact.email,
+                "passenger_email": contact.email,
+                "passenger_phone": contact.phone,
+            })
+            conn.commit()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No se pudo escribir en la DB de HotBoat: {exc}")
+    finally:
+        engine.dispose()
 
     return {"ok": True}
 

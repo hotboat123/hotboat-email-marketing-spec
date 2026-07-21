@@ -746,10 +746,12 @@ function AttachBookingPicker({ contactId, onDone }: { contactId: number; onDone:
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
+  const isValidDate = /^\d{4}-\d{2}-\d{2}$/.test(date);
+
   const { data: options = [], isFetching } = useQuery({
     queryKey: ["available-bookings", date],
     queryFn: () => contactsApi.availableBookings(date).then((r) => r.data),
-    enabled: !!date,
+    enabled: isValidDate,
   });
 
   const mutation = useMutation({
@@ -775,8 +777,8 @@ function AttachBookingPicker({ contactId, onDone }: { contactId: number; onDone:
         onChange={(e) => { setDate(e.target.value); setSelected(null); }}
         className="border border-gray-300 rounded px-2.5 py-1.5 text-sm text-gray-700"
       />
-      {isFetching && <p className="text-xs text-gray-400">Buscando paseos…</p>}
-      {!isFetching && options.length === 0 && (
+      {isValidDate && isFetching && <p className="text-xs text-gray-400">Buscando paseos…</p>}
+      {isValidDate && !isFetching && options.length === 0 && (
         <p className="text-xs text-gray-400">No hay reservas activas ese día.</p>
       )}
       {options.length > 0 && (
