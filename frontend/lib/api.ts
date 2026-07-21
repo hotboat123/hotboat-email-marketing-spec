@@ -63,6 +63,13 @@ export const contactsApi = {
     form.append("file", file);
     return api.post("/contacts/import/csv", form);
   },
+  availableBookings: (date: string) =>
+    api.get<{ booking_ref: string; nombre_cliente: string; hora: string | null; num_personas: number | null }[]>(
+      "/contacts/available-bookings",
+      { params: { date } }
+    ),
+  attachBooking: (id: number, booking_ref: string) =>
+    api.post(`/contacts/${id}/attach_booking`, { booking_ref }),
 };
 
 // Segments

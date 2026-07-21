@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { contactsApi, crmApi } from "@/lib/api";
 import { Contact, ContactBooking, CampaignEmailSend, ContactCRM } from "@/lib/types";
@@ -738,8 +738,91 @@ export function SegmentsTab({ contactId }: { contactId: number }) {
 }
 
 // ─── Tab 4: Objetos (reservas detalladas) ────────────────────────────────────
+// Asocia manualmente al contacto una reserva de HotBoat existente, como si
+// hubiera firmado los T&C como pasajero en ese paseo (p. ej. cuando quedó
+// registrado en el sistema pero se olvidó pedirle la firma en el momento).
+function AttachBookingPicker({ contactId, onDone }: { contactId: number; onDone: () => void }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selected, setSelected] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const { data: options = [], isFetching } = useQuery({
+    queryKey: ["available-bookings", date],
+    queryFn: () => contactsApi.availableBookings(date).then((r) => r.data),
+    enabled: !!date,
+  });
+
+  const mutation = useMutation({
+    mutationFn: (booking_ref: string) => contactsApi.attachBooking(contactId, booking_ref),
+    onSuccess: () => {
+      setStatus(null);
+      onDone();
+    },
+    onError: (err: any) => {
+      setStatus(`Error: ${err?.response?.data?.detail || "no se pudo asociar"}`);
+    },
+  });
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+      <p className="text-sm font-semibold text-gray-700">Asociar reserva (firma T&C)</p>
+      <p className="text-xs text-gray-400">
+        Elige el paseo al que asistió este contacto. Queda registrado como si hubiera firmado los términos y condiciones a bordo.
+      </p>
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => { setDate(e.target.value); setSelected(null); }}
+        className="border border-gray-300 rounded px-2.5 py-1.5 text-sm text-gray-700"
+      />
+      {isFetching && <p className="text-xs text-gray-400">Buscando paseos…</p>}
+      {!isFetching && options.length === 0 && (
+        <p className="text-xs text-gray-400">No hay reservas activas ese día.</p>
+      )}
+      {options.length > 0 && (
+        <div className="space-y-1.5 max-h-56 overflow-y-auto">
+          {options.map((o) => (
+            <label
+              key={o.booking_ref}
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm cursor-pointer transition-colors ${
+                selected === o.booking_ref ? "border-brand-500 bg-brand-50" : "border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              <input
+                type="radio"
+                name="booking_ref"
+                checked={selected === o.booking_ref}
+                onChange={() => setSelected(o.booking_ref)}
+              />
+              <span className="text-gray-800">{o.nombre_cliente}</span>
+              {o.hora && <span className="text-gray-400">· {o.hora}</span>}
+              {o.num_personas != null && <span className="text-gray-400">· {o.num_personas} pers.</span>}
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={!selected || mutation.isPending}
+          onClick={() => selected && mutation.mutate(selected)}
+          className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg disabled:opacity-40"
+        >
+          {mutation.isPending ? "Asociando…" : "Asociar"}
+        </button>
+        <button type="button" onClick={onDone} className="text-xs text-gray-400 hover:underline">
+          cancelar
+        </button>
+        {status && <span className="text-xs text-red-500">{status}</span>}
+      </div>
+    </div>
+  );
+}
+
 export function ObjectsTab({ contactId }: { contactId: number }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [attaching, setAttaching] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: bookings = [], isLoading } = useQuery<ContactBooking[]>({
     queryKey: ["contact-bookings", contactId],
@@ -751,6 +834,11 @@ export function ObjectsTab({ contactId }: { contactId: number }) {
     setExpanded((prev) => ({ ...prev, [i]: !prev[i] }));
   }
 
+  function handleAttached() {
+    setAttaching(false);
+    queryClient.invalidateQueries({ queryKey: ["contact-bookings", contactId] });
+  }
+
   if (isLoading) return (
     <div className="space-y-3">
       {[...Array(3)].map((_, i) => (
@@ -760,12 +848,25 @@ export function ObjectsTab({ contactId }: { contactId: number }) {
   );
 
   if (bookings.length === 0) return (
-    <div className="bg-white border border-gray-200 rounded-xl p-16 text-center">
-      <div className="flex justify-center mb-4 opacity-20">
-        <Anchor size={48} className="text-gray-400" />
-      </div>
-      <p className="text-sm font-medium text-gray-600">Este cliente no tiene reservas registradas</p>
-      <p className="text-xs text-gray-400 mt-1">Las reservas de HotBoat aparecerán aquí automáticamente al sincronizar</p>
+    <div className="space-y-3">
+      {attaching ? (
+        <AttachBookingPicker contactId={contactId} onDone={handleAttached} />
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl p-16 text-center">
+          <div className="flex justify-center mb-4 opacity-20">
+            <Anchor size={48} className="text-gray-400" />
+          </div>
+          <p className="text-sm font-medium text-gray-600">Este cliente no tiene reservas registradas</p>
+          <p className="text-xs text-gray-400 mt-1">Las reservas de HotBoat aparecerán aquí automáticamente al sincronizar</p>
+          <button
+            type="button"
+            onClick={() => setAttaching(true)}
+            className="mt-4 text-xs text-brand-600 hover:underline font-medium"
+          >
+            + Asociar reserva manualmente
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -773,18 +874,29 @@ export function ObjectsTab({ contactId }: { contactId: number }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between mb-1">
         <p className="text-xs text-gray-400">{bookings.length} reserva{bookings.length !== 1 ? "s" : ""} encontradas en HotBoat</p>
-        <button
-          onClick={() => {
-            const anyOpen = bookings.some((_, i) => expanded[i]);
-            const next: Record<number, boolean> = {};
-            bookings.forEach((_, i) => { next[i] = !anyOpen; });
-            setExpanded(next);
-          }}
-          className="text-xs text-gray-400 hover:text-gray-600"
-        >
-          {bookings.some((_, i) => expanded[i]) ? "Colapsar todo" : "Expandir todo"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setAttaching((v) => !v)}
+            className="text-xs text-brand-600 hover:underline font-medium"
+          >
+            {attaching ? "cancelar" : "+ Asociar reserva"}
+          </button>
+          <button
+            onClick={() => {
+              const anyOpen = bookings.some((_, i) => expanded[i]);
+              const next: Record<number, boolean> = {};
+              bookings.forEach((_, i) => { next[i] = !anyOpen; });
+              setExpanded(next);
+            }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            {bookings.some((_, i) => expanded[i]) ? "Colapsar todo" : "Expandir todo"}
+          </button>
+        </div>
       </div>
+
+      {attaching && <AttachBookingPicker contactId={contactId} onDone={handleAttached} />}
 
       {bookings.map((b, i) => {
         const extras = Object.entries(b.extras ?? {}).filter(([k]) => !k.startsWith("aloj__"));

@@ -204,15 +204,24 @@ def contact_bookings(
     try:
         engine = create_engine(src_url)
         with engine.connect() as conn:
+            # Une reservas donde el contacto es el titular (aa.email) con
+            # reservas donde solo firmó los T&C como pasajero (hotboat_signatures)
+            # — mismo criterio de asistencia que sync_hotboat.py usa para
+            # veces_hotboat, pero aquí en vivo para el listado del perfil.
             rows = conn.execute(text("""
-                SELECT
-                    fecha,
-                    status,
-                    ingreso_total,
-                    como_supieron,
-                    extras_json
-                FROM all_appointments
-                WHERE LOWER(email) = LOWER(:email)
+                SELECT * FROM (
+                    SELECT aa.fecha, aa.status, aa.ingreso_total, aa.como_supieron, aa.extras_json
+                    FROM all_appointments aa
+                    WHERE LOWER(aa.email) = LOWER(:email)
+                    UNION
+                    SELECT aa.fecha, aa.status, aa.ingreso_total, aa.como_supieron, aa.extras_json
+                    FROM all_appointments aa
+                    JOIN hotboat_signatures hs
+                      ON hs.booking_ref = aa.appointment_id
+                      OR hs.booking_ref = ('AA-' || aa.id::text)
+                      OR hs.booking_ref = TRIM(aa.source_id)
+                    WHERE LOWER(hs.passenger_email) = LOWER(:email)
+                ) combined
                 ORDER BY fecha DESC
                 LIMIT 50
             """), {"email": contact.email}).fetchall()
@@ -229,6 +238,95 @@ def contact_bookings(
     except Exception as exc:
         # Source DB not available — return empty without crashing
         return []
+
+
+@router.get("/available-bookings")
+def available_bookings(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    _: User = Depends(get_current_user),
+):
+    """Reservas de HotBoat en una fecha dada, para elegir a cuál asociar un
+    contacto como pasajero que firmó los T&C (ver /contacts/{id}/attach_booking)."""
+    try:
+        target = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido, usa YYYY-MM-DD")
+
+    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    try:
+        engine = create_engine(src_url)
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT id, nombre_cliente, hora, num_personas, source, source_id
+                FROM all_appointments
+                WHERE fecha = :date
+                  AND status NOT IN ('cancelled', 'cancelada')
+                ORDER BY hora ASC NULLS LAST
+            """), {"date": target}).fetchall()
+    except Exception:
+        return []
+
+    out = []
+    for r in rows:
+        booking_ref = r.source_id if r.source == "hotboat_web" and r.source_id else f"AA-{r.id}"
+        out.append({
+            "booking_ref": booking_ref,
+            "nombre_cliente": r.nombre_cliente or "Sin nombre",
+            "hora": str(r.hora)[:5] if r.hora else None,
+            "num_personas": r.num_personas,
+        })
+    return out
+
+
+@router.post("/{contact_id}/attach_booking")
+def attach_booking(
+    contact_id: int,
+    payload: dict,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_editor),
+):
+    """Asocia manualmente una reserva de HotBoat a este contacto, como si
+    hubiera firmado los T&C en ese paseo (p. ej. cuando quedó registrado en
+    el sistema pero se olvidó pedirle la firma en el momento)."""
+    booking_ref = (payload or {}).get("booking_ref", "").strip()
+    if not booking_ref:
+        raise HTTPException(status_code=400, detail="Falta booking_ref")
+
+    contact = session.get(Contact, contact_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+    if not contact.email:
+        raise HTTPException(status_code=400, detail="Este contacto no tiene email registrado")
+
+    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    engine = create_engine(src_url)
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS hotboat_signatures (
+                id               SERIAL PRIMARY KEY,
+                booking_ref      VARCHAR(50)  NOT NULL,
+                passenger_name   VARCHAR(255) NOT NULL,
+                passenger_email  VARCHAR(255),
+                passenger_phone  VARCHAR(50),
+                passenger_birthday DATE,
+                accepted_tc      BOOLEAN      DEFAULT TRUE,
+                ip_address       VARCHAR(50),
+                created_at       TIMESTAMPTZ  DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO hotboat_signatures
+                (booking_ref, passenger_name, passenger_email, passenger_phone, accepted_tc, ip_address)
+            VALUES (:booking_ref, :passenger_name, :passenger_email, :passenger_phone, TRUE, 'admin-manual')
+        """), {
+            "booking_ref": booking_ref,
+            "passenger_name": contact.name or contact.email,
+            "passenger_email": contact.email,
+            "passenger_phone": contact.phone,
+        })
+        conn.commit()
+
+    return {"ok": True}
 
 
 @router.get("/{contact_id}/email_activity")
