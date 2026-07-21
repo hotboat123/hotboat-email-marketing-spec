@@ -212,7 +212,7 @@ def contact_bookings(
                     como_supieron,
                     extras_json
                 FROM all_appointments
-                WHERE email = :email
+                WHERE LOWER(email) = LOWER(:email)
                 ORDER BY fecha DESC
                 LIMIT 50
             """), {"email": contact.email}).fetchall()
