@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from app.database import get_session
 from app.core.deps import get_current_user, require_editor
 from app.models.user import User
-from app.models.contact_crm import ContactCRM, ContactCRMRead, CallStatusUpdate
+from app.models.contact_crm import ContactCRM, ContactCRMRead, CallStatusUpdate, ReferralCountUpdate
 from app.models.call_activity import CallActivity, CallActivityRead
 from app.models.score_weight import ScoreWeight, ScoreWeightRead, ScoreWeightUpdate
 from app.services.sync_hotboat import _source_engine
@@ -39,6 +39,7 @@ _ANON_ROW_DEFAULTS = dict(
     link_clicked=False, link_viewed_prices=False, link_selected_date=False,
     link_last_seen_at=None, web_session_count=1,
     channel_whatsapp_link=False, channel_direct_web=True,
+    referral_count=0,
     is_anonymous=True,
 )
 
@@ -439,6 +440,30 @@ def update_call_status(
         created_by=payload.created_by or getattr(user, "email", None),
         created_at=now,
     ))
+    session.commit()
+    session.refresh(contact)
+    return contact
+
+
+@router.patch("/contacts/{contact_crm_id}/referral_count", response_model=ContactCRMRead)
+def update_referral_count(
+    contact_crm_id: int,
+    payload: ReferralCountUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(require_editor),
+):
+    """Manual counter — cuantas personas ha referido este contacto. El equipo
+    lo ajusta a mano desde el perfil; ningun sync automatico lo toca."""
+    if payload.referral_count < 0:
+        raise HTTPException(status_code=400, detail="referral_count no puede ser negativo")
+
+    contact = session.get(ContactCRM, contact_crm_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    contact.referral_count = payload.referral_count
+    contact.updated_at = datetime.utcnow()
+    session.add(contact)
     session.commit()
     session.refresh(contact)
     return contact

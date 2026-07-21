@@ -87,6 +87,11 @@ class ContactCRM(SQLModel, table=True):
     # variant in /api/crm/analytics/funnel.
     bot_variant: Optional[str] = None
 
+    # Programa de referidos — cuantas personas ha referido este contacto.
+    # Puramente manual: el equipo lo ajusta a mano desde el perfil del
+    # contacto, ningun sync/job automatico lo toca.
+    referral_count: int = Field(default=0)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -125,6 +130,7 @@ class ContactCRMRead(SQLModel):
     channel_whatsapp_link: bool
     channel_direct_web: bool
     bot_variant: Optional[str]
+    referral_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -144,3 +150,7 @@ class CallStatusUpdate(SQLModel):
     call_status: str
     note: Optional[str] = None
     created_by: Optional[str] = None
+
+
+class ReferralCountUpdate(SQLModel):
+    referral_count: int

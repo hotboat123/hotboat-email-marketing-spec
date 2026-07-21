@@ -14,6 +14,78 @@ import { Tab, DetailsTab, MetricsTab, SegmentsTab, ObjectsTab, EmptyTabPlacehold
 
 type TabKey = "details" | "metrics" | "segments" | "objects" | "conversation" | "web" | "calls";
 
+function ReferralCell({
+  count,
+  saving,
+  onSave,
+}: {
+  count: number;
+  saving: boolean;
+  onSave: (value: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(count));
+
+  if (editing) {
+    return (
+      <div>
+        <span className="block text-gray-400">Referidos</span>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <input
+            type="number"
+            min={0}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-16 border border-gray-300 rounded px-1.5 py-0.5 text-xs text-gray-700"
+            autoFocus
+          />
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              onSave(Math.max(0, parseInt(value, 10) || 0));
+              setEditing(false);
+            }}
+            className="text-brand-600 hover:underline text-[11px] disabled:opacity-50"
+          >
+            guardar
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="text-gray-400 hover:underline text-[11px]">
+            cancelar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <span className="block text-gray-400">Referidos</span>
+      <div className="flex items-center gap-2 mt-0.5">
+        <span className="text-gray-700 font-medium">{count}</span>
+        <button
+          type="button"
+          onClick={() => {
+            setValue(String(count));
+            setEditing(true);
+          }}
+          className="text-brand-600 hover:underline text-[11px]"
+        >
+          editar
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => onSave(count + 1)}
+          className="text-brand-600 hover:underline text-[11px] disabled:opacity-50"
+        >
+          +1
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function CallDetailPage() {
   const params = useParams();
   const contactId = Number(params.id);
@@ -48,6 +120,11 @@ export default function CallDetailPage() {
   const updateMutation = useMutation({
     mutationFn: (data: Partial<Contact>) => contactsApi.update(linkedContactId!, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contact", linkedContactId] }),
+  });
+
+  const referralMutation = useMutation({
+    mutationFn: (value: number) => crmApi.updateReferralCount(contactId, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["crm-contact", contactId] }),
   });
 
   if (isLoading) {
@@ -117,10 +194,15 @@ export default function CallDetailPage() {
           ))}
           {Object.keys(breakdown).length === 0 && <span className="text-xs text-gray-400">Sin señales todavía</span>}
         </div>
-        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+        <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
           <div><span className="block text-gray-400">Veces HotBoat</span>{contact.veces_hotboat}</div>
           <div><span className="block text-gray-400">Última visita</span>{formatDate(contact.ultima_visita)}</div>
           <div><span className="block text-gray-400">Ticket medio</span>{contact.ticket_medio ? `$${Math.round(contact.ticket_medio).toLocaleString("es-CL")}` : "—"}</div>
+          <ReferralCell
+            count={contact.referral_count}
+            saving={referralMutation.isPending}
+            onSave={(value) => referralMutation.mutate(value)}
+          />
         </div>
       </div>
 

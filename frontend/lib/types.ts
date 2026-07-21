@@ -271,6 +271,7 @@ export interface ContactCRM {
   web_classification_desc: string | null;
   web_last_seen_at: string | null;
   web_session_count: number | null;
+  referral_count: number;
   created_at: string;
   updated_at: string;
   is_anonymous: boolean;
