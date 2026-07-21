@@ -1,8 +1,9 @@
 """
 Automation engine — runs every 15 minutes in a background thread.
-Implements 5 trigger types: abandoned_booking, welcome, post_visit, reactivation,
-tc_signature.
+Implements 6 trigger types: abandoned_booking, welcome, post_visit, reactivation,
+tc_signature, birthday.
 """
+import calendar
 import logging
 import re
 import threading
@@ -365,6 +366,34 @@ def _check_reactivation(auto: Automation, session: Session) -> None:
         _send_email(session, auto, contact, trigger_key)
 
 
+def _check_birthday(auto: Automation, session: Session) -> None:
+    """Fire N days before a contact's birthday (month/day match, year-agnostic —
+    Contact.birthday stores the actual birth year, only month/day matter here).
+    Feb 29 birthdays fire on Feb 28 in non-leap target years so they're not
+    skipped 3 years out of 4."""
+    config = auto.trigger_config or {}
+    days_before = int(config.get("days_before", 5))
+    target = (datetime.utcnow() + timedelta(days=days_before)).date()
+
+    contacts = session.exec(
+        select(Contact).where(
+            Contact.birthday != None,
+            Contact.opted_in == True,
+        )
+    ).all()
+
+    for contact in contacts:
+        month, day = contact.birthday.month, contact.birthday.day
+        if month == 2 and day == 29 and not calendar.isleap(target.year):
+            day = 28
+        if (month, day) != (target.month, target.day):
+            continue
+        trigger_key = f"birthday:{contact.id}:{target.year}"
+        if _already_sent(session, auto.id, trigger_key):
+            continue
+        _send_email(session, auto, contact, trigger_key)
+
+
 def _normalize_categoria_cliente(cat: str) -> str | None:
     """Normaliza categoria_clientes (all_appointments) a familia / pareja / amigos."""
     c = (cat or "").strip().lower()
@@ -628,6 +657,7 @@ HANDLERS = {
     "post_visit": _check_post_visit,
     "reactivation": _check_reactivation,
     "tc_signature": _check_tc_signatures,
+    "birthday": _check_birthday,
 }
 
 

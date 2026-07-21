@@ -185,7 +185,7 @@ export interface FormSubmission {
   created_at: string;
 }
 
-export type AutomationTrigger = "abandoned_booking" | "welcome" | "post_visit" | "reactivation";
+export type AutomationTrigger = "abandoned_booking" | "welcome" | "post_visit" | "reactivation" | "birthday";
 export type AutomationStatus = "active" | "paused";
 
 export interface Automation {

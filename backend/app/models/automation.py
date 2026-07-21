@@ -9,7 +9,7 @@ class Automation(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
-    # abandoned_booking | welcome | post_visit | reactivation | tc_signature
+    # abandoned_booking | welcome | post_visit | reactivation | tc_signature | birthday
     trigger_type: str
     trigger_config: Optional[Any] = Field(default=None, sa_column=Column(JSON))
     template_id: int = Field(foreign_key="templates.id")

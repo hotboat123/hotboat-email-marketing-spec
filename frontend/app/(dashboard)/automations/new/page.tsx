@@ -36,6 +36,13 @@ const TRIGGERS: { value: AutomationTrigger; label: string; description: string; 
       "Se dispara cuando un cliente no ha visitado en N días. Incluye cooldown para no enviarlo más de una vez por período.",
     fields: <></>,
   },
+  {
+    value: "birthday",
+    label: "Cumpleaños",
+    description:
+      "Se dispara N días antes del cumpleaños de cada contacto (solo funciona para contactos que tengan la fecha de nacimiento cargada). Se envía una sola vez por año, aunque la automatización quede corriendo permanentemente.",
+    fields: <></>,
+  },
 ];
 
 const TRIGGER_MAP = Object.fromEntries(TRIGGERS.map((t) => [t.value, t]));
@@ -76,6 +83,8 @@ function ConfigFields({
           {field("cooldown_days", "Días de espera antes de volver a enviar", 1, 180)}
         </>
       );
+    case "birthday":
+      return <>{field("days_before", "Enviar N días antes del cumpleaños", 0, 5)}</>;
     default:
       return null;
   }

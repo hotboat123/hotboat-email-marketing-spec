@@ -29,6 +29,11 @@ const TRIGGER_LABELS: Record<string, { label: string; description: string; color
     description: "Clientes sin visitar en mucho tiempo",
     color: "bg-purple-100 text-purple-700",
   },
+  birthday: {
+    label: "Cumpleaños",
+    description: "N días antes del cumpleaños del contacto",
+    color: "bg-pink-100 text-pink-700",
+  },
 };
 
 function configSummary(auto: Automation): string {
@@ -42,6 +47,8 @@ function configSummary(auto: Automation): string {
       return `${c.delay_days ?? 3} días después de la visita`;
     case "reactivation":
       return `Sin visitar ${c.inactivity_days ?? 90}+ días`;
+    case "birthday":
+      return `${c.days_before ?? 5} días antes del cumpleaños`;
     default:
       return "";
   }
@@ -175,6 +182,17 @@ function EditPanel({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
+        </div>
+      )}
+      {auto.trigger_type === "birthday" && (
+        <div className="max-w-xs">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Días antes del cumpleaños</label>
+          <input
+            type="number" min={0} max={60}
+            value={cfg.days_before ?? 5}
+            onChange={(e) => setConfig("days_before", Number(e.target.value))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
         </div>
       )}
 
