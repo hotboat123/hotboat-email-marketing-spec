@@ -123,6 +123,47 @@ def create_contact(
     return contact
 
 
+@router.get("/available-bookings")
+def available_bookings(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    _: User = Depends(get_current_user),
+):
+    """Reservas de HotBoat en una fecha dada, para elegir a cuál asociar un
+    contacto como pasajero que firmó los T&C (ver /contacts/{id}/attach_booking).
+    Registrada antes de /{contact_id} a propósito — de lo contrario ese path
+    dinámico se la come primero y devuelve 422 (contact_id inválido)."""
+    try:
+        target = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido, usa YYYY-MM-DD")
+
+    engine = _hotboat_engine()
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT id, nombre_cliente, hora, num_personas, source, source_id
+                FROM all_appointments
+                WHERE fecha = :date
+                  AND status NOT IN ('cancelled', 'cancelada')
+                ORDER BY hora ASC NULLS LAST
+            """), {"date": target}).fetchall()
+    except Exception:
+        return []
+    finally:
+        engine.dispose()
+
+    out = []
+    for r in rows:
+        booking_ref = r.source_id if r.source == "hotboat_web" and r.source_id else f"AA-{r.id}"
+        out.append({
+            "booking_ref": booking_ref,
+            "nombre_cliente": r.nombre_cliente or "Sin nombre",
+            "hora": str(r.hora)[:5] if r.hora else None,
+            "num_personas": r.num_personas,
+        })
+    return out
+
+
 @router.get("/{contact_id}", response_model=ContactRead)
 def get_contact(contact_id: int, session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     contact = session.get(Contact, contact_id)
@@ -249,45 +290,6 @@ def contact_bookings(
         return []
     finally:
         engine.dispose()
-
-
-@router.get("/available-bookings")
-def available_bookings(
-    date: str = Query(..., description="YYYY-MM-DD"),
-    _: User = Depends(get_current_user),
-):
-    """Reservas de HotBoat en una fecha dada, para elegir a cuál asociar un
-    contacto como pasajero que firmó los T&C (ver /contacts/{id}/attach_booking)."""
-    try:
-        target = datetime.strptime(date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Formato de fecha inválido, usa YYYY-MM-DD")
-
-    engine = _hotboat_engine()
-    try:
-        with engine.connect() as conn:
-            rows = conn.execute(text("""
-                SELECT id, nombre_cliente, hora, num_personas, source, source_id
-                FROM all_appointments
-                WHERE fecha = :date
-                  AND status NOT IN ('cancelled', 'cancelada')
-                ORDER BY hora ASC NULLS LAST
-            """), {"date": target}).fetchall()
-    except Exception:
-        return []
-    finally:
-        engine.dispose()
-
-    out = []
-    for r in rows:
-        booking_ref = r.source_id if r.source == "hotboat_web" and r.source_id else f"AA-{r.id}"
-        out.append({
-            "booking_ref": booking_ref,
-            "nombre_cliente": r.nombre_cliente or "Sin nombre",
-            "hora": str(r.hora)[:5] if r.hora else None,
-            "num_personas": r.num_personas,
-        })
-    return out
 
 
 @router.post("/{contact_id}/attach_booking")
