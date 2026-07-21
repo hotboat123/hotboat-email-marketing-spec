@@ -112,6 +112,7 @@ def _send_email(
     contact: Contact,
     trigger_key: str,
     extra_vars: dict | None = None,
+    bcc: str | None = None,
 ) -> None:
     tpl = session.get(Template, automation.template_id)
     if not tpl:
@@ -138,13 +139,16 @@ def _send_email(
         triggered_at=datetime.utcnow(),
     )
     try:
-        result = resend.Emails.send({
+        payload = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": [contact.email],
             "subject": subject,
             "html": html,
             "headers": _unsub_headers(contact.email),
-        })
+        }
+        if bcc:
+            payload["bcc"] = [bcc]
+        result = resend.Emails.send(payload)
         resend_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
         run.status = "sent"
         run.resend_id = resend_id
@@ -453,11 +457,14 @@ def _check_birthday(auto: Automation, session: Session) -> None:
         coupon_code = _create_birthday_coupon(contact, coupon_valid_days, coupon_booking_window_days)
         if not coupon_code:
             continue  # source DB unreachable right now — retry on a later tick
+        # BCC al admin en cada envío real (no solo en el /test) — pedido explícito
+        # para poder chequear que la automatización de cumpleaños esté funcionando
+        # bien sin depender de que llegue el cumpleaños de alguien más para verlo.
         _send_email(session, auto, contact, trigger_key, extra_vars={
             "coupon_code": coupon_code,
             "coupon_valid_days": coupon_valid_days,
             "coupon_booking_window_days": coupon_booking_window_days,
-        })
+        }, bcc=settings.NOTIFY_EMAIL or "tomasdamjanic@gmail.com")
 
 
 def _normalize_categoria_cliente(cat: str) -> str | None:
