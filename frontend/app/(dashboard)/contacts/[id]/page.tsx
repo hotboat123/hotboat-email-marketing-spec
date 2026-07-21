@@ -9,7 +9,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { statusMeta, StatusModal } from "@/components/crm/StatusModal";
 import { ConversationTab, WebActivityTab, CallHistoryTab } from "@/components/crm/CrmActivityTabs";
-import { Tab, DetailsTab, MetricsTab, SegmentsTab, ObjectsTab, EmptyTabPlaceholder } from "@/components/crm/ContactProfileTabs";
+import { Tab, DetailsTab, MetricsTab, SegmentsTab, ObjectsTab, EmptyTabPlaceholder, ScoreCard } from "@/components/crm/ContactProfileTabs";
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ContactDetailPage() {
@@ -52,6 +52,11 @@ export default function ContactDetailPage() {
       qc.invalidateQueries({ queryKey: ["crm-call-activity", crmContact?.id] });
       setEditingStatus(false);
     },
+  });
+
+  const referralMutation = useMutation({
+    mutationFn: (value: number) => crmApi.updateReferralCount(crmContact!.id, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["crm-contact-by-contact", contactId] }),
   });
 
   if (isLoading) return (
@@ -122,6 +127,16 @@ export default function ContactDetailPage() {
             </button>
           </div>
         </div>
+
+        {crmContact && (
+          <div className="mt-4">
+            <ScoreCard
+              crmContact={crmContact}
+              referralSaving={referralMutation.isPending}
+              onSaveReferral={(value) => referralMutation.mutate(value)}
+            />
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-0 border-b border-gray-200 mt-4 mb-6 overflow-x-auto">

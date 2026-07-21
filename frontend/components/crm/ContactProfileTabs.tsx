@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { contactsApi } from "@/lib/api";
-import { Contact, ContactBooking, CampaignEmailSend } from "@/lib/types";
+import { Contact, ContactBooking, CampaignEmailSend, ContactCRM } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
   Mail, Calendar, StickyNote, Save, Plus, Trash2, Search,
@@ -42,6 +42,115 @@ const PREDEFINED = [
   { key: "actividades",         label: "Actividades favoritas",      placeholder: "ej. wakeboard, snorkel" },
   { key: "alergias",            label: "Alergias / restricciones",   placeholder: "ej. sin gluten" },
 ];
+
+// ─── Score card (Score de reserva + Veces HotBoat/Última visita/Ticket medio/
+// Referidos) — compartida entre /contacts/[id] y /calls/[id] para que el mismo
+// resumen de CRM aparezca sin importar desde qué pestaña se abrió el contacto.
+function ReferralCell({
+  count,
+  saving,
+  onSave,
+}: {
+  count: number;
+  saving: boolean;
+  onSave: (value: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(count));
+
+  if (editing) {
+    return (
+      <div>
+        <span className="block text-gray-400">Referidos</span>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <input
+            type="number"
+            min={0}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-16 border border-gray-300 rounded px-1.5 py-0.5 text-xs text-gray-700"
+            autoFocus
+          />
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              onSave(Math.max(0, parseInt(value, 10) || 0));
+              setEditing(false);
+            }}
+            className="text-brand-600 hover:underline text-[11px] disabled:opacity-50"
+          >
+            guardar
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="text-gray-400 hover:underline text-[11px]">
+            cancelar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <span className="block text-gray-400">Referidos</span>
+      <div className="flex items-center gap-2 mt-0.5">
+        <span className="text-gray-700 font-medium">{count}</span>
+        <button
+          type="button"
+          onClick={() => {
+            setValue(String(count));
+            setEditing(true);
+          }}
+          className="text-brand-600 hover:underline text-[11px]"
+        >
+          editar
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => onSave(count + 1)}
+          className="text-brand-600 hover:underline text-[11px] disabled:opacity-50"
+        >
+          +1
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ScoreCard({
+  crmContact,
+  referralSaving,
+  onSaveReferral,
+}: {
+  crmContact: ContactCRM;
+  referralSaving: boolean;
+  onSaveReferral: (value: number) => void;
+}) {
+  const breakdown = crmContact.score_breakdown || {};
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Score de reserva</span>
+        <span className="text-2xl font-bold text-gray-900">{crmContact.reservation_score ?? "—"}</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(breakdown).map(([key, points]) => (
+          <span key={key} className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
+            {key} {points > 0 ? "+" : ""}{points}
+          </span>
+        ))}
+        {Object.keys(breakdown).length === 0 && <span className="text-xs text-gray-400">Sin señales todavía</span>}
+      </div>
+      <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+        <div><span className="block text-gray-400">Veces HotBoat</span>{crmContact.veces_hotboat}</div>
+        <div><span className="block text-gray-400">Última visita</span>{formatDate(crmContact.ultima_visita)}</div>
+        <div><span className="block text-gray-400">Ticket medio</span>{crmContact.ticket_medio ? `$${Math.round(crmContact.ticket_medio).toLocaleString("es-CL")}` : "—"}</div>
+        <ReferralCell count={crmContact.referral_count} saving={referralSaving} onSave={onSaveReferral} />
+      </div>
+    </div>
+  );
+}
 
 // ─── Tab button ───────────────────────────────────────────────────────────────
 export function Tab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {

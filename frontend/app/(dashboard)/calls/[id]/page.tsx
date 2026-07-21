@@ -6,85 +6,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { crmApi, contactsApi } from "@/lib/api";
 import { ContactCRM, CallStatus, Contact } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
 import { statusMeta, StatusModal } from "@/components/crm/StatusModal";
 import { ConversationTab, WebActivityTab, CallHistoryTab } from "@/components/crm/CrmActivityTabs";
-import { Tab, DetailsTab, MetricsTab, SegmentsTab, ObjectsTab, EmptyTabPlaceholder } from "@/components/crm/ContactProfileTabs";
+import { Tab, DetailsTab, MetricsTab, SegmentsTab, ObjectsTab, EmptyTabPlaceholder, ScoreCard } from "@/components/crm/ContactProfileTabs";
 
 type TabKey = "details" | "metrics" | "segments" | "objects" | "conversation" | "web" | "calls";
-
-function ReferralCell({
-  count,
-  saving,
-  onSave,
-}: {
-  count: number;
-  saving: boolean;
-  onSave: (value: number) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(String(count));
-
-  if (editing) {
-    return (
-      <div>
-        <span className="block text-gray-400">Referidos</span>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <input
-            type="number"
-            min={0}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="w-16 border border-gray-300 rounded px-1.5 py-0.5 text-xs text-gray-700"
-            autoFocus
-          />
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => {
-              onSave(Math.max(0, parseInt(value, 10) || 0));
-              setEditing(false);
-            }}
-            className="text-brand-600 hover:underline text-[11px] disabled:opacity-50"
-          >
-            guardar
-          </button>
-          <button type="button" onClick={() => setEditing(false)} className="text-gray-400 hover:underline text-[11px]">
-            cancelar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <span className="block text-gray-400">Referidos</span>
-      <div className="flex items-center gap-2 mt-0.5">
-        <span className="text-gray-700 font-medium">{count}</span>
-        <button
-          type="button"
-          onClick={() => {
-            setValue(String(count));
-            setEditing(true);
-          }}
-          className="text-brand-600 hover:underline text-[11px]"
-        >
-          editar
-        </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => onSave(count + 1)}
-          className="text-brand-600 hover:underline text-[11px] disabled:opacity-50"
-        >
-          +1
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export default function CallDetailPage() {
   const params = useParams();
@@ -150,7 +77,6 @@ export default function CallDetailPage() {
   }
 
   const meta = statusMeta(contact.call_status);
-  const breakdown = contact.score_breakdown || {};
 
   return (
     <div className="p-8 max-w-5xl">
@@ -180,31 +106,11 @@ export default function CallDetailPage() {
         </button>
       </div>
 
-      {/* Score card */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Score de reserva</span>
-          <span className="text-2xl font-bold text-gray-900">{contact.reservation_score ?? "—"}</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {Object.entries(breakdown).map(([key, points]) => (
-            <span key={key} className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
-              {key} {points > 0 ? "+" : ""}{points}
-            </span>
-          ))}
-          {Object.keys(breakdown).length === 0 && <span className="text-xs text-gray-400">Sin señales todavía</span>}
-        </div>
-        <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-          <div><span className="block text-gray-400">Veces HotBoat</span>{contact.veces_hotboat}</div>
-          <div><span className="block text-gray-400">Última visita</span>{formatDate(contact.ultima_visita)}</div>
-          <div><span className="block text-gray-400">Ticket medio</span>{contact.ticket_medio ? `$${Math.round(contact.ticket_medio).toLocaleString("es-CL")}` : "—"}</div>
-          <ReferralCell
-            count={contact.referral_count}
-            saving={referralMutation.isPending}
-            onSave={(value) => referralMutation.mutate(value)}
-          />
-        </div>
-      </div>
+      <ScoreCard
+        crmContact={contact}
+        referralSaving={referralMutation.isPending}
+        onSaveReferral={(value) => referralMutation.mutate(value)}
+      />
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="flex gap-0 border-b border-gray-200 px-2 overflow-x-auto">
