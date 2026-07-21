@@ -5,10 +5,12 @@ tc_signature, birthday.
 """
 import calendar
 import logging
+import random
 import re
+import string
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 import resend
@@ -366,11 +368,59 @@ def _check_reactivation(auto: Automation, session: Session) -> None:
         _send_email(session, auto, contact, trigger_key)
 
 
+def _create_birthday_coupon(contact: Contact, month: int, year: int) -> str | None:
+    """Mint a one-time, one-person coupon directly in hotboat-whatsapp's shared
+    `coupons` table (same physical Postgres, no schema change needed — this
+    table already has everything a birthday offer needs: discount_percent,
+    extra_description, max_uses, expires_at, booking_date_from/to). Scoped so
+    only this contact can realistically guess it (random 4-char suffix),
+    usable once, and only for a trip taken during their birthday month.
+    Returns None (never raises) if the source DB is unreachable — the caller
+    treats that as "try again next tick" rather than sending a broken code."""
+    last_day = calendar.monthrange(year, month)[1]
+    month_start = date(year, month, 1)
+    month_end = date(year, month, last_day)
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            code = None
+            for _ in range(10):
+                candidate = "CUMPLE-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                taken = conn.execute(
+                    text("SELECT 1 FROM coupons WHERE UPPER(code) = UPPER(:c)"), {"c": candidate}
+                ).first()
+                if not taken:
+                    code = candidate
+                    break
+            if not code:
+                logger.warning("Birthday coupon: couldn't find a free code for contact %s after 10 tries", contact.id)
+                return None
+            conn.execute(text("""
+                INSERT INTO coupons (code, name, discount_percent, extra_description,
+                                      max_uses, expires_at, booking_date_from, booking_date_to, is_active)
+                VALUES (:code, :name, 15, :extra, 1, :expires_at, :booking_from, :booking_to, TRUE)
+            """), {
+                "code": code,
+                "name": f"Cumpleaños — {contact.name or contact.email}",
+                "extra": "Video con drone + foto con marco de regalo",
+                "expires_at": month_end,
+                "booking_from": month_start,
+                "booking_to": month_end,
+            })
+            conn.commit()
+            return code
+    except Exception as exc:
+        logger.warning("Birthday coupon creation failed for contact %s: %s", contact.id, exc)
+        return None
+
+
 def _check_birthday(auto: Automation, session: Session) -> None:
     """Fire N days before a contact's birthday (month/day match, year-agnostic —
     Contact.birthday stores the actual birth year, only month/day matter here).
     Feb 29 birthdays fire on Feb 28 in non-leap target years so they're not
-    skipped 3 years out of 4."""
+    skipped 3 years out of 4. Mints a personal one-time coupon (see
+    _create_birthday_coupon) right before sending, valid only for a booking
+    during the contact's birthday month."""
     config = auto.trigger_config or {}
     days_before = int(config.get("days_before", 5))
     target = (datetime.utcnow() + timedelta(days=days_before)).date()
@@ -391,7 +441,10 @@ def _check_birthday(auto: Automation, session: Session) -> None:
         trigger_key = f"birthday:{contact.id}:{target.year}"
         if _already_sent(session, auto.id, trigger_key):
             continue
-        _send_email(session, auto, contact, trigger_key)
+        coupon_code = _create_birthday_coupon(contact, target.month, target.year)
+        if not coupon_code:
+            continue  # source DB unreachable right now — retry on a later tick
+        _send_email(session, auto, contact, trigger_key, extra_vars={"coupon_code": coupon_code})
 
 
 def _normalize_categoria_cliente(cat: str) -> str | None:
