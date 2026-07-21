@@ -459,7 +459,11 @@ def run() -> dict:
         d["web_event_count"] = int(row.event_count or 0)
 
     created = updated = 0
-    with Session(local_engine) as session:
+    # expire_on_commit=False: the interim commits below (COMMIT_BATCH_SIZE) must
+    # not invalidate the bulk-fetched existing_by_phone objects still pending
+    # later in the loop — expiry would silently reintroduce a SELECT per
+    # contact, the exact N+1 the bulk-fetch above exists to avoid.
+    with Session(local_engine, expire_on_commit=False) as session:
         weights = _load_weights(session)
 
         # Bulk-fetch once instead of one round-trip per contact (N+1 was the same
@@ -478,6 +482,14 @@ def run() -> dict:
         # vinculado, asi el segment_evaluator existente lo puede filtrar sin tocar su
         # motor (ya soporta custom_fields.* de forma generica).
         price_seen_no_booking: dict[int, bool] = {}
+
+        # Commit every COMMIT_BATCH_SIZE contacts instead of once at the end —
+        # this loop used to hold a single connection (and lock) from the shared
+        # pool for the whole run (thousands of rows), which showed up as a
+        # multi-minute "idle in transaction" session competing with every other
+        # request for the same limited pool.
+        COMMIT_BATCH_SIZE = 300
+        processed_since_commit = 0
 
         for phone, d in merged.items():
             d["platform"] = _derive_platform(d.get("ad_platform"), d.get("utm_source"), d.get("ad_source"))
@@ -563,6 +575,11 @@ def run() -> dict:
                     score_breakdown=breakdown,
                 ))
                 created += 1
+
+            processed_since_commit += 1
+            if processed_since_commit >= COMMIT_BATCH_SIZE:
+                session.commit()
+                processed_since_commit = 0
 
         if price_seen_no_booking:
             contacts_to_flag = session.exec(
