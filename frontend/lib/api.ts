@@ -12,15 +12,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// The backend only ever returns 401 for an invalid/expired/missing token
+// (see get_current_user in app/core/deps.py) — role/permission failures use
+// 403 instead. So a 401 from ANY endpoint means the session is dead, not
+// just from /auth/ calls. Force a logout+redirect on every 401, guarded so
+// concurrent requests (a page firing several queries at once) only redirect
+// once, and so it doesn't loop if /login itself is somehow hit.
+let isRedirectingToLogin = false;
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    // Only force-logout if the token itself is rejected, not on any random 401.
-    // Avoids logout loops caused by cold-start errors or momentary backend failures.
     if (err.response?.status === 401 && typeof window !== "undefined") {
-      const url: string = err.config?.url ?? "";
-      const isAuthCheck = url.includes("/auth/");
-      if (isAuthCheck) {
+      const onLoginPage = window.location.pathname === "/login";
+      if (!onLoginPage && !isRedirectingToLogin) {
+        isRedirectingToLogin = true;
         localStorage.removeItem("hb_token");
         window.location.href = "/login";
       }
