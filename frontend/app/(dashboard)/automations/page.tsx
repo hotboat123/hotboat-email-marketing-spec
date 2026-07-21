@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { automationsApi, templatesApi } from "@/lib/api";
 import { Automation, AutomationStats, Template } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
-import { Plus, Zap, Play, Pause, Trash2, ChevronDown, ChevronUp, Pencil, Save, X, Send } from "lucide-react";
+import { Plus, Zap, Play, Pause, Trash2, ChevronDown, ChevronUp, Pencil, Save, X, Send, Bell } from "lucide-react";
 import Link from "next/link";
 
 const TRIGGER_LABELS: Record<string, { label: string; description: string; color: string }> = {
@@ -354,6 +354,22 @@ function AutomationRow({ auto, templates }: { auto: Automation; templates: Templ
             }`}
           >
             <Send size={14} />
+          </button>
+          <button
+            onClick={() => updateMutation.mutate({ bcc_admin: !auto.bcc_admin })}
+            disabled={updateMutation.isPending}
+            title={
+              auto.bcc_admin
+                ? "Modo test activado — cada envío real también te llega a ti. Click para desactivar."
+                : "Modo test — recibe una copia de cada envío real, al mismo tiempo que el cliente. Click para activar."
+            }
+            className={`p-2 rounded-lg border transition-colors disabled:opacity-50 ${
+              auto.bcc_admin
+                ? "border-blue-300 bg-blue-50 text-blue-600"
+                : "border-gray-200 text-gray-400 hover:bg-gray-50"
+            }`}
+          >
+            <Bell size={14} />
           </button>
           <button
             onClick={() => toggleMutation.mutate()}

@@ -196,6 +196,7 @@ export interface Automation {
   template_id: number;
   subject: string;
   status: AutomationStatus;
+  bcc_admin: boolean;
   created_by: number | null;
   created_at: string;
   updated_at: string;
