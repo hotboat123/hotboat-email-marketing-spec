@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import Link from "next/link";
-import { contactsApi } from "@/lib/api";
+import { contactsApi, crmApi } from "@/lib/api";
 import { Contact, ContactBooking, CampaignEmailSend, ContactCRM } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
@@ -50,10 +50,16 @@ function ReferralCell({
   count,
   saving,
   onSave,
+  onSendReminder,
+  sendingReminder,
+  reminderStatus,
 }: {
   count: number;
   saving: boolean;
   onSave: (value: number) => void;
+  onSendReminder: () => void;
+  sendingReminder: boolean;
+  reminderStatus: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(String(count));
@@ -113,7 +119,23 @@ function ReferralCell({
         >
           +1
         </button>
+        {count > 0 && (
+          <button
+            type="button"
+            disabled={sendingReminder}
+            onClick={onSendReminder}
+            className="text-brand-600 hover:underline text-[11px] disabled:opacity-50"
+            title="Manda un mail avisándole su recompensa acumulada por referidos"
+          >
+            {sendingReminder ? "enviando…" : "avisar"}
+          </button>
+        )}
       </div>
+      {reminderStatus && (
+        <p className={`text-[11px] mt-1 ${reminderStatus.startsWith("Error") ? "text-red-500" : "text-green-600"}`}>
+          {reminderStatus}
+        </p>
+      )}
     </div>
   );
 }
@@ -128,6 +150,20 @@ export function ScoreCard({
   onSaveReferral: (value: number) => void;
 }) {
   const breakdown = crmContact.score_breakdown || {};
+
+  const [reminderStatus, setReminderStatus] = useState<string | null>(null);
+  const reminderMutation = useMutation({
+    mutationFn: () => crmApi.sendReferralReminder(crmContact.id),
+    onSuccess: (res) => {
+      setReminderStatus(`Enviado — ${res.data.reward_label}`);
+      setTimeout(() => setReminderStatus(null), 5000);
+    },
+    onError: (err: any) => {
+      setReminderStatus(`Error: ${err?.response?.data?.detail || "no se pudo enviar"}`);
+      setTimeout(() => setReminderStatus(null), 5000);
+    },
+  });
+
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
       <div className="flex items-center justify-between mb-2">
@@ -146,7 +182,14 @@ export function ScoreCard({
         <div><span className="block text-gray-400">Veces HotBoat</span>{crmContact.veces_hotboat}</div>
         <div><span className="block text-gray-400">Última visita</span>{formatDate(crmContact.ultima_visita)}</div>
         <div><span className="block text-gray-400">Ticket medio</span>{crmContact.ticket_medio ? `$${Math.round(crmContact.ticket_medio).toLocaleString("es-CL")}` : "—"}</div>
-        <ReferralCell count={crmContact.referral_count} saving={referralSaving} onSave={onSaveReferral} />
+        <ReferralCell
+          count={crmContact.referral_count}
+          saving={referralSaving}
+          onSave={onSaveReferral}
+          onSendReminder={() => { setReminderStatus(null); reminderMutation.mutate(); }}
+          sendingReminder={reminderMutation.isPending}
+          reminderStatus={reminderStatus}
+        />
       </div>
     </div>
   );

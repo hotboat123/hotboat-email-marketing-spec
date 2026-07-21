@@ -8,14 +8,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
+import resend
+from jinja2 import Template as JTemplate
+
+from app.core.config import settings
 from app.database import get_session
 from app.core.deps import get_current_user, require_editor
 from app.models.user import User
 from app.models.contact_crm import ContactCRM, ContactCRMRead, CallStatusUpdate, ReferralCountUpdate
 from app.models.call_activity import CallActivity, CallActivityRead
 from app.models.score_weight import ScoreWeight, ScoreWeightRead, ScoreWeightUpdate
+from app.models.automation import Automation, AutomationRun
+from app.models.template import Template as EmailTemplate
 from app.services.sync_hotboat import _source_engine
 from app.services.crm_sync import SCORE_WEIGHTS, SCORE_WEIGHT_LABELS
+from app.services.email_sender import _fmt_nombre, _inject_footer, _unsub_headers
 
 router = APIRouter()
 
@@ -467,6 +474,86 @@ def update_referral_count(
     session.commit()
     session.refresh(contact)
     return contact
+
+
+# Escala de recompensa por referidos acumulados: 10/20/30/40% del 1er al 4to
+# referido, paseo 100% gratis desde el 5to. Un solo lugar para ajustar si
+# cambia — todo lo que consume el mail (%, "cuántos faltan") sale de aquí.
+_REFERRAL_FREE_TRIP_AT = 5
+
+
+def _referral_reward(count: int) -> tuple[str, int]:
+    if count >= _REFERRAL_FREE_TRIP_AT:
+        return "Un paseo 100% GRATIS", 0
+    pct = min(count, 4) * 10
+    return f"{pct}% de descuento", _REFERRAL_FREE_TRIP_AT - count
+
+
+@router.post("/contacts/{contact_crm_id}/referral_reminder")
+def send_referral_reminder(
+    contact_crm_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(require_editor),
+):
+    """Manda a mano el mail de "gracias por recomendarnos" con la recompensa
+    acumulada calculada desde referral_count. No es una automatización que
+    corre sola — se dispara una vez por click en este botón."""
+    contact = session.get(ContactCRM, contact_crm_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+    if not contact.email:
+        raise HTTPException(status_code=400, detail="Este contacto no tiene email registrado")
+    if contact.referral_count <= 0:
+        raise HTTPException(status_code=400, detail="Este contacto todavía no tiene referidos registrados")
+
+    auto = session.exec(select(Automation).where(Automation.trigger_type == "manual_referral")).first()
+    if not auto:
+        raise HTTPException(status_code=500, detail="No existe la automatización de referidos")
+    tpl = session.get(EmailTemplate, auto.template_id)
+    if not tpl:
+        raise HTTPException(status_code=500, detail="La plantilla de referidos no existe")
+
+    reward_label, referrals_needed = _referral_reward(contact.referral_count)
+    vars_ = {
+        "nombre": _fmt_nombre(contact.name, contact.email),
+        "referral_count": contact.referral_count,
+        "reward_label": reward_label,
+        "referrals_needed": referrals_needed,
+    }
+    html = _inject_footer(JTemplate(tpl.html_content).render(**vars_), contact.email)
+    subject = JTemplate(auto.subject).render(**vars_)
+    resend.api_key = settings.RESEND_API_KEY
+
+    run = AutomationRun(
+        automation_id=auto.id,
+        contact_id=contact.linked_contact_id,
+        contact_email=contact.email,
+        trigger_key=f"manual_referral:{contact_crm_id}:{datetime.utcnow().isoformat()}",
+        triggered_at=datetime.utcnow(),
+    )
+    try:
+        result = resend.Emails.send({
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [contact.email],
+            "subject": subject,
+            "html": html,
+            "headers": _unsub_headers(contact.email),
+        })
+        resend_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+        run.status = "sent"
+        run.resend_id = resend_id
+        run.executed_at = datetime.utcnow()
+    except Exception as exc:
+        run.status = "failed"
+        run.error = str(exc)
+        run.executed_at = datetime.utcnow()
+        session.add(run)
+        session.commit()
+        raise HTTPException(status_code=500, detail=f"Error al enviar: {exc}")
+
+    session.add(run)
+    session.commit()
+    return {"sent": True, "reward_label": reward_label, "referrals_needed": referrals_needed}
 
 
 def _funnel_row(total: int, viewed_prices: int, selected_date: int, pending: int, paid: int) -> dict:

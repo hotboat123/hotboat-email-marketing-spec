@@ -158,6 +158,8 @@ export const crmApi = {
     api.patch(`/crm/contacts/${id}/call_status`, data),
   updateReferralCount: (id: number, referral_count: number) =>
     api.patch(`/crm/contacts/${id}/referral_count`, { referral_count }),
+  sendReferralReminder: (id: number) =>
+    api.post<{ sent: boolean; reward_label: string; referrals_needed: number }>(`/crm/contacts/${id}/referral_reminder`),
   // Bearer token vive en localStorage, no en cookies, asi que la descarga no puede ser un <a href> plano:
   // pedimos el CSV como blob (con el interceptor de auth) y disparamos la descarga en el cliente.
   exportCsv: async (params?: { call_status?: string; min_score?: number }) => {
