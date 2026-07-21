@@ -92,6 +92,11 @@ export default function CallDetailPage() {
             {contact.email && <> · {contact.email}</>}
             {contact.ad_source && <> · llegó por: {contact.ad_source}</>}
           </p>
+          {linkedContact?.name && linkedContact.name.trim().toLowerCase() !== (contact.name || "").trim().toLowerCase() && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              también conocido como: {linkedContact.name} (nombre en su perfil de email marketing)
+            </p>
+          )}
           {contact.linked_contact_id && (
             <Link href={`/contacts/${contact.linked_contact_id}`} className="text-xs text-brand-600 hover:underline">
               ver perfil completo de email marketing

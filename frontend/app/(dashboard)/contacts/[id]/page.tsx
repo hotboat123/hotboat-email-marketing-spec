@@ -95,6 +95,11 @@ export default function ContactDetailPage() {
               {contact.phone && <> · {contact.phone}</>}
               {contact.location && <> · {contact.location}</>}
             </p>
+            {crmContact?.name && crmContact.name.trim().toLowerCase() !== (contact.name || "").trim().toLowerCase() && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                también conocido como: {crmContact.name} (nombre usado por WhatsApp)
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {crmContact && (
