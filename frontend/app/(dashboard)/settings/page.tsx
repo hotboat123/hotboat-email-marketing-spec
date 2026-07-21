@@ -83,7 +83,7 @@ export default function SettingsPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <h2 className="font-semibold text-gray-900 mb-1">Sincronización HotBoat</h2>
           <p className="text-gray-500 text-sm mb-4">
-            Importa y actualiza contactos desde <code className="bg-gray-100 px-1 rounded text-xs font-mono">all_appointments</code>, <code className="bg-gray-100 px-1 rounded text-xs font-mono">booknetic_customers</code> y <code className="bg-gray-100 px-1 rounded text-xs font-mono">leads</code>.
+            Importa y actualiza contactos desde <code className="bg-gray-100 px-1 rounded text-xs font-mono">all_appointments</code> y <code className="bg-gray-100 px-1 rounded text-xs font-mono">leads</code>.
             Calcula automáticamente: experiencias, última visita, alojamiento, ticket medio y extras favoritos.
           </p>
           <button

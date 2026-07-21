@@ -9,7 +9,7 @@ Fuentes:
     aunque sí vivieron la experiencia. Resuelto vía _fetch_signature_attendance() abajo.
   - accommodation_bookings → ha_alojamiento
   - extras_bookings   → extras_favoritos
-  - booknetic_customers + leads → datos base de contacto
+  - leads → datos base de contacto
 """
 import json
 import logging
@@ -166,12 +166,11 @@ def sync_contacts(session: Session) -> dict:
             if r[0]
         }
 
-        # ── 4. Leads y booknetic_customers como fuente secundaria de emails ──────
+        # ── 4. Leads como fuente secundaria de emails ─────────────────────────────
+        # (booknetic_customers se dio de baja — el plugin Booknetic de WordPress
+        # ya no se usa, todas las reservas pasan por el sistema propio de HotBoat)
         extra_contacts: dict[str, dict] = {}
         for r in conn.execute(text("""
-            SELECT email, name, phone FROM booknetic_customers
-            WHERE email IS NOT NULL AND email <> ''
-            UNION
             SELECT email, name, phone FROM leads
             WHERE email IS NOT NULL AND email <> ''
         """)).fetchall():
@@ -179,25 +178,7 @@ def sync_contacts(session: Session) -> dict:
             if em not in extra_contacts:
                 extra_contacts[em] = {"name": r[1], "phone": r[2]}
 
-        # ── 5. Ubicación desde booknetic_customers (si la columna existe) ────────
         location_by_email: dict[str, str] = {}
-        try:
-            loc_rows = conn.execute(text("""
-                SELECT email,
-                       COALESCE(city, '') || CASE WHEN city IS NOT NULL AND state IS NOT NULL THEN ', ' ELSE '' END
-                       || COALESCE(state, '') AS location
-                FROM booknetic_customers
-                WHERE email IS NOT NULL AND email <> ''
-                  AND (city IS NOT NULL OR state IS NOT NULL)
-            """)).fetchall()
-            for r in loc_rows:
-                em = r[0].lower().strip()
-                loc = (r[1] or "").strip()
-                if loc:
-                    location_by_email[em] = loc
-        except Exception:
-            # booknetic_customers doesn't have city/state columns — skip silently
-            pass
 
     # ── Upsert en nuestra tabla contacts ────────────────────────────────────────
     created = updated = skipped = 0
