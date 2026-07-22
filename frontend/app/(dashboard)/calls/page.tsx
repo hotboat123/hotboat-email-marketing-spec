@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { crmApi } from "@/lib/api";
 import { ContactCRM, CallStatus } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { PhoneCall, Download, Settings, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { PhoneCall, Download, Settings, Search, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { CALL_STATUSES, statusMeta, linkFunnelLabel, StatusModal } from "@/components/crm/StatusModal";
 import { ScoreWeightsModal } from "@/components/crm/ScoreWeightsModal";
@@ -28,6 +28,119 @@ const PLATFORM_ICON: Record<string, string> = {
   tiktok: "🎵",
   whatsapp: "💬",
 };
+
+// Botón + popover reutilizable — es el mecanismo de filtro "estilo Excel": se
+// usa tanto en la barra de arriba (variant "toolbar") como colgado del
+// nombre de cada columna (variant "header"), siempre controlando el mismo
+// estado, para que ambas entradas queden en sync.
+function FilterDropdown({
+  label, active, variant = "toolbar", children,
+}: {
+  label: string;
+  active: boolean;
+  variant?: "toolbar" | "header";
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={
+          variant === "toolbar"
+            ? `flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm whitespace-nowrap transition-colors ${
+                active ? "border-brand-300 text-brand-700 bg-brand-50" : "border-gray-200 text-gray-700 hover:bg-gray-50"
+              }`
+            : `flex items-center gap-1 hover:text-gray-700 ${active ? "text-brand-600" : ""}`
+        }
+      >
+        {label}
+        <ChevronDown size={variant === "toolbar" ? 13 : 11} className={active ? "text-brand-500" : "text-gray-400"} />
+      </button>
+      {open && (
+        <div className="absolute z-20 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg normal-case tracking-normal font-normal">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CheckboxListFilter({
+  options, selected, onChange, emptyLabel = "Sin valores",
+}: {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+  emptyLabel?: string;
+}) {
+  function toggle(v: string) {
+    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
+  }
+  return (
+    <div className="w-52">
+      <div className="max-h-64 overflow-y-auto py-1">
+        {options.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">{emptyLabel}</p>}
+        {options.map((o) => (
+          <label key={o.value} className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selected.includes(o.value)}
+              onChange={() => toggle(o.value)}
+              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            />
+            {o.label}
+          </label>
+        ))}
+      </div>
+      {selected.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onChange([])}
+          className="w-full text-left px-3 py-1.5 text-xs text-brand-600 hover:underline border-t border-gray-100"
+        >
+          Limpiar
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SingleSelectFilter({
+  options, value, onChange,
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="w-52 py-1">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`block w-full text-left px-3 py-1.5 text-sm ${
+            value === o.value ? "bg-brand-50 text-brand-700 font-medium" : "text-gray-700 hover:bg-gray-50"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // Rango de fecha (YYYY-MM-DD) para un preset — null para "custom"/"cualquier fecha",
 // que se resuelven con los inputs de fecha propios en vez de aquí.
@@ -64,6 +177,7 @@ function DateColumnFilter({
   onFromChange: (v: string) => void;
   onToChange: (v: string) => void;
 }) {
+  const prefix = label ? `${label}: ` : "";
   return (
     <div className="flex items-center gap-1.5">
       <select
@@ -71,12 +185,12 @@ function DateColumnFilter({
         onChange={(e) => onPresetChange(e.target.value)}
         className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
       >
-        <option value="">{label}: cualquier fecha</option>
-        <option value="today">{label}: hoy</option>
-        <option value="yesterday">{label}: ayer</option>
-        <option value="7d">{label}: últimos 7 días</option>
-        <option value="30d">{label}: últimos 30 días</option>
-        <option value="custom">{label}: rango personalizado…</option>
+        <option value="">{prefix}Cualquier fecha</option>
+        <option value="today">{prefix}Hoy</option>
+        <option value="yesterday">{prefix}Ayer</option>
+        <option value="7d">{prefix}Últimos 7 días</option>
+        <option value="30d">{prefix}Últimos 30 días</option>
+        <option value="custom">{prefix}Rango personalizado…</option>
       </select>
       {preset === "custom" && (
         <>
@@ -116,9 +230,9 @@ function SkeletonRow() {
 
 export default function CallsPage() {
   const qc = useQueryClient();
-  const [callStatus, setCallStatus] = useState<string>("");
+  const [callStatus, setCallStatus] = useState<string[]>([]);
   const [minScore, setMinScore] = useState<string>("");
-  const [platform, setPlatform] = useState<string>("");
+  const [platform, setPlatform] = useState<string[]>([]);
   const [sort, setSort] = useState<"score" | "last_interaction" | "booking" | "recent">("score");
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ContactCRM | null>(null);
@@ -127,8 +241,15 @@ export default function CallsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewingVisit, setViewingVisit] = useState<string | null>(null);
-  const [adSource, setAdSource] = useState("");
+  const [adSource, setAdSource] = useState<string[]>([]);
   const [activity, setActivity] = useState("");
+
+  const { data: facets } = useQuery({
+    queryKey: ["crm-facets"],
+    queryFn: () => crmApi.facets().then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+  const adSourceOptions = (facets?.ad_sources ?? []).map((v) => ({ value: v, label: v }));
   const [lastContactPreset, setLastContactPreset] = useState("");
   const [lastContactFrom, setLastContactFrom] = useState("");
   const [lastContactTo, setLastContactTo] = useState("");
@@ -155,10 +276,10 @@ export default function CallsPage() {
   }
 
   const filters = {
-    call_status: callStatus || undefined,
+    call_status: callStatus.join(",") || undefined,
     min_score: minScore ? Number(minScore) : undefined,
-    ad_source: adSource || undefined,
-    platform: platform || undefined,
+    ad_source: adSource.join(",") || undefined,
+    platform: platform.join(",") || undefined,
     q: debouncedSearch || undefined,
     activity: activity || undefined,
     last_contact_from: lastContactRange.from,
@@ -194,10 +315,10 @@ export default function CallsPage() {
     setExporting(true);
     try {
       await crmApi.exportCsv({
-        call_status: callStatus || undefined,
+        call_status: callStatus.join(",") || undefined,
         min_score: minScore ? Number(minScore) : undefined,
-        ad_source: adSource || undefined,
-        platform: platform || undefined,
+        ad_source: adSource.join(",") || undefined,
+        platform: platform.join(",") || undefined,
         q: debouncedSearch || undefined,
         activity: activity || undefined,
         last_contact_from: lastContactRange.from,
@@ -259,51 +380,50 @@ export default function CallsPage() {
               className="pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 w-56 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             />
           </div>
-          <select
-            value={callStatus}
-            onChange={(e) => { setCallStatus(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          <FilterDropdown label={callStatus.length ? `${callStatus.length} estado${callStatus.length > 1 ? "s" : ""}` : "Todos los estados"} active={callStatus.length > 0}>
+            <CheckboxListFilter
+              options={CALL_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
+              selected={callStatus}
+              onChange={(v) => { setCallStatus(v); setPage(0); }}
+            />
+          </FilterDropdown>
+          <FilterDropdown label={minScore ? `Score ≥ ${minScore}` : "Cualquier score"} active={!!minScore}>
+            <SingleSelectFilter
+              options={[
+                { value: "", label: "Cualquier score" },
+                { value: "80", label: "Score ≥ 80" },
+                { value: "60", label: "Score ≥ 60" },
+                { value: "40", label: "Score ≥ 40" },
+              ]}
+              value={minScore}
+              onChange={(v) => { setMinScore(v); setPage(0); }}
+            />
+          </FilterDropdown>
+          <FilterDropdown label={platform.length ? `${platform.length} plataforma${platform.length > 1 ? "s" : ""}` : "Cualquier plataforma"} active={platform.length > 0}>
+            <CheckboxListFilter options={PLATFORMS} selected={platform} onChange={(v) => { setPlatform(v); setPage(0); }} />
+          </FilterDropdown>
+          <FilterDropdown label={adSource.length ? `${adSource.length} anuncio${adSource.length > 1 ? "s" : ""}` : "Anuncio: cualquiera"} active={adSource.length > 0}>
+            <CheckboxListFilter
+              options={adSourceOptions}
+              selected={adSource}
+              onChange={(v) => { setAdSource(v); setPage(0); }}
+              emptyLabel="Sin anuncios registrados todavía"
+            />
+          </FilterDropdown>
+          <FilterDropdown
+            label={activity === "with" ? "Con actividad web" : activity === "without" ? "Sin actividad web" : "Actividad web: cualquiera"}
+            active={!!activity}
           >
-            <option value="">Todos los estados</option>
-            {CALL_STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-          <select
-            value={minScore}
-            onChange={(e) => { setMinScore(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">Cualquier score</option>
-            <option value="80">Score ≥ 80</option>
-            <option value="60">Score ≥ 60</option>
-            <option value="40">Score ≥ 40</option>
-          </select>
-          <select
-            value={platform}
-            onChange={(e) => { setPlatform(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">Cualquier plataforma</option>
-            {PLATFORMS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
-            ))}
-          </select>
-          <input
-            value={adSource}
-            onChange={(e) => { setAdSource(e.target.value); setPage(0); }}
-            placeholder="Anuncio..."
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 w-32 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-          />
-          <select
-            value={activity}
-            onChange={(e) => { setActivity(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">Actividad web: cualquiera</option>
-            <option value="with">Con actividad web</option>
-            <option value="without">Sin actividad web</option>
-          </select>
+            <SingleSelectFilter
+              options={[
+                { value: "", label: "Cualquiera" },
+                { value: "with", label: "Con actividad web" },
+                { value: "without", label: "Sin actividad web" },
+              ]}
+              value={activity}
+              onChange={(v) => { setActivity(v); setPage(0); }}
+            />
+          </FilterDropdown>
           <DateColumnFilter
             label="Último contacto"
             preset={lastContactPreset}
@@ -332,10 +452,10 @@ export default function CallsPage() {
             <option value="booking">Ordenar por última reserva</option>
             <option value="recent">Actividad reciente (incluye visitantes web)</option>
           </select>
-          {(callStatus || minScore || adSource || platform || search || activity || lastContactPreset || lastBookingPreset) && (
+          {(callStatus.length > 0 || minScore || adSource.length > 0 || platform.length > 0 || search || activity || lastContactPreset || lastBookingPreset) && (
             <button
               onClick={() => {
-                setCallStatus(""); setMinScore(""); setAdSource(""); setPlatform("");
+                setCallStatus([]); setMinScore(""); setAdSource([]); setPlatform([]);
                 setSearch(""); setDebouncedSearch(""); setActivity("");
                 setLastContactPreset(""); setLastContactFrom(""); setLastContactTo("");
                 setLastBookingPreset(""); setLastBookingFrom(""); setLastBookingTo("");
@@ -359,14 +479,111 @@ export default function CallsPage() {
           <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Perfil</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Teléfono</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Anuncio</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actividad web</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Último contacto</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Última reserva</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Perfil" active={!!search} variant="header">
+                    <div className="p-2 w-56">
+                      <input
+                        autoFocus
+                        value={search}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        placeholder="Buscar por nombre o teléfono..."
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                    </div>
+                  </FilterDropdown>
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Teléfono" active={!!search} variant="header">
+                    <div className="p-2 w-56">
+                      <input
+                        autoFocus
+                        value={search}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        placeholder="Buscar por nombre o teléfono..."
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                    </div>
+                  </FilterDropdown>
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Score" active={!!minScore} variant="header">
+                    <SingleSelectFilter
+                      options={[
+                        { value: "", label: "Cualquier score" },
+                        { value: "80", label: "Score ≥ 80" },
+                        { value: "60", label: "Score ≥ 60" },
+                        { value: "40", label: "Score ≥ 40" },
+                      ]}
+                      value={minScore}
+                      onChange={(v) => { setMinScore(v); setPage(0); }}
+                    />
+                  </FilterDropdown>
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Anuncio" active={adSource.length > 0 || platform.length > 0} variant="header">
+                    <div className="border-b border-gray-100">
+                      <CheckboxListFilter options={PLATFORMS} selected={platform} onChange={(v) => { setPlatform(v); setPage(0); }} />
+                    </div>
+                    <CheckboxListFilter
+                      options={adSourceOptions}
+                      selected={adSource}
+                      onChange={(v) => { setAdSource(v); setPage(0); }}
+                      emptyLabel="Sin anuncios registrados todavía"
+                    />
+                  </FilterDropdown>
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Actividad web" active={!!activity} variant="header">
+                    <SingleSelectFilter
+                      options={[
+                        { value: "", label: "Cualquiera" },
+                        { value: "with", label: "Con actividad web" },
+                        { value: "without", label: "Sin actividad web" },
+                      ]}
+                      value={activity}
+                      onChange={(v) => { setActivity(v); setPage(0); }}
+                    />
+                  </FilterDropdown>
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Último contacto" active={!!lastContactPreset} variant="header">
+                    <div className="p-2">
+                      <DateColumnFilter
+                        label=""
+                        preset={lastContactPreset}
+                        from={lastContactFrom}
+                        to={lastContactTo}
+                        onPresetChange={(v) => { setLastContactPreset(v); setPage(0); }}
+                        onFromChange={(v) => { setLastContactFrom(v); setPage(0); }}
+                        onToChange={(v) => { setLastContactTo(v); setPage(0); }}
+                      />
+                    </div>
+                  </FilterDropdown>
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Última reserva" active={!!lastBookingPreset} variant="header">
+                    <div className="p-2">
+                      <DateColumnFilter
+                        label=""
+                        preset={lastBookingPreset}
+                        from={lastBookingFrom}
+                        to={lastBookingTo}
+                        onPresetChange={(v) => { setLastBookingPreset(v); setPage(0); }}
+                        onFromChange={(v) => { setLastBookingFrom(v); setPage(0); }}
+                        onToChange={(v) => { setLastBookingTo(v); setPage(0); }}
+                      />
+                    </div>
+                  </FilterDropdown>
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <FilterDropdown label="Estado" active={callStatus.length > 0} variant="header">
+                    <CheckboxListFilter
+                      options={CALL_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
+                      selected={callStatus}
+                      onChange={(v) => { setCallStatus(v); setPage(0); }}
+                    />
+                  </FilterDropdown>
+                </th>
               </tr>
             </thead>
             <tbody>

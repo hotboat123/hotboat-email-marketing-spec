@@ -161,6 +161,7 @@ export const crmApi = {
   conversations: (id: number) => api.get(`/crm/contacts/${id}/conversations`),
   webActivity: (id: number) => api.get(`/crm/contacts/${id}/web_activity`),
   anonymousVisit: (sessionId: string) => api.get(`/crm/anonymous-visits/${sessionId}`),
+  facets: () => api.get<{ ad_sources: string[] }>("/crm/contacts/facets"),
   funnelAnalytics: (dateFrom?: string, dateTo?: string) =>
     api.get("/crm/analytics/funnel", { params: { date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
   scoreWeights: () => api.get("/crm/score-weights"),

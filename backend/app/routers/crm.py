@@ -108,17 +108,29 @@ def _fetch_anonymous_visitors(skip: int, limit: int) -> List[dict]:
     return out
 
 
+def _split_multi(value: Optional[str]) -> Optional[List[str]]:
+    """Column-header checkbox filters (Estado/Plataforma/Anuncio) send a
+    comma-separated list of the checked values — a single `<select>` sends
+    one bare value, which still splits into a 1-item list here."""
+    if not value:
+        return None
+    return [v.strip() for v in value.split(",") if v.strip()] or None
+
+
 def _apply_filters(query, call_status, min_score, ad_source, platform, q,
                     activity=None, last_contact_from=None, last_contact_to=None,
                     last_booking_from=None, last_booking_to=None):
-    if call_status:
-        query = query.where(ContactCRM.call_status == call_status)
+    call_status_list = _split_multi(call_status)
+    platform_list = _split_multi(platform)
+    ad_source_list = _split_multi(ad_source)
+    if call_status_list:
+        query = query.where(ContactCRM.call_status.in_(call_status_list))
     if min_score is not None:
         query = query.where(ContactCRM.reservation_score >= min_score)
-    if ad_source:
-        query = query.where(ContactCRM.ad_source.ilike(f"%{ad_source}%"))
-    if platform:
-        query = query.where(ContactCRM.platform == platform)
+    if ad_source_list:
+        query = query.where(ContactCRM.ad_source.in_(ad_source_list))
+    if platform_list:
+        query = query.where(ContactCRM.platform.in_(platform_list))
     if q:
         # El teléfono se compara solo por dígitos (mismo criterio E.164 del
         # resto del sync) para que buscar "977577307" matchee "+56977577307".
@@ -205,12 +217,31 @@ def _fetch_recent_activity(session: Session, query, skip: int, limit: int, inclu
     return page
 
 
+@router.get("/contacts/facets")
+def get_crm_facets(
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Distinct non-null column values, for the Excel-style header checkbox
+    filters in Llamadas (Anuncio) — call_status/platform already have a
+    small fixed set of values known client-side, so only ad_source (free
+    text, set by whoever ran the ad) actually needs a DB round-trip."""
+    ad_sources = session.exec(
+        select(ContactCRM.ad_source)
+        .where(ContactCRM.ad_source.is_not(None), ContactCRM.ad_source != "")
+        .distinct()
+        .order_by(ContactCRM.ad_source)
+        .limit(300)
+    ).all()
+    return {"ad_sources": ad_sources}
+
+
 @router.get("/contacts", response_model=List[ContactCRMRead])
 def list_crm_contacts(
-    call_status: Optional[str] = None,
+    call_status: Optional[str] = Query(None, description="Uno o varios, separados por coma"),
     min_score: Optional[int] = Query(None, ge=0, le=100),
-    ad_source: Optional[str] = None,
-    platform: Optional[str] = Query(None, description="google|instagram|facebook|tiktok|whatsapp"),
+    ad_source: Optional[str] = Query(None, description="Uno o varios, separados por coma"),
+    platform: Optional[str] = Query(None, description="google|instagram|facebook|tiktok|whatsapp — uno o varios, separados por coma"),
     q: Optional[str] = Query(None, description="Busca por nombre o teléfono"),
     activity: Optional[str] = Query(None, pattern="^(with|without)$", description="Actividad web: with|without"),
     last_contact_from: Optional[date] = None,
