@@ -178,7 +178,7 @@ export function ScoreCard({
         ))}
         {Object.keys(breakdown).length === 0 && <span className="text-xs text-gray-400">Sin señales todavía</span>}
       </div>
-      <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
         <div><span className="block text-gray-400">Veces HotBoat</span>{crmContact.veces_hotboat}</div>
         <div><span className="block text-gray-400">Última visita</span>{formatDate(crmContact.ultima_visita)}</div>
         <div><span className="block text-gray-400">Ticket medio</span>{crmContact.ticket_medio ? `$${Math.round(crmContact.ticket_medio).toLocaleString("es-CL")}` : "—"}</div>
@@ -324,9 +324,9 @@ export function DetailsTab({ contact, onSave, saving }: {
   });
 
   return (
-    <div className="grid grid-cols-5 gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
       {/* Left — info cards */}
-      <div className="col-span-3 space-y-4">
+      <div className="lg:col-span-3 space-y-4">
 
         {/* Information */}
         <div className="bg-white border border-gray-200 rounded-xl p-5">
@@ -414,8 +414,8 @@ export function DetailsTab({ contact, onSave, saving }: {
       </div>
 
       {/* Right — email sends table */}
-      <div className="col-span-2">
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden sticky top-4">
+      <div className="lg:col-span-2">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden lg:sticky lg:top-4">
           <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
             <span className="text-sm font-semibold text-gray-700">Emails enviados</span>
             {sends.length > 0 && (
@@ -559,7 +559,7 @@ export function MetricsTab({ contact }: { contact: Contact }) {
 
         <div className="p-5">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Métricas destacadas</p>
-          <div className="grid grid-cols-3 gap-3 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
             {[
               { label: "Reservas",      value: confirmedFiltered.length,                              sub: "confirmadas" },
               { label: "Revenue",       value: `CLP ${Math.round(totalRevenue).toLocaleString("es-CL")}`, sub: "ingresos totales" },
@@ -636,7 +636,7 @@ export function MetricsTab({ contact }: { contact: Contact }) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
               ["Próxima visita estimada", expectedNext ? formatDate(expectedNext.toISOString()) : "—"],
               ["Ticket promedio",         contact.ticket_medio ? `CLP ${Math.round(contact.ticket_medio).toLocaleString("es-CL")}` : "—"],
@@ -938,7 +938,7 @@ export function ObjectsTab({ contactId }: { contactId: number }) {
             {/* Expanded detail */}
             {isOpen && (
               <div className="border-t border-gray-100 px-5 py-4 bg-gray-50">
-                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
                   {[
                     ["Fecha",          b.fecha],
                     ["Estado",         b.status],
