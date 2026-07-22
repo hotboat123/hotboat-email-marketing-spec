@@ -47,6 +47,12 @@ migrations = [
         resend_id VARCHAR,
         error VARCHAR
     )""",
+    # automations — "modo test" BCC toggle per automation
+    "ALTER TABLE automations ADD COLUMN IF NOT EXISTS bcc_admin BOOLEAN DEFAULT FALSE",
+    # automation_runs — snapshot of the vars an email was sent with, so a
+    # later step in a sequence (e.g. abandoned-cart follow-up) can reuse them
+    # after the source row they came from is gone
+    "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS extra_data JSONB",
     # signup_forms (ensure new table exists)
     """CREATE TABLE IF NOT EXISTS signup_forms (
         id SERIAL PRIMARY KEY,

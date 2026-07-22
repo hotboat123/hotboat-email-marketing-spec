@@ -40,6 +40,10 @@ class AutomationRun(SQLModel, table=True):
     executed_at: Optional[datetime] = None
     resend_id: Optional[str] = None
     error: Optional[str] = None
+    # Snapshot of the extra_vars an email was sent with — lets a later step in
+    # a sequence (e.g. abandoned-cart follow-up) reuse them once the source
+    # row they came from (all_appointments) is gone.
+    extra_data: Optional[Any] = Field(default=None, sa_column=Column(JSON))
 
 
 class AutomationCreate(SQLModel):

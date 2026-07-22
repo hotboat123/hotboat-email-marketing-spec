@@ -11,8 +11,8 @@ import string
 import threading
 import time
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
-import httpx
 import resend
 from jinja2 import Template as JTemplate
 from sqlalchemy import create_engine, text
@@ -34,62 +34,31 @@ logger = logging.getLogger(__name__)
 _reminder_sent: set = set()
 
 
-_WOO_FALLBACK = "https://hotboat.cl"
-_WOO_STATUSES = {"pending", "on-hold", "failed"}
+_BOOKING_BASE_URL = "https://whatsapp.hotboat.cl"
 
 
-def _build_pay_link(woo_url: str, order_id, order_key: str) -> str:
-    return f"{woo_url}/es/checkout/order-pay/{order_id}/?pay_for_order=true&key={order_key}"
-
-
-def _get_woo_payment_link(source_id: str | None, email: str | None = None) -> str:
+def _build_booking_deeplink(fecha_str: str, hora_str: str, num_people: int | None,
+                             extras_for_url: list[tuple[str, int]], has_flex: bool) -> str:
     """
-    Obtiene la URL directa de pago de WooCommerce usando dos estrategias:
-      1. Si source_id es numérico, busca la orden por ID en la REST API.
-      2. Si falla o source_id no es numérico, busca las órdenes pendientes del email.
-    Devuelve el fallback si ninguna estrategia funciona o las credenciales no están configuradas.
+    Build a deep link into /booking that pre-fills as much of the abandoned
+    attempt as the page supports (date, time, headcount, non-variant extras,
+    flex) so the customer only has to review and pay — instead of dropping
+    them on the generic homepage. Extras are matched by NAME on the frontend
+    (see booking-soft.html's init()) because CreateBookingRequest never
+    stores a catalog id, only name/price/quantity — see ExtraItem in
+    hotboat-whatsapp/app/booking/models.py.
     """
-    if not settings.WOO_CK or not settings.WOO_CS:
-        return _WOO_FALLBACK
-
-    woo_url = settings.WOO_URL.rstrip("/")
-    auth = (settings.WOO_CK, settings.WOO_CS)
-
-    # Estrategia 1: buscar por source_id si parece un order ID numérico
-    if source_id and str(source_id).strip().isdigit():
-        try:
-            r = httpx.get(
-                f"{woo_url}/wp-json/wc/v3/orders/{source_id}",
-                auth=auth, timeout=8,
-            )
-            if r.status_code == 200:
-                data = r.json()
-                key = data.get("order_key", "")
-                if data.get("status") in _WOO_STATUSES and key:
-                    return _build_pay_link(woo_url, source_id, key)
-        except Exception as exc:
-            logger.warning("WooCommerce lookup by source_id %s failed: %s", source_id, exc)
-
-    # Estrategia 2: buscar por email del cliente
-    if email:
-        try:
-            r = httpx.get(
-                f"{woo_url}/wp-json/wc/v3/orders",
-                params={"email": email, "status": "pending,on-hold,failed", "per_page": 3, "orderby": "date", "order": "desc"},
-                auth=auth, timeout=8,
-            )
-            if r.status_code == 200:
-                orders = r.json()
-                if orders:
-                    o = orders[0]
-                    order_id = o.get("id")
-                    key = o.get("order_key", "")
-                    if order_id and key:
-                        return _build_pay_link(woo_url, order_id, key)
-        except Exception as exc:
-            logger.warning("WooCommerce lookup by email %s failed: %s", email, exc)
-
-    return _WOO_FALLBACK
+    if not fecha_str or not hora_str:
+        return f"{_BOOKING_BASE_URL}/booking"
+    params = [f"date={fecha_str}", f"time={quote(hora_str)}"]
+    if num_people:
+        params.append(f"people={max(2, min(7, num_people))}")
+    if extras_for_url:
+        extras_param = ",".join(f"{quote(name, safe='')}:{qty}" for name, qty in extras_for_url)
+        params.append(f"extras={extras_param}")
+    if has_flex:
+        params.append("flex=1")
+    return f"{_BOOKING_BASE_URL}/booking?" + "&".join(params)
 
 
 def _source_engine():
@@ -140,6 +109,7 @@ def _send_email(
         contact_email=contact.email,
         trigger_key=trigger_key,
         triggered_at=datetime.utcnow(),
+        extra_data=extra_vars or None,
     )
     try:
         payload = {
@@ -189,7 +159,7 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
             rows = conn.execute(text("""
                 SELECT id, email, nombre_cliente, servicio, fecha, hora,
                        num_adultos, num_ninos, ingreso_total, ingreso_reserva,
-                       extras_json, created_at, payment_order_id
+                       extras_json, created_at, payment_order_id, COALESCE(has_flex, FALSE) AS has_flex
                 FROM all_appointments
                 WHERE status = 'pending_payment'
                   AND (paid_at IS NULL OR payment_status != 'completed')
@@ -210,7 +180,21 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         if _already_sent(session, auto.id, trigger_key):
             continue
         contact = session.exec(select(Contact).where(Contact.email == email)).first()
-        if not contact or not contact.opted_in:
+        if not contact:
+            # Alguien que abandona su primera reserva no es todavía un Contact
+            # (nunca se suscribió a marketing) — se crea opted-in aquí mismo,
+            # igual que sync_hotboat.py lo hace para señales de reserva, para
+            # que el mail 1 (y el follow-up 24h) le puedan llegar.
+            contact = Contact(
+                email=email,
+                name=(row.nombre_cliente or "").strip() or None,
+                opted_in=True,
+                opted_in_at=datetime.utcnow(),
+            )
+            session.add(contact)
+            session.commit()
+            session.refresh(contact)
+        elif not contact.opted_in:
             continue
 
         # Personas: extraer del nombre del servicio "(Xp)" o usar adultos/niños
@@ -221,6 +205,7 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         else:
             adultos = int(row.num_adultos or 0)
             ninos = int(row.num_ninos or 0)
+            num_personas = adultos + ninos
             personas_str = f"{adultos} adulto{'s' if adultos != 1 else ''}"
             if ninos:
                 personas_str += f" + {ninos} niño{'s' if ninos != 1 else ''}"
@@ -235,8 +220,12 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         total_fmt = _fmt_clp(row.ingreso_total)
         reserva_fmt = _fmt_clp(row.ingreso_reserva or row.ingreso_total)
 
-        # Extras: soporta dos formatos de extras_json
+        # Extras: soporta dos formatos de extras_json. extras_for_url guarda
+        # (nombre_limpio, qty) — sin sufijo "xN" — para el deep-link de vuelta
+        # a /booking, que empareja por NOMBRE (CreateBookingRequest nunca
+        # guarda un id de catálogo, ver ExtraItem en hotboat-whatsapp).
         extras_items: list[tuple[str, str]] = []
+        extras_for_url: list[tuple[str, int]] = []
         ej = row.extras_json or {}
         if isinstance(ej, dict):
             if "extras" in ej and isinstance(ej["extras"], list):
@@ -248,6 +237,7 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
                     price = int(e.get("price", 0)) * qty
                     label = f"{name}" + (f" x{qty}" if qty > 1 else "")
                     extras_items.append((label, _fmt_clp(price)))
+                    extras_for_url.append((name, qty))
             else:
                 _SKIP = {"extras", "price_per_person"}
                 for key, val in ej.items():
@@ -255,8 +245,10 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
                         continue
                     qty = int(val.get("qty", 1))
                     price = int(val.get("unit_price", 0)) * qty
-                    label = key.replace("_", " ").capitalize() + (f" x{qty}" if qty > 1 else "")
+                    name = key.replace("_", " ").capitalize()
+                    label = name + (f" x{qty}" if qty > 1 else "")
                     extras_items.append((label, _fmt_clp(price)))
+                    extras_for_url.append((name, qty))
 
         extras_html = ""
         if extras_items:
@@ -274,7 +266,7 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
                 f'{filas}</table>'
             )
 
-        pay_url = _get_woo_payment_link(str(row.payment_order_id).strip() if row.payment_order_id else None, email=email)
+        pay_url = _build_booking_deeplink(fecha_str, hora_str, num_personas, extras_for_url, bool(row.has_flex))
         extra_vars = {
             "servicio": row.servicio or "tu experiencia",
             "titulo_reserva": f"Experiencia HotBoat · {personas_str}",
@@ -287,6 +279,78 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
             "pay_url": pay_url,
         }
         _send_email(session, auto, contact, trigger_key, extra_vars=extra_vars)
+
+
+def _check_abandoned_followup(auto: Automation, session: Session) -> None:
+    """
+    Segundo paso de la secuencia de carrito abandonado: si el mail 1
+    (trigger_key 'abandoned:{id}') se mandó hace ~delay_hours y la reserva
+    sigue sin pagarse, manda un mail de descuento + video de dron de regalo.
+
+    La fila de all_appointments que originó el mail 1 puede ya no existir a
+    esta altura (se borra a los 120 min si sigue pending_payment — ver
+    _do_auto_sync en hotboat-whatsapp), así que este handler reusa la foto de
+    los datos de la reserva guardada en AutomationRun.extra_data del mail 1
+    en vez de volver a leerla de la fuente. Solo consulta all_appointments
+    para decidir si la reserva se pagó (fila ya no está pending) y en tal
+    caso NO manda el segundo mail.
+    """
+    config = auto.trigger_config or {}
+    delay_hours = int(config.get("delay_hours", 24))
+    coupon_discount_percent = int(config.get("coupon_discount_percent", 15))
+    coupon_valid_days = int(config.get("coupon_valid_days", 7))
+    coupon_booking_window_days = int(config.get("coupon_booking_window_days", 60))
+
+    window_end = datetime.utcnow() - timedelta(hours=delay_hours)
+    window_start = window_end - timedelta(minutes=20)
+
+    step1_runs = session.exec(
+        select(AutomationRun).where(
+            AutomationRun.trigger_key.like("abandoned:%"),
+            AutomationRun.status == "sent",
+            AutomationRun.triggered_at >= window_start,
+            AutomationRun.triggered_at <= window_end,
+        )
+    ).all()
+
+    if not step1_runs:
+        return
+
+    src = _source_engine()
+    for run in step1_runs:
+        booking_id = run.trigger_key.split(":", 1)[1]
+        trigger_key = f"abandoned2:{booking_id}"
+        if _already_sent(session, auto.id, trigger_key):
+            continue
+
+        try:
+            with src.connect() as conn:
+                row = conn.execute(
+                    text("SELECT status FROM all_appointments WHERE id = :id"),
+                    {"id": booking_id},
+                ).first()
+        except Exception as exc:
+            logger.error("Automation %d: cannot read source DB: %s", auto.id, exc)
+            continue
+        if row and row.status == "confirmed":
+            continue  # ya pagó — no molestar con el descuento
+
+        contact = session.exec(select(Contact).where(Contact.email == run.contact_email)).first()
+        if not contact or not contact.opted_in:
+            continue
+
+        coupon_code = _create_abandoned_coupon(
+            contact, coupon_discount_percent, coupon_valid_days, coupon_booking_window_days,
+        )
+        if not coupon_code:
+            continue  # source DB inalcanzable ahora — reintenta en el próximo tick
+
+        snapshot = run.extra_data or {}
+        _send_email(session, auto, contact, trigger_key, extra_vars={
+            **snapshot,
+            "coupon_code": coupon_code,
+            "coupon_discount_percent": coupon_discount_percent,
+        })
 
 
 _BATCH_ORIGINS = {"Formulario T&C", "Sincronización HotBoat", ""}
@@ -424,6 +488,52 @@ def _create_birthday_coupon(contact: Contact, redeem_days: int, booking_window_d
             return code
     except Exception as exc:
         logger.warning("Birthday coupon creation failed for contact %s: %s", contact.id, exc)
+        return None
+
+
+def _create_abandoned_coupon(
+    contact: Contact, discount_percent: int, redeem_days: int, booking_window_days: int,
+) -> str | None:
+    """Mint a one-time coupon for the abandoned-cart follow-up (mail 2) —
+    same shared `coupons` table and code-collision handling as
+    _create_birthday_coupon, prefixed "VUELVE-" and offering a free drone
+    video instead of the birthday's photo frame. Returns None (never raises)
+    if the source DB is unreachable."""
+    today = date.today()
+    redeem_by = today + timedelta(days=redeem_days)
+    booking_by = today + timedelta(days=booking_window_days)
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            code = None
+            for _ in range(10):
+                candidate = "VUELVE-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                taken = conn.execute(
+                    text("SELECT 1 FROM coupons WHERE UPPER(code) = UPPER(:c)"), {"c": candidate}
+                ).first()
+                if not taken:
+                    code = candidate
+                    break
+            if not code:
+                logger.warning("Abandoned-cart coupon: couldn't find a free code for contact %s after 10 tries", contact.id)
+                return None
+            conn.execute(text("""
+                INSERT INTO coupons (code, name, discount_percent, extra_description,
+                                      max_uses, expires_at, booking_date_from, booking_date_to, is_active)
+                VALUES (:code, :name, :discount, :extra, 1, :expires_at, :booking_from, :booking_to, TRUE)
+            """), {
+                "code": code,
+                "name": f"Carrito abandonado — {contact.name or contact.email}",
+                "discount": discount_percent,
+                "extra": "Video con drone de regalo",
+                "expires_at": redeem_by,
+                "booking_from": today,
+                "booking_to": booking_by,
+            })
+            conn.commit()
+            return code
+    except Exception as exc:
+        logger.warning("Abandoned-cart coupon creation failed for contact %s: %s", contact.id, exc)
         return None
 
 
@@ -726,6 +836,7 @@ def _check_tc_signatures(auto: Automation, session: Session) -> None:
 
 HANDLERS = {
     "abandoned_booking": _check_abandoned_booking,
+    "abandoned_followup": _check_abandoned_followup,
     "welcome": _check_welcome,
     "post_visit": _check_post_visit,
     "reactivation": _check_reactivation,
