@@ -29,6 +29,76 @@ const PLATFORM_ICON: Record<string, string> = {
   whatsapp: "💬",
 };
 
+// Rango de fecha (YYYY-MM-DD) para un preset — null para "custom"/"cualquier fecha",
+// que se resuelven con los inputs de fecha propios en vez de aquí.
+function presetDateRange(preset: string): { from: string; to: string } | null {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const today = new Date();
+  if (preset === "today") return { from: fmt(today), to: fmt(today) };
+  if (preset === "yesterday") {
+    const y = new Date(today);
+    y.setDate(y.getDate() - 1);
+    return { from: fmt(y), to: fmt(y) };
+  }
+  if (preset === "7d") {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 6);
+    return { from: fmt(d), to: fmt(today) };
+  }
+  if (preset === "30d") {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 29);
+    return { from: fmt(d), to: fmt(today) };
+  }
+  return null;
+}
+
+function DateColumnFilter({
+  label, preset, from, to, onPresetChange, onFromChange, onToChange,
+}: {
+  label: string;
+  preset: string;
+  from: string;
+  to: string;
+  onPresetChange: (v: string) => void;
+  onFromChange: (v: string) => void;
+  onToChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <select
+        value={preset}
+        onChange={(e) => onPresetChange(e.target.value)}
+        className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+      >
+        <option value="">{label}: cualquier fecha</option>
+        <option value="today">{label}: hoy</option>
+        <option value="yesterday">{label}: ayer</option>
+        <option value="7d">{label}: últimos 7 días</option>
+        <option value="30d">{label}: últimos 30 días</option>
+        <option value="custom">{label}: rango personalizado…</option>
+      </select>
+      {preset === "custom" && (
+        <>
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => onFromChange(e.target.value)}
+            className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <span className="text-gray-400 text-xs">–</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => onToChange(e.target.value)}
+            className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 function SkeletonRow() {
   return (
     <tr className="border-b border-gray-100">
@@ -57,6 +127,21 @@ export default function CallsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewingVisit, setViewingVisit] = useState<string | null>(null);
+  const [adSource, setAdSource] = useState("");
+  const [activity, setActivity] = useState("");
+  const [lastContactPreset, setLastContactPreset] = useState("");
+  const [lastContactFrom, setLastContactFrom] = useState("");
+  const [lastContactTo, setLastContactTo] = useState("");
+  const [lastBookingPreset, setLastBookingPreset] = useState("");
+  const [lastBookingFrom, setLastBookingFrom] = useState("");
+  const [lastBookingTo, setLastBookingTo] = useState("");
+
+  const lastContactRange = lastContactPreset === "custom"
+    ? { from: lastContactFrom || undefined, to: lastContactTo || undefined }
+    : (presetDateRange(lastContactPreset) || { from: undefined, to: undefined });
+  const lastBookingRange = lastBookingPreset === "custom"
+    ? { from: lastBookingFrom || undefined, to: lastBookingTo || undefined }
+    : (presetDateRange(lastBookingPreset) || { from: undefined, to: undefined });
 
   // Simple debounce on search
   function handleSearch(val: string) {
@@ -72,15 +157,25 @@ export default function CallsPage() {
   const filters = {
     call_status: callStatus || undefined,
     min_score: minScore ? Number(minScore) : undefined,
+    ad_source: adSource || undefined,
     platform: platform || undefined,
     q: debouncedSearch || undefined,
+    activity: activity || undefined,
+    last_contact_from: lastContactRange.from,
+    last_contact_to: lastContactRange.to,
+    last_booking_from: lastBookingRange.from,
+    last_booking_to: lastBookingRange.to,
     sort,
     skip: page * PAGE_SIZE,
     limit: PAGE_SIZE,
   };
 
   const { data: contacts = [], isLoading, isError, refetch } = useQuery<ContactCRM[]>({
-    queryKey: ["crm-contacts", callStatus, minScore, platform, debouncedSearch, sort, page],
+    queryKey: [
+      "crm-contacts", callStatus, minScore, adSource, platform, debouncedSearch, activity,
+      lastContactRange.from, lastContactRange.to, lastBookingRange.from, lastBookingRange.to,
+      sort, page,
+    ],
     queryFn: () => crmApi.list(filters).then((r) => r.data),
     staleTime: 60_000,
     retry: 1,
@@ -98,7 +193,18 @@ export default function CallsPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      await crmApi.exportCsv({ call_status: callStatus || undefined, min_score: minScore ? Number(minScore) : undefined });
+      await crmApi.exportCsv({
+        call_status: callStatus || undefined,
+        min_score: minScore ? Number(minScore) : undefined,
+        ad_source: adSource || undefined,
+        platform: platform || undefined,
+        q: debouncedSearch || undefined,
+        activity: activity || undefined,
+        last_contact_from: lastContactRange.from,
+        last_contact_to: lastContactRange.to,
+        last_booking_from: lastBookingRange.from,
+        last_booking_to: lastBookingRange.to,
+      });
     } finally {
       setExporting(false);
     }
@@ -183,6 +289,39 @@ export default function CallsPage() {
               <option key={p.value} value={p.value}>{p.label}</option>
             ))}
           </select>
+          <input
+            value={adSource}
+            onChange={(e) => { setAdSource(e.target.value); setPage(0); }}
+            placeholder="Anuncio..."
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 w-32 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+          />
+          <select
+            value={activity}
+            onChange={(e) => { setActivity(e.target.value); setPage(0); }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Actividad web: cualquiera</option>
+            <option value="with">Con actividad web</option>
+            <option value="without">Sin actividad web</option>
+          </select>
+          <DateColumnFilter
+            label="Último contacto"
+            preset={lastContactPreset}
+            from={lastContactFrom}
+            to={lastContactTo}
+            onPresetChange={(v) => { setLastContactPreset(v); setPage(0); }}
+            onFromChange={(v) => { setLastContactFrom(v); setPage(0); }}
+            onToChange={(v) => { setLastContactTo(v); setPage(0); }}
+          />
+          <DateColumnFilter
+            label="Última reserva"
+            preset={lastBookingPreset}
+            from={lastBookingFrom}
+            to={lastBookingTo}
+            onPresetChange={(v) => { setLastBookingPreset(v); setPage(0); }}
+            onFromChange={(v) => { setLastBookingFrom(v); setPage(0); }}
+            onToChange={(v) => { setLastBookingTo(v); setPage(0); }}
+          />
           <select
             value={sort}
             onChange={(e) => { setSort(e.target.value as typeof sort); setPage(0); }}
@@ -193,6 +332,20 @@ export default function CallsPage() {
             <option value="booking">Ordenar por última reserva</option>
             <option value="recent">Actividad reciente (incluye visitantes web)</option>
           </select>
+          {(callStatus || minScore || adSource || platform || search || activity || lastContactPreset || lastBookingPreset) && (
+            <button
+              onClick={() => {
+                setCallStatus(""); setMinScore(""); setAdSource(""); setPlatform("");
+                setSearch(""); setDebouncedSearch(""); setActivity("");
+                setLastContactPreset(""); setLastContactFrom(""); setLastContactTo("");
+                setLastBookingPreset(""); setLastBookingFrom(""); setLastBookingTo("");
+                setPage(0);
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              Limpiar filtros
+            </button>
+          )}
           {!isLoading && (
             <span className="text-xs text-gray-400 ml-auto">
               {contacts.length < PAGE_SIZE

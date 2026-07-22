@@ -1,7 +1,7 @@
 import csv
 import io
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -108,7 +108,9 @@ def _fetch_anonymous_visitors(skip: int, limit: int) -> List[dict]:
     return out
 
 
-def _apply_filters(query, call_status, min_score, ad_source, platform, q):
+def _apply_filters(query, call_status, min_score, ad_source, platform, q,
+                    activity=None, last_contact_from=None, last_contact_to=None,
+                    last_booking_from=None, last_booking_to=None):
     if call_status:
         query = query.where(ContactCRM.call_status == call_status)
     if min_score is not None:
@@ -125,6 +127,33 @@ def _apply_filters(query, call_status, min_score, ad_source, platform, q):
         if digits:
             conditions.append(func.regexp_replace(ContactCRM.phone, r"[^0-9]", "", "g").ilike(f"%{digits}%"))
         query = query.where(or_(*conditions))
+    # Actividad web: cubre tanto el funnel booleano legacy (link de WhatsApp)
+    # como la clasificacion de visita directa a la web — ver ContactCRM.
+    if activity == "with":
+        query = query.where(or_(
+            ContactCRM.link_clicked == True,  # noqa: E712
+            ContactCRM.link_viewed_prices == True,  # noqa: E712
+            ContactCRM.link_selected_date == True,  # noqa: E712
+            ContactCRM.web_classification.is_not(None),
+            ContactCRM.web_last_seen_at.is_not(None),
+        ))
+    elif activity == "without":
+        query = query.where(
+            ContactCRM.link_clicked == False,  # noqa: E712
+            ContactCRM.link_viewed_prices == False,  # noqa: E712
+            ContactCRM.link_selected_date == False,  # noqa: E712
+            ContactCRM.web_classification.is_(None),
+            ContactCRM.web_last_seen_at.is_(None),
+        )
+    if last_contact_from:
+        query = query.where(ContactCRM.last_interaction_at >= last_contact_from)
+    if last_contact_to:
+        # last_interaction_at es datetime — < (to + 1 dia) para incluir todo ese dia
+        query = query.where(ContactCRM.last_interaction_at < last_contact_to + timedelta(days=1))
+    if last_booking_from:
+        query = query.where(ContactCRM.ultima_visita >= last_booking_from)
+    if last_booking_to:
+        query = query.where(ContactCRM.ultima_visita <= last_booking_to)
     return query
 
 
@@ -183,14 +212,25 @@ def list_crm_contacts(
     ad_source: Optional[str] = None,
     platform: Optional[str] = Query(None, description="google|instagram|facebook|tiktok|whatsapp"),
     q: Optional[str] = Query(None, description="Busca por nombre o teléfono"),
+    activity: Optional[str] = Query(None, pattern="^(with|without)$", description="Actividad web: with|without"),
+    last_contact_from: Optional[date] = None,
+    last_contact_to: Optional[date] = None,
+    last_booking_from: Optional[date] = None,
+    last_booking_to: Optional[date] = None,
     sort: str = Query("score", pattern="^(score|last_interaction|booking|recent)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=200),
     session: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    query = _apply_filters(select(ContactCRM), call_status, min_score, ad_source, platform, q)
-    filtered = bool(call_status or min_score is not None or ad_source or platform or q)
+    query = _apply_filters(
+        select(ContactCRM), call_status, min_score, ad_source, platform, q,
+        activity, last_contact_from, last_contact_to, last_booking_from, last_booking_to,
+    )
+    filtered = bool(
+        call_status or min_score is not None or ad_source or platform or q or activity
+        or last_contact_from or last_contact_to or last_booking_from or last_booking_to
+    )
 
     if sort == "recent":
         return _fetch_recent_activity(session, query, skip, limit, include_anon=not filtered)
@@ -253,14 +293,21 @@ def get_anonymous_visit(
 def export_crm_contacts_csv(
     call_status: Optional[str] = None,
     min_score: Optional[int] = Query(None, ge=0, le=100),
+    ad_source: Optional[str] = None,
+    platform: Optional[str] = None,
+    q: Optional[str] = None,
+    activity: Optional[str] = Query(None, pattern="^(with|without)$"),
+    last_contact_from: Optional[date] = None,
+    last_contact_to: Optional[date] = None,
+    last_booking_from: Optional[date] = None,
+    last_booking_to: Optional[date] = None,
     session: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    query = select(ContactCRM)
-    if call_status:
-        query = query.where(ContactCRM.call_status == call_status)
-    if min_score is not None:
-        query = query.where(ContactCRM.reservation_score >= min_score)
+    query = _apply_filters(
+        select(ContactCRM), call_status, min_score, ad_source, platform, q,
+        activity, last_contact_from, last_contact_to, last_booking_from, last_booking_to,
+    )
     query = query.order_by(ContactCRM.reservation_score.desc().nullslast())
     contacts = session.exec(query).all()
 

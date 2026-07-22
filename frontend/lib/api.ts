@@ -149,8 +149,12 @@ export const automationsApi = {
 
 // CRM (cola de llamadas)
 export const crmApi = {
-  list: (params?: { call_status?: string; min_score?: number; ad_source?: string; platform?: string; q?: string; sort?: string; skip?: number; limit?: number }) =>
-    api.get("/crm/contacts", { params }),
+  list: (params?: {
+    call_status?: string; min_score?: number; ad_source?: string; platform?: string; q?: string;
+    activity?: string; last_contact_from?: string; last_contact_to?: string;
+    last_booking_from?: string; last_booking_to?: string;
+    sort?: string; skip?: number; limit?: number;
+  }) => api.get("/crm/contacts", { params }),
   get: (id: number) => api.get(`/crm/contacts/${id}`),
   getByContact: (contactId: number) => api.get(`/crm/contacts/by_contact/${contactId}`),
   callActivity: (id: number) => api.get(`/crm/contacts/${id}/call_activity`),
@@ -169,7 +173,11 @@ export const crmApi = {
     api.post<{ sent: boolean; reward_label: string; referrals_needed: number }>(`/crm/contacts/${id}/referral_reminder`),
   // Bearer token vive en localStorage, no en cookies, asi que la descarga no puede ser un <a href> plano:
   // pedimos el CSV como blob (con el interceptor de auth) y disparamos la descarga en el cliente.
-  exportCsv: async (params?: { call_status?: string; min_score?: number }) => {
+  exportCsv: async (params?: {
+    call_status?: string; min_score?: number; ad_source?: string; platform?: string; q?: string;
+    activity?: string; last_contact_from?: string; last_contact_to?: string;
+    last_booking_from?: string; last_booking_to?: string;
+  }) => {
     const res = await api.get("/crm/contacts/export/csv", { params, responseType: "blob" });
     const url = window.URL.createObjectURL(new Blob([res.data]));
     const a = document.createElement("a");
