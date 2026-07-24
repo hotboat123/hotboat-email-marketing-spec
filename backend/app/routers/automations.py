@@ -174,4 +174,17 @@ def automation_stats(
     sent = sum(1 for r in runs if r.status == "sent")
     failed = sum(1 for r in runs if r.status == "failed")
     last_run = max((r.triggered_at for r in runs), default=None)
-    return {"total": total, "sent": sent, "failed": failed, "last_run": last_run}
+
+    # Opened/clicked come from the Resend webhook (app/routers/webhooks.py),
+    # matched by resend_id — same shape as campaign_stats() in campaigns.py.
+    delivered = sum(1 for r in runs if r.delivered_at is not None or r.status == "sent")
+    opened = sum(1 for r in runs if r.opened_at is not None)
+    clicked = sum(1 for r in runs if r.clicked_at is not None)
+    bounced = sum(1 for r in runs if r.bounced_at is not None)
+    base = delivered or sent or 1
+    return {
+        "total": total, "sent": sent, "failed": failed, "last_run": last_run,
+        "delivered": delivered, "opened": opened, "clicked": clicked, "bounced": bounced,
+        "open_rate": round(opened / base * 100, 1),
+        "click_rate": round(clicked / base * 100, 1),
+    }

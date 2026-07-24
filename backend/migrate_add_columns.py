@@ -53,6 +53,13 @@ migrations = [
     # later step in a sequence (e.g. abandoned-cart follow-up) can reuse them
     # after the source row they came from is gone
     "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS extra_data JSONB",
+    # automation_runs — open/click tracking, filled in by the same Resend
+    # webhook that already updates campaign_sends (matched by resend_id)
+    "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP",
+    "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS opened_at TIMESTAMP",
+    "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMP",
+    "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMP",
+    "CREATE INDEX IF NOT EXISTS ix_automation_runs_resend_id ON automation_runs (resend_id)",
     # signup_forms (ensure new table exists)
     """CREATE TABLE IF NOT EXISTS signup_forms (
         id SERIAL PRIMARY KEY,

@@ -320,6 +320,16 @@ function AutomationRow({ auto, templates }: { auto: Automation; templates: Templ
         <div className="text-right shrink-0">
           <p className="text-2xl font-bold text-gray-900">{stats?.sent ?? "—"}</p>
           <p className="text-xs text-gray-400">enviados</p>
+          {!!stats?.sent && (
+            <div className="flex items-center justify-end gap-2 mt-1">
+              <span className="text-xs font-medium text-blue-600" title={`${stats.opened} de ${stats.sent} abiertos`}>
+                👁 {stats.open_rate}%
+              </span>
+              <span className="text-xs font-medium text-brand-600" title={`${stats.clicked} de ${stats.sent} con clic`}>
+                🖱 {stats.click_rate}%
+              </span>
+            </div>
+          )}
           {stats?.last_run && (
             <p className="text-xs text-gray-400 mt-0.5">Último: {formatDate(stats.last_run)}</p>
           )}
@@ -434,7 +444,7 @@ function RunsPanel({ automationId }: { automationId: number }) {
         <p className="text-xs text-gray-400">Aún no hay envíos registrados.</p>
       ) : (
         <div className="space-y-1 max-h-48 overflow-y-auto">
-          {runs.map((r: { id: number; contact_email: string; status: string; triggered_at: string; error?: string }) => (
+          {runs.map((r: { id: number; contact_email: string; status: string; triggered_at: string; error?: string; opened_at?: string | null; clicked_at?: string | null }) => (
             <div key={r.id} className="flex items-center gap-3 text-xs">
               <span
                 className={`px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -448,6 +458,22 @@ function RunsPanel({ automationId }: { automationId: number }) {
                 {r.status}
               </span>
               <span className="text-gray-700 font-mono truncate max-w-[200px]">{r.contact_email}</span>
+              {r.status === "sent" && (
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span
+                    className={r.opened_at ? "text-blue-600" : "text-gray-300"}
+                    title={r.opened_at ? `Abierto: ${formatDate(r.opened_at)}` : "Aún no abierto"}
+                  >
+                    👁
+                  </span>
+                  <span
+                    className={r.clicked_at ? "text-brand-600" : "text-gray-300"}
+                    title={r.clicked_at ? `Clic: ${formatDate(r.clicked_at)}` : "Sin clics"}
+                  >
+                    🖱
+                  </span>
+                </span>
+              )}
               <span className="text-gray-400 ml-auto shrink-0">{formatDate(r.triggered_at)}</span>
               {r.error && <span className="text-red-500 truncate max-w-[150px]" title={r.error}>{r.error}</span>}
             </div>

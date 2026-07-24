@@ -38,8 +38,15 @@ class AutomationRun(SQLModel, table=True):
     status: str = Field(default="sent")
     triggered_at: datetime = Field(default_factory=datetime.utcnow)
     executed_at: Optional[datetime] = None
-    resend_id: Optional[str] = None
+    resend_id: Optional[str] = Field(default=None, index=True)
     error: Optional[str] = None
+    # Filled in by the same Resend webhook (app/routers/webhooks.py) that
+    # already updates CampaignSend — matched by resend_id, same event types
+    # (email.delivered/opened/clicked/bounced). Null until Resend reports it.
+    delivered_at: Optional[datetime] = None
+    opened_at: Optional[datetime] = None
+    clicked_at: Optional[datetime] = None
+    bounced_at: Optional[datetime] = None
     # Snapshot of the extra_vars an email was sent with — lets a later step in
     # a sequence (e.g. abandoned-cart follow-up) reuse them once the source
     # row they came from (all_appointments) is gone.
@@ -89,3 +96,7 @@ class AutomationRunRead(SQLModel):
     executed_at: Optional[datetime]
     resend_id: Optional[str]
     error: Optional[str]
+    delivered_at: Optional[datetime] = None
+    opened_at: Optional[datetime] = None
+    clicked_at: Optional[datetime] = None
+    bounced_at: Optional[datetime] = None

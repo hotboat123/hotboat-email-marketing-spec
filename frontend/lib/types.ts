@@ -213,6 +213,10 @@ export interface AutomationRun {
   executed_at: string | null;
   resend_id: string | null;
   error: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  bounced_at: string | null;
 }
 
 export interface AutomationStats {
@@ -220,6 +224,12 @@ export interface AutomationStats {
   sent: number;
   failed: number;
   last_run: string | null;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  open_rate: number;
+  click_rate: number;
 }
 
 export interface OverviewStats {
