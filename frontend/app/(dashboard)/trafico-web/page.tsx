@@ -103,6 +103,10 @@ function groupByGranularity(daily: WebTrafficDay[], granularity: Granularity): C
 function round1(n: number) { return Math.round(n * 10) / 10; }
 function round2(n: number) { return Math.round(n * 100) / 100; }
 
+// Siempre 2 decimales en estas tarjetas (a diferencia de los otros % del
+// dashboard) — un valor como 1.00 o 0.40 no debe perder el cero final.
+function pct2(n: number | undefined) { return (n ?? 0).toFixed(2); }
+
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
@@ -337,17 +341,17 @@ export default function TraficoWebPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8">
         <StatCard
           label="Llenaron el pop-up"
-          value={`${t?.popup_fill_rate ?? 0}%`}
+          value={`${pct2(t?.popup_fill_rate)}%`}
           sub={`${(t?.popup_fills ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
         />
         <StatCard
           label="Abrieron WhatsApp"
-          value={`${t?.whatsapp_click_rate ?? 0}%`}
+          value={`${pct2(t?.whatsapp_click_rate)}%`}
           sub={`${(t?.whatsapp_clicks ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
         />
         <StatCard
           label="Fueron al sistema de reservas"
-          value={`${t?.went_to_booking_rate ?? 0}%`}
+          value={`${pct2(t?.went_to_booking_rate)}%`}
           sub={`${(t?.went_to_booking ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
         />
       </div>
@@ -359,22 +363,22 @@ export default function TraficoWebPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Vio el precio</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.viewed_price_rate ?? 0}%</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.viewed_price_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.viewed_price ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Eligió fecha</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.selected_date_rate ?? 0}%</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.selected_date_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.selected_date ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Reservó</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.reserved_rate ?? 0}%</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.reserved_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.booking_completed_events ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Pagó</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.conversion_rate ?? 0}%</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.conversion_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.paid ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
         </div>
