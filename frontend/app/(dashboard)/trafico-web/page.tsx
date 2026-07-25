@@ -17,7 +17,7 @@ import {
   Legend,
 } from "recharts";
 import { webTrafficApi } from "@/lib/api";
-import { WebTrafficResponse, WebTrafficDay, WebTrafficDurationHistogram } from "@/lib/types";
+import { WebTrafficResponse, WebTrafficDay, WebTrafficDurationHistogram, WhatsappTrafficResponse, WhatsappTrafficDay } from "@/lib/types";
 
 function shortDate(d: string) {
   const [, m, day] = d.split("-");
@@ -103,6 +103,48 @@ function groupByGranularity(daily: WebTrafficDay[], granularity: Granularity): C
 function round1(n: number) { return Math.round(n * 10) / 10; }
 function round2(n: number) { return Math.round(n * 100) / 100; }
 
+// Mismo tratamiento que arriba, para las conversaciones de WhatsApp.
+const SUM_FIELDS_WA = [
+  "total_conversations", "useful_conversations", "asked_price", "found_expensive",
+  "asked_date", "clicked_link", "reserved", "paid",
+] as const;
+
+interface ChartRowWA {
+  label: string;
+  total_conversations: number; useful_conversations: number;
+  asked_price: number; found_expensive: number; asked_date: number;
+  clicked_link: number; reserved: number; paid: number;
+  conversion_rate: number; found_expensive_rate: number;
+}
+
+function groupByGranularityWA(daily: WhatsappTrafficDay[], granularity: Granularity): ChartRowWA[] {
+  if (granularity === "day") {
+    return daily.map((d) => ({ ...d, label: shortDate(d.day) }));
+  }
+
+  type Sums = { [K in (typeof SUM_FIELDS_WA)[number]]: number };
+  const buckets = new Map<string, { label: string; sortDate: Date; sums: Sums }>();
+  for (const d of daily) {
+    const { key, label, sortDate } = bucketKey(d.day, granularity);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      const zeroed = Object.fromEntries(SUM_FIELDS_WA.map((f) => [f, 0])) as Sums;
+      bucket = { label, sortDate, sums: zeroed };
+      buckets.set(key, bucket);
+    }
+    for (const f of SUM_FIELDS_WA) bucket.sums[f] += d[f];
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
+    .map(({ label, sums: s }) => ({
+      label,
+      ...s,
+      conversion_rate: s.useful_conversations ? round2((s.paid / s.useful_conversations) * 100) : 0,
+      found_expensive_rate: s.asked_price ? round1((s.found_expensive / s.asked_price) * 100) : 0,
+    }));
+}
+
 // Siempre 2 decimales en estas tarjetas (a diferencia de los otros % del
 // dashboard) — un valor como 1.00 o 0.40 no debe perder el cero final.
 function pct2(n: number | undefined) { return (n ?? 0).toFixed(2); }
@@ -175,8 +217,10 @@ function DurationHistogram({ histogram }: { histogram?: WebTrafficDurationHistog
 }
 
 type RangePreset = "7" | "30" | "todo" | "custom";
+type Source = "web" | "whatsapp";
 
 export default function TraficoWebPage() {
+  const [source, setSource] = useState<Source>("web");
   const [preset, setPreset] = useState<RangePreset>("30");
   const [desde, setDesde] = useState(daysAgoISO(30));
   const [hasta, setHasta] = useState(todayISO());
@@ -193,12 +237,21 @@ export default function TraficoWebPage() {
     queryKey: ["web-traffic-daily", desde, hasta],
     queryFn: () => webTrafficApi.daily(desde, hasta).then((r) => r.data),
     staleTime: 2 * 60_000,
+    enabled: source === "web",
   });
 
   const { data: histogram } = useQuery<WebTrafficDurationHistogram>({
     queryKey: ["web-traffic-duration-histogram", desde, hasta],
     queryFn: () => webTrafficApi.durationHistogram(desde, hasta).then((r) => r.data),
     staleTime: 2 * 60_000,
+    enabled: source === "web",
+  });
+
+  const { data: waData, isLoading: waLoading } = useQuery<WhatsappTrafficResponse>({
+    queryKey: ["whatsapp-traffic-daily", desde, hasta],
+    queryFn: () => webTrafficApi.whatsappDaily(desde, hasta).then((r) => r.data),
+    staleTime: 2 * 60_000,
+    enabled: source === "whatsapp",
   });
 
   const chartData = useMemo(
@@ -206,15 +259,38 @@ export default function TraficoWebPage() {
     [data, granularity]
   );
 
+  const waChartData = useMemo(
+    () => groupByGranularityWA(waData?.daily ?? [], granularity),
+    [waData, granularity]
+  );
+
   const t = data?.totals;
+  const wt = waData?.totals;
 
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Tráfico Web</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Sesiones de hotboat.cl (landing) + el sitio de reservas, día a día. WhatsApp se agrega más adelante.
-        </p>
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Tráfico {source === "web" ? "Web" : "WhatsApp"}</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {source === "web"
+              ? "Sesiones de hotboat.cl (landing) + el sitio de reservas, día a día."
+              : "Conversaciones de WhatsApp, día a día."}
+          </p>
+        </div>
+        <div className="flex gap-1.5 bg-gray-100 rounded-lg p-1">
+          {(["web", "whatsapp"] as Source[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSource(s)}
+              className={`px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                source === s ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {s === "web" ? "Sitio Web" : "WhatsApp"}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 mb-6 bg-white border border-gray-200 rounded-xl px-4 py-3">
@@ -268,6 +344,8 @@ export default function TraficoWebPage() {
         </div>
       </div>
 
+      {source === "web" && (
+      <>
       {/* Resumen del rango */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label="Sesiones totales" value={(t?.total_sessions ?? 0).toLocaleString("es-CL")} />
@@ -383,8 +461,112 @@ export default function TraficoWebPage() {
           </div>
         </div>
       </div>
+      </>
+      )}
 
-      {isLoading && <p className="text-sm text-gray-400 mt-4">Cargando...</p>}
+      {source === "whatsapp" && (
+      <>
+      {/* Resumen del rango */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Conversaciones totales" value={(wt?.total_conversations ?? 0).toLocaleString("es-CL")} />
+        <StatCard
+          label="Conversaciones útiles"
+          value={(wt?.useful_conversations ?? 0).toLocaleString("es-CL")}
+          sub={`${wt?.discard_rate ?? 0}% descartadas (1 mensaje)`}
+        />
+        <StatCard label="Conversión" value={`${pct2(wt?.conversion_rate)}%`} sub={`${wt?.paid ?? 0} pagaron`} />
+        <StatCard
+          label="Encontraron caro"
+          value={`${pct2(wt?.found_expensive_rate)}%`}
+          sub={`${(wt?.found_expensive ?? 0).toLocaleString("es-CL")} de ${(wt?.asked_price ?? 0).toLocaleString("es-CL")} preguntaron precio`}
+        />
+      </div>
+
+      {/* Las 3 evoluciones pedidas */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <ChartCard
+          title="Conversaciones totales vs. útiles"
+          sub="Conversación útil = 2 o más mensajes del cliente (descarta el texto automático del anuncio)"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={waChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Area type="monotone" dataKey="total_conversations" name="Totales" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.25} strokeWidth={2} />
+              <Area type="monotone" dataKey="useful_conversations" name="Útiles" stroke="#25d366" fill="#25d366" fillOpacity={0.3} strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="% Conversión" sub="Pagaron ÷ conversaciones útiles, por día">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={waChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} unit="%" />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, "Conversión"]} />
+              <Line type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 mb-8">
+        <ChartCard
+          title="% Encontraron caro"
+          sub="De quienes preguntaron precio, % que no preguntó fecha, no hizo click en el link ni reservó"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={waChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} unit="%" />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, "Encontraron caro"]} />
+              <Line type="monotone" dataKey="found_expensive_rate" name="Encontraron caro" stroke="#dc2626" strokeWidth={2} dot={false} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Preguntaron por fecha / hicieron click / reservaron / pagaron — % sobre conversaciones útiles */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5">
+        <p className="text-sm font-semibold text-gray-800 mb-1">Dentro de la conversación</p>
+        <p className="text-xs text-gray-400 mb-4">Cada etapa, % sobre conversaciones útiles del rango elegido</p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Preguntó precio</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.asked_price_rate)}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(wt?.asked_price ?? 0).toLocaleString("es-CL")} conversaciones</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Preguntó fecha</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.asked_date_rate)}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(wt?.asked_date ?? 0).toLocaleString("es-CL")} conversaciones</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Click en el link</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.clicked_link_rate)}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(wt?.clicked_link ?? 0).toLocaleString("es-CL")} conversaciones</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Reservó</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.reserved_rate)}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(wt?.reserved ?? 0).toLocaleString("es-CL")} conversaciones</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Pagó</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.conversion_rate)}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(wt?.paid ?? 0).toLocaleString("es-CL")} conversaciones</p>
+          </div>
+        </div>
+      </div>
+      </>
+      )}
+
+      {(source === "web" ? isLoading : waLoading) && <p className="text-sm text-gray-400 mt-4">Cargando...</p>}
     </div>
   );
 }

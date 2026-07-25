@@ -294,6 +294,45 @@ export interface WebTrafficDurationHistogram {
   buckets: DurationBucket[];
 }
 
+export interface WhatsappTrafficDay {
+  day: string;
+  total_conversations: number;
+  useful_conversations: number;
+  asked_price: number;
+  found_expensive: number;
+  asked_date: number;
+  clicked_link: number;
+  reserved: number;
+  paid: number;
+  conversion_rate: number;
+  found_expensive_rate: number;
+}
+
+export interface WhatsappTrafficTotals {
+  total_conversations: number;
+  useful_conversations: number;
+  discard_rate: number;
+  asked_price: number;
+  asked_price_rate: number;
+  found_expensive: number;
+  found_expensive_rate: number;
+  asked_date: number;
+  asked_date_rate: number;
+  clicked_link: number;
+  clicked_link_rate: number;
+  reserved: number;
+  reserved_rate: number;
+  paid: number;
+  conversion_rate: number;
+}
+
+export interface WhatsappTrafficResponse {
+  desde: string;
+  hasta: string;
+  daily: WhatsappTrafficDay[];
+  totals: WhatsappTrafficTotals;
+}
+
 export interface OverviewStats {
   contacts: { total: number; opted_in: number };
   campaigns: { total: number; sent: number };

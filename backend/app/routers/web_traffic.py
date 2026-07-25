@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.services.web_traffic_analytics import get_web_traffic_daily, get_session_duration_histogram
+from app.services.whatsapp_traffic_analytics import get_whatsapp_traffic_daily
 
 router = APIRouter()
 
@@ -38,3 +39,15 @@ def web_traffic_duration_histogram(
     rango de fechas elegido — no varía por día/semana/mes."""
     desde, hasta = _default_range(desde, hasta)
     return get_session_duration_histogram(desde, hasta)
+
+
+@router.get("/whatsapp-daily")
+def whatsapp_traffic_daily(
+    desde: date = Query(default=None),
+    hasta: date = Query(default=None),
+    _: User = Depends(get_current_user),
+):
+    """Tráfico diario de WhatsApp — ver app/services/whatsapp_traffic_analytics.py
+    para las definiciones exactas (conversación útil, "encontró caro", etc.)."""
+    desde, hasta = _default_range(desde, hasta)
+    return get_whatsapp_traffic_daily(desde, hasta)

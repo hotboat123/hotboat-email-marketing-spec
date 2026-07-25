@@ -130,6 +130,8 @@ export const webTrafficApi = {
     api.get("/web-traffic/daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
   durationHistogram: (desde?: string, hasta?: string) =>
     api.get("/web-traffic/duration-histogram", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  whatsappDaily: (desde?: string, hasta?: string) =>
+    api.get("/web-traffic/whatsapp-daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
 };
 
 // Signup Forms
