@@ -333,47 +333,49 @@ export default function TraficoWebPage() {
         <DurationHistogram histogram={histogram} />
       </div>
 
-      {/* Pop-up / WhatsApp / entraron al sistema de reservas */}
+      {/* Pop-up / WhatsApp / entraron al sistema de reservas — % siempre sobre sesiones útiles */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8">
         <StatCard
           label="Llenaron el pop-up"
           value={`${t?.popup_fill_rate ?? 0}%`}
-          sub={`${t?.popup_fills ?? 0} de ${(t?.total_sessions ?? 0).toLocaleString("es-CL")} sesiones`}
+          sub={`${(t?.popup_fills ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
         />
         <StatCard
           label="Abrieron WhatsApp"
           value={`${t?.whatsapp_click_rate ?? 0}%`}
-          sub={`${t?.whatsapp_clicks ?? 0} clicks en el botón`}
+          sub={`${(t?.whatsapp_clicks ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
         />
         <StatCard
           label="Fueron al sistema de reservas"
           value={`${t?.went_to_booking_rate ?? 0}%`}
-          sub={`${t?.went_to_booking ?? 0} clicks en reservar/ver disponibilidad`}
+          sub={`${(t?.went_to_booking ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
         />
       </div>
 
-      {/* Dentro del sistema de reservas */}
+      {/* Dentro del sistema de reservas — % también sobre sesiones útiles */}
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <p className="text-sm font-semibold text-gray-800 mb-1">Dentro del sistema de reservas</p>
-        <p className="text-xs text-gray-400 mb-4">Cada etapa, del total del rango elegido</p>
+        <p className="text-xs text-gray-400 mb-4">Cada etapa, % sobre sesiones útiles del rango elegido</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Vio el precio</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">{(t?.viewed_price ?? 0).toLocaleString("es-CL")}</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.viewed_price_rate ?? 0}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(t?.viewed_price ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Eligió fecha</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">{(t?.selected_date ?? 0).toLocaleString("es-CL")}</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.selected_date_rate ?? 0}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(t?.selected_date ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Reservó</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">
-              {(data?.daily.reduce((s, d) => s + d.booking_completed_events, 0) ?? 0).toLocaleString("es-CL")}
-            </p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.reserved_rate ?? 0}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(t?.booking_completed_events ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Pagó</p>
-            <p className="text-xl font-bold text-gray-900 tabular-nums">{(t?.paid ?? 0).toLocaleString("es-CL")}</p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{t?.conversion_rate ?? 0}%</p>
+            <p className="text-xs text-gray-400 tabular-nums">{(t?.paid ?? 0).toLocaleString("es-CL")} sesiones</p>
           </div>
         </div>
       </div>

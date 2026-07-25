@@ -225,24 +225,37 @@ def _sum_totals(daily: list[dict]) -> dict:
     viewed_price = sum(r["viewed_price"] for r in daily)
     viewed_price_left = sum(r["viewed_price_left"] for r in daily)
     selected_date = sum(r["selected_date"] for r in daily)
+    booking_completed_events = sum(r["booking_completed_events"] for r in daily)
     paid = sum(r["paid"] for r in daily)
     popup_fills = sum(r["popup_fills"] for r in daily)
+
+    # Todas las tasas de esta sección (pop-up, WhatsApp, sistema de reservas)
+    # se calculan sobre sesiones ÚTILES, no totales — a pedido del dueño:
+    # tiene más sentido preguntar "de la gente que realmente estuvo en el
+    # sitio, cuántos hicieron X" que diluir todo contra el total de
+    # sesiones, la mayoría de las cuales son rebotes de <5s que nunca
+    # tuvieron oportunidad real de hacer nada.
+    base = useful_sessions or 1
     return {
         "total_sessions": total_sessions,
         "useful_sessions": useful_sessions,
         "bounce_rate": round((1 - useful_sessions / total_sessions) * 100, 1) if total_sessions else 0.0,
         "popup_fills": popup_fills,
-        "popup_fill_rate": round(popup_fills / total_sessions * 100, 1) if total_sessions else 0.0,
+        "popup_fill_rate": round(popup_fills / base * 100, 1) if useful_sessions else 0.0,
         "whatsapp_clicks": whatsapp_clicks,
-        "whatsapp_click_rate": round(whatsapp_clicks / total_sessions * 100, 1) if total_sessions else 0.0,
+        "whatsapp_click_rate": round(whatsapp_clicks / base * 100, 1) if useful_sessions else 0.0,
         "went_to_booking": went_to_booking,
-        "went_to_booking_rate": round(went_to_booking / total_sessions * 100, 1) if total_sessions else 0.0,
+        "went_to_booking_rate": round(went_to_booking / base * 100, 1) if useful_sessions else 0.0,
         "viewed_price": viewed_price,
+        "viewed_price_rate": round(viewed_price / base * 100, 1) if useful_sessions else 0.0,
         "viewed_price_left": viewed_price_left,
         "found_expensive_rate": round(viewed_price_left / viewed_price * 100, 1) if viewed_price else 0.0,
         "selected_date": selected_date,
+        "selected_date_rate": round(selected_date / base * 100, 1) if useful_sessions else 0.0,
+        "booking_completed_events": booking_completed_events,
+        "reserved_rate": round(booking_completed_events / base * 100, 1) if useful_sessions else 0.0,
         "paid": paid,
-        "conversion_rate": round(paid / useful_sessions * 100, 2) if useful_sessions else 0.0,
+        "conversion_rate": round(paid / base * 100, 2) if useful_sessions else 0.0,
     }
 
 

@@ -262,9 +262,13 @@ export interface WebTrafficTotals {
   went_to_booking: number;
   went_to_booking_rate: number;
   viewed_price: number;
+  viewed_price_rate: number;
   viewed_price_left: number;
   found_expensive_rate: number;
   selected_date: number;
+  selected_date_rate: number;
+  booking_completed_events: number;
+  reserved_rate: number;
   paid: number;
   conversion_rate: number;
 }
