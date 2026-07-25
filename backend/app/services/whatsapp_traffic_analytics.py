@@ -74,10 +74,22 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
                 SELECT DISTINCT regexp_replace(telefono, '[^0-9]', '', 'g') AS phone
                 FROM all_appointments WHERE telefono IS NOT NULL
             ),
+            -- "pagó" real viene de pagos (registro real de transferencia/
+            -- efectivo/MercadoPago que carga el operador a mano), NO de
+            -- payment_status — ese solo se llena en el flujo automático de
+            -- Transbank y queda NULL en el 95% de las reservas confirmadas,
+            -- la mayoría de las cuales sí se pagaron, solo que a mano por
+            -- WhatsApp (transferencia + captura de pantalla). Verificado:
+            -- 113 reservas tienen pagos real vs. solo 23 con payment_status
+            -- aprobado/completado.
             paid_phones AS (
                 SELECT DISTINCT regexp_replace(telefono, '[^0-9]', '', 'g') AS phone
                 FROM all_appointments
-                WHERE telefono IS NOT NULL AND payment_status IN ('approved', 'completed')
+                WHERE telefono IS NOT NULL
+                  AND (
+                      (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
+                      OR payment_status IN ('approved', 'completed')
+                  )
             ),
             clicked_phones AS (
                 SELECT DISTINCT phone FROM tracked_quote_links WHERE first_clicked_at IS NOT NULL

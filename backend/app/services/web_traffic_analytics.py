@@ -118,12 +118,23 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
             FROM price_sessions GROUP BY day ORDER BY day
         """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
 
-        # Pagos confirmados — payment_status es la única fuente que
-        # realmente prueba que se pagó, un evento de tracking no alcanza.
+        # Pagos confirmados — pagos (registro real de transferencia/efectivo/
+        # MercadoPago que el operador carga a mano) es la fuente real, NO
+        # payment_status: ese solo se llena en el flujo automático de
+        # Transbank y queda NULL en el 95% de las reservas confirmadas, la
+        # mayoría de las cuales sí se pagaron, solo que a mano por WhatsApp
+        # (transferencia + captura de pantalla). Corregido 2026-07-26:
+        # 113 reservas tienen pagos real vs. solo 23 con payment_status
+        # aprobado/completado — este cambio quintuplica el conteo real de
+        # "pagó" (y por lo tanto la tasa de conversión, que antes se veía
+        # muy por debajo de la real).
         paid_rows = conn.execute(text("""
             SELECT DATE(COALESCE(updated_at, created_at) AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments
-            WHERE payment_status IN ('approved', 'completed')
+            WHERE (
+                (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
+                OR payment_status IN ('approved', 'completed')
+            )
               AND COALESCE(updated_at, created_at) >= :desde AND COALESCE(updated_at, created_at) < :hasta_excl
             GROUP BY day ORDER BY day
         """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
