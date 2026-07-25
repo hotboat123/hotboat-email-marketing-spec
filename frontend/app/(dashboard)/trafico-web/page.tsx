@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { startOfWeek, startOfMonth, format } from "date-fns";
+import { es } from "date-fns/locale";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -15,7 +17,7 @@ import {
   Legend,
 } from "recharts";
 import { webTrafficApi } from "@/lib/api";
-import { WebTrafficResponse } from "@/lib/types";
+import { WebTrafficResponse, WebTrafficDay } from "@/lib/types";
 
 function shortDate(d: string) {
   const [, m, day] = d.split("-");
@@ -31,6 +33,75 @@ function daysAgoISO(n: number) {
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
 }
+
+type Granularity = "day" | "week" | "month";
+
+// Campos que se suman al agrupar por semana/mes — todo lo demás (las tasas)
+// se recalcula desde estas sumas, nunca promediando los % diarios (el
+// promedio de porcentajes diarios no es matemáticamente lo mismo que la
+// tasa real del período agrupado, sobre todo con días de tráfico muy dispar).
+const SUM_FIELDS = [
+  "total_sessions", "useful_sessions", "whatsapp_clicks", "went_to_booking",
+  "viewed_price", "selected_date", "booking_completed_events",
+  "viewed_price_left", "paid", "popup_fills",
+] as const;
+
+interface ChartRow {
+  label: string;
+  total_sessions: number; useful_sessions: number;
+  whatsapp_clicks: number; went_to_booking: number;
+  viewed_price: number; selected_date: number; booking_completed_events: number;
+  viewed_price_left: number; paid: number; popup_fills: number;
+  conversion_rate: number; found_expensive_rate: number;
+  popup_fill_rate: number; whatsapp_click_rate: number; went_to_booking_rate: number;
+}
+
+function bucketKey(day: string, granularity: Granularity): { key: string; label: string; sortDate: Date } {
+  const date = new Date(day + "T00:00:00");
+  if (granularity === "week") {
+    const start = startOfWeek(date, { weekStartsOn: 1 }); // semana empieza lunes
+    return { key: format(start, "yyyy-MM-dd"), label: format(start, "dd/MM"), sortDate: start };
+  }
+  if (granularity === "month") {
+    const start = startOfMonth(date);
+    return { key: format(start, "yyyy-MM"), label: format(start, "MMM yyyy", { locale: es }), sortDate: start };
+  }
+  return { key: day, label: shortDate(day), sortDate: date };
+}
+
+function groupByGranularity(daily: WebTrafficDay[], granularity: Granularity): ChartRow[] {
+  if (granularity === "day") {
+    return daily.map((d) => ({ ...d, label: shortDate(d.day) }));
+  }
+
+  type Sums = { [K in (typeof SUM_FIELDS)[number]]: number };
+  const buckets = new Map<string, { label: string; sortDate: Date; sums: Sums }>();
+  for (const d of daily) {
+    const { key, label, sortDate } = bucketKey(d.day, granularity);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      const zeroed = Object.fromEntries(SUM_FIELDS.map((f) => [f, 0])) as Sums;
+      bucket = { label, sortDate, sums: zeroed };
+      buckets.set(key, bucket);
+    }
+    for (const f of SUM_FIELDS) bucket.sums[f] += d[f];
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
+    .map(({ label, sums: s }) => ({
+      label,
+      ...s,
+      conversion_rate: s.useful_sessions ? round2((s.paid / s.useful_sessions) * 100) : 0,
+      found_expensive_rate: s.viewed_price ? round1((s.viewed_price_left / s.viewed_price) * 100) : 0,
+      popup_fill_rate: s.total_sessions ? round1((s.popup_fills / s.total_sessions) * 100) : 0,
+      whatsapp_click_rate: s.total_sessions ? round1((s.whatsapp_clicks / s.total_sessions) * 100) : 0,
+      went_to_booking_rate: s.total_sessions ? round1((s.went_to_booking / s.total_sessions) * 100) : 0,
+    }));
+}
+
+function round1(n: number) { return Math.round(n * 10) / 10; }
+function round2(n: number) { return Math.round(n * 100) / 100; }
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -60,6 +131,7 @@ export default function TraficoWebPage() {
   const [preset, setPreset] = useState<RangePreset>("30");
   const [desde, setDesde] = useState(daysAgoISO(30));
   const [hasta, setHasta] = useState(todayISO());
+  const [granularity, setGranularity] = useState<Granularity>("day");
 
   function applyPreset(p: RangePreset) {
     setPreset(p);
@@ -75,8 +147,8 @@ export default function TraficoWebPage() {
   });
 
   const chartData = useMemo(
-    () => (data?.daily ?? []).map((d) => ({ ...d, label: shortDate(d.day) })),
-    [data]
+    () => groupByGranularity(data?.daily ?? [], granularity),
+    [data, granularity]
   );
 
   const t = data?.totals;
@@ -121,6 +193,23 @@ export default function TraficoWebPage() {
               {p === "7" ? "7 días" : p === "30" ? "30 días" : "Todo"}
             </button>
           ))}
+        </div>
+
+        <div className="ml-auto">
+          <label className="block text-xs text-gray-400 mb-1">Agrupar por</label>
+          <div className="flex gap-1.5">
+            {(["day", "week", "month"] as Granularity[]).map((g) => (
+              <button
+                key={g}
+                onClick={() => setGranularity(g)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  granularity === g ? "bg-gray-900 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {g === "day" ? "Día" : g === "week" ? "Semana" : "Mes"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
