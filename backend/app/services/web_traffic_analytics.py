@@ -9,9 +9,17 @@ event_type aparece en cada sesión (ver EVENTOS DE CADA SITIO abajo). Los
 de tracking nunca puede confirmar por sí solo que un pago realmente se hizo.
 
 Definiciones acordadas con el dueño del negocio (2026-07-24):
-- "Sesión útil" (no rebote) = tiene al menos un evento aparte de
-  page_visit/page_visit_booking (el primer evento que dispara cada sitio al
-  cargar). Cualquier otra interacción cuenta, sin importar cuán mínima sea.
+- "Sesión útil" (no rebote) = tiene al menos un evento aparte de los
+  eventos AUTOMÁTICOS que no reflejan ninguna acción real del visitante:
+  page_visit/page_visit_booking (se disparan solos al cargar la página) y
+  exit/page_left (se disparan solos al cerrar/cambiar de pestaña, vía
+  sendBeacon en visibilitychange — ver tracker.js y booking-soft.html
+  _trackLeave()). Corregido 2026-07-25: la versión original solo excluía
+  page_visit(_booking), así que una sesión que solo abrió y cerró la
+  pestaña (0 interacción real) contaba como "útil" porque el beacon de
+  salida técnicamente "es un evento" — eso hacía que la tasa de rebote
+  real (68%) se viera como 8%. Cualquier otra interacción sigue contando,
+  sin importar cuán mínima sea.
 - "% que llenaron el pop-up" = form_submissions (cualquier signup_form) del
   día, como % de las sesiones totales de ese día. No hay session_id en
   form_submissions, así que esto es una tasa agregada, no un funnel por
@@ -25,9 +33,10 @@ from typing import Optional
 from sqlalchemy import create_engine, text
 from app.core.config import settings
 
-# Eventos que SOLO se disparan al cargar la página (no cuentan como
-# "interacción" para la definición de sesión útil).
-_ENTRY_EVENTS = ("page_visit", "page_visit_booking")
+# Eventos que se disparan SOLOS (carga de página, cierre de pestaña) y no
+# reflejan ninguna acción real del visitante — no cuentan como
+# "interacción" para la definición de sesión útil.
+_ENTRY_EVENTS = ("page_visit", "page_visit_booking", "exit", "page_left")
 
 
 def _source_engine():
