@@ -8,18 +8,17 @@ event_type aparece en cada sesión (ver EVENTOS DE CADA SITIO abajo). Los
 "pagos" confirmados salen de all_appointments (misma base), ya que un evento
 de tracking nunca puede confirmar por sí solo que un pago realmente se hizo.
 
-Definiciones acordadas con el dueño del negocio (2026-07-24):
-- "Sesión útil" (no rebote) = tiene al menos un evento aparte de los
-  eventos AUTOMÁTICOS que no reflejan ninguna acción real del visitante:
-  page_visit/page_visit_booking (se disparan solos al cargar la página) y
-  exit/page_left (se disparan solos al cerrar/cambiar de pestaña, vía
-  sendBeacon en visibilitychange — ver tracker.js y booking-soft.html
-  _trackLeave()). Corregido 2026-07-25: la versión original solo excluía
-  page_visit(_booking), así que una sesión que solo abrió y cerró la
-  pestaña (0 interacción real) contaba como "útil" porque el beacon de
-  salida técnicamente "es un evento" — eso hacía que la tasa de rebote
-  real (68%) se viera como 8%. Cualquier otra interacción sigue contando,
-  sin importar cuán mínima sea.
+Definiciones acordadas con el dueño del negocio:
+- "Sesión útil" (no rebote) = duró MÁS DE 5 SEGUNDOS, medido entre el primer
+  y el último evento de la sesión (incluye el beacon automático de salida
+  exit/page_left, que sí marca correctamente cuándo se fue — ver
+  tracker.js/booking-soft.html _trackLeave()). Cambiado 2026-07-25 de una
+  definición basada en tipo de evento (¿hubo algún evento que no fuera
+  page_visit/exit?) a una basada en duración, a pedido del dueño tras ver
+  el histograma de distribución: con 60 días de datos, ~38% de las
+  sesiones duran 3 segundos o menos (rebote real, gente que abre y se va
+  casi de inmediato) y la tasa de interacción recién empieza a subir en
+  serio pasado ese punto — 5s es el corte elegido.
 - "% que llenaron el pop-up" = form_submissions (cualquier signup_form) del
   día, como % de las sesiones totales de ese día. No hay session_id en
   form_submissions, así que esto es una tasa agregada, no un funnel por
@@ -33,10 +32,24 @@ from typing import Optional
 from sqlalchemy import create_engine, text
 from app.core.config import settings
 
-# Eventos que se disparan SOLOS (carga de página, cierre de pestaña) y no
-# reflejan ninguna acción real del visitante — no cuentan como
-# "interacción" para la definición de sesión útil.
-_ENTRY_EVENTS = ("page_visit", "page_visit_booking", "exit", "page_left")
+# Umbral de duración (segundos) para considerar una sesión "útil" — ver
+# nota arriba.
+_USEFUL_SESSION_SECONDS = 5
+
+# Buckets del histograma de distribución de duración — mismos cortes que el
+# artefacto que se le mostró al dueño antes de fijar el umbral de 5s.
+_DURATION_BUCKETS = [
+    (0, 0, "0s"),
+    (0, 1, "<1s"),
+    (1, 3, "1-3s"),
+    (3, 10, "3-10s"),
+    (10, 30, "10-30s"),
+    (30, 60, "30-60s"),
+    (60, 180, "1-3min"),
+    (180, 600, "3-10min"),
+    (600, 1800, "10-30min"),
+    (1800, None, "30min+"),
+]
 
 
 def _source_engine():
@@ -52,14 +65,15 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
 
     with engine.connect() as conn:
         # Sesiones totales + útiles por día. Un CTE agrupa cada sesión a su
-        # primer día visto y si tuvo alguna interacción real, luego se cuenta
-        # por día — evita contar dos veces una sesión que cruzó medianoche.
+        # primer día visto y su duración (último evento menos primero),
+        # luego se cuenta por día — evita contar dos veces una sesión que
+        # cruzó medianoche.
         sessions_rows = conn.execute(text("""
             WITH session_days AS (
                 SELECT
                     session_id,
                     MIN(DATE(recorded_at AT TIME ZONE 'America/Santiago')) AS day,
-                    BOOL_OR(event_type NOT IN :entry_events) AS interacted
+                    EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at))) > :useful_seconds AS interacted
                 FROM booking_visitor_events
                 WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
                 GROUP BY session_id
@@ -67,7 +81,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
             SELECT day, COUNT(*) AS total, COUNT(*) FILTER (WHERE interacted) AS useful
             FROM session_days
             GROUP BY day ORDER BY day
-        """), {"entry_events": _ENTRY_EVENTS, "desde": desde, "hasta_excl": hasta_excl}).fetchall()
+        """), {"useful_seconds": _USEFUL_SESSION_SECONDS, "desde": desde, "hasta_excl": hasta_excl}).fetchall()
 
         # Eventos puntuales por día (cada uno cuenta sesiones DISTINTAS con
         # ese evento ese día, no el total de disparos — dos clicks en el
@@ -230,3 +244,53 @@ def _sum_totals(daily: list[dict]) -> dict:
         "paid": paid,
         "conversion_rate": round(paid / useful_sessions * 100, 2) if useful_sessions else 0.0,
     }
+
+
+def get_session_duration_histogram(desde: date, hasta: date) -> dict:
+    """Distribución de duración de sesión (mismos buckets que el artefacto
+    mostrado al dueño antes de fijar el umbral de 5s en _USEFUL_SESSION_SECONDS
+    arriba) — no varía por día/semana/mes, es una foto del rango completo."""
+    engine = _source_engine()
+    hasta_excl = hasta + timedelta(days=1)
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT
+                EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at))) AS seconds
+            FROM booking_visitor_events
+            WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+            GROUP BY session_id
+        """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
+
+    def _bucket_for(seconds: float) -> str:
+        if seconds == 0: return "0s"
+        if seconds < 1: return "<1s"
+        if seconds < 3: return "1-3s"
+        if seconds < 10: return "3-10s"
+        if seconds < 30: return "10-30s"
+        if seconds < 60: return "30-60s"
+        if seconds < 180: return "1-3min"
+        if seconds < 600: return "3-10min"
+        if seconds < 1800: return "10-30min"
+        return "30min+"
+
+    counts = {label: 0 for (_, _, label) in _DURATION_BUCKETS}
+    useful_counts = {label: 0 for (_, _, label) in _DURATION_BUCKETS}
+    for (seconds,) in rows:
+        label = _bucket_for(seconds)
+        counts[label] += 1
+        if seconds > _USEFUL_SESSION_SECONDS:
+            useful_counts[label] += 1
+
+    total = sum(counts.values())
+    buckets = [
+        {
+            "label": label,
+            "n": counts[label],
+            "n_useful": useful_counts[label],
+            "pct": round(counts[label] / total * 100, 1) if total else 0.0,
+        }
+        for (_, _, label) in _DURATION_BUCKETS
+    ]
+
+    return {"desde": desde.isoformat(), "hasta": hasta.isoformat(), "total_sessions": total, "buckets": buckets}

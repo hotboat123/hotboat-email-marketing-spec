@@ -276,6 +276,20 @@ export interface WebTrafficResponse {
   totals: WebTrafficTotals;
 }
 
+export interface DurationBucket {
+  label: string;
+  n: number;
+  n_useful: number;
+  pct: number;
+}
+
+export interface WebTrafficDurationHistogram {
+  desde: string;
+  hasta: string;
+  total_sessions: number;
+  buckets: DurationBucket[];
+}
+
 export interface OverviewStats {
   contacts: { total: number; opted_in: number };
   campaigns: { total: number; sent: number };

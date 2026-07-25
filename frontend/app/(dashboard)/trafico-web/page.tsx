@@ -17,7 +17,7 @@ import {
   Legend,
 } from "recharts";
 import { webTrafficApi } from "@/lib/api";
-import { WebTrafficResponse, WebTrafficDay } from "@/lib/types";
+import { WebTrafficResponse, WebTrafficDay, WebTrafficDurationHistogram } from "@/lib/types";
 
 function shortDate(d: string) {
   const [, m, day] = d.split("-");
@@ -125,6 +125,51 @@ function ChartCard({ title, sub, children }: { title: string; sub?: string; chil
 
 const tooltipStyle = { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" };
 
+function DurationHistogram({ histogram }: { histogram?: WebTrafficDurationHistogram }) {
+  const buckets = histogram?.buckets ?? [];
+  const maxN = Math.max(1, ...buckets.map((b) => b.n));
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <p className="text-sm font-semibold text-gray-800">Distribución del tiempo en el sitio</p>
+      <p className="text-xs text-gray-400 mt-0.5 mb-1">
+        Cuántas sesiones duran cuánto — no varía por día/semana/mes, es del rango de fechas elegido arriba
+      </p>
+      <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-600 inline-block" />Útil (&gt;5s)</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-400 inline-block" />Rebote (≤5s)</span>
+      </div>
+
+      <div className="flex items-end gap-2 h-52 border-b border-gray-100">
+        {buckets.map((b) => {
+          const heightPct = (b.n / maxN) * 100;
+          const usefulPct = b.n ? (b.n_useful / b.n) * 100 : 0;
+          return (
+            <div key={b.label} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+              <div className="absolute -top-9 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-[11px] rounded px-2 py-1 whitespace-nowrap z-10 tabular-nums">
+                {b.n.toLocaleString("es-CL")} ({b.pct}%) · {b.n_useful.toLocaleString("es-CL")} útiles
+              </div>
+              <span className="text-[10px] text-gray-400 mb-1 tabular-nums">{b.pct}%</span>
+              <div
+                className="w-full max-w-[38px] rounded-t-sm overflow-hidden flex flex-col-reverse"
+                style={{ height: `${heightPct}%`, minHeight: b.n ? 2 : 0 }}
+              >
+                <div className="w-full bg-orange-400" style={{ height: `${100 - usefulPct}%` }} />
+                <div className="w-full bg-brand-600" style={{ height: `${usefulPct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-2 mt-1.5">
+        {buckets.map((b) => (
+          <span key={b.label} className="flex-1 text-center text-[10px] text-gray-400">{b.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type RangePreset = "7" | "30" | "todo" | "custom";
 
 export default function TraficoWebPage() {
@@ -143,6 +188,12 @@ export default function TraficoWebPage() {
   const { data, isLoading } = useQuery<WebTrafficResponse>({
     queryKey: ["web-traffic-daily", desde, hasta],
     queryFn: () => webTrafficApi.daily(desde, hasta).then((r) => r.data),
+    staleTime: 2 * 60_000,
+  });
+
+  const { data: histogram } = useQuery<WebTrafficDurationHistogram>({
+    queryKey: ["web-traffic-duration-histogram", desde, hasta],
+    queryFn: () => webTrafficApi.durationHistogram(desde, hasta).then((r) => r.data),
     staleTime: 2 * 60_000,
   });
 
@@ -219,7 +270,7 @@ export default function TraficoWebPage() {
         <StatCard
           label="Sesiones útiles"
           value={(t?.useful_sessions ?? 0).toLocaleString("es-CL")}
-          sub={`${t?.bounce_rate ?? 0}% sin interacción`}
+          sub={`${t?.bounce_rate ?? 0}% rebote (≤5s)`}
         />
         <StatCard label="Conversión" value={`${t?.conversion_rate ?? 0}%`} sub={`${t?.paid ?? 0} pagaron`} />
         <StatCard
@@ -233,7 +284,7 @@ export default function TraficoWebPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <ChartCard
           title="Sesiones totales vs. útiles"
-          sub="Sesión útil = tuvo al menos una interacción aparte de cargar la página"
+          sub="Sesión útil = más de 5 segundos en el sitio"
         >
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -276,6 +327,10 @@ export default function TraficoWebPage() {
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 mb-8">
+        <DurationHistogram histogram={histogram} />
       </div>
 
       {/* Pop-up / WhatsApp / entraron al sistema de reservas */}

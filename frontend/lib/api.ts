@@ -128,6 +128,8 @@ export const analyticsApi = {
 export const webTrafficApi = {
   daily: (desde?: string, hasta?: string) =>
     api.get("/web-traffic/daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  durationHistogram: (desde?: string, hasta?: string) =>
+    api.get("/web-traffic/duration-histogram", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
 };
 
 // Signup Forms
