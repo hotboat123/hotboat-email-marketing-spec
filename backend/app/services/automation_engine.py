@@ -287,13 +287,14 @@ def _check_abandoned_followup(auto: Automation, session: Session) -> None:
     (trigger_key 'abandoned:{id}') se mandó hace ~delay_hours y la reserva
     sigue sin pagarse, manda un mail de descuento + video de dron de regalo.
 
-    La fila de all_appointments que originó el mail 1 puede ya no existir a
-    esta altura (se borra a los 120 min si sigue pending_payment — ver
-    _do_auto_sync en hotboat-whatsapp), así que este handler reusa la foto de
-    los datos de la reserva guardada en AutomationRun.extra_data del mail 1
-    en vez de volver a leerla de la fuente. Solo consulta all_appointments
-    para decidir si la reserva se pagó (fila ya no está pending) y en tal
-    caso NO manda el segundo mail.
+    La reserva pending_payment que originó el mail 1 se marca 'cancelled' a
+    los ~10 min si sigue sin pagar (ver _do_pending_payment_cleanup en
+    hotboat-whatsapp/app/main.py — antes se borraba del todo a los 120 min;
+    ahora la fila se conserva para no perder el lead), así que este handler
+    reusa la foto de los datos de la reserva guardada en
+    AutomationRun.extra_data del mail 1 en vez de volver a leerla de la
+    fuente. Solo consulta all_appointments para decidir si la reserva se pagó
+    (status == 'confirmed') y en tal caso NO manda el segundo mail.
     """
     config = auto.trigger_config or {}
     delay_hours = int(config.get("delay_hours", 24))
