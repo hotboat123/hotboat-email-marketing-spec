@@ -124,6 +124,12 @@ export const analyticsApi = {
   asuntos: () => api.get("/analytics/asuntos"),
 };
 
+// Tráfico de la página web (landing + sitio de reservas)
+export const webTrafficApi = {
+  daily: (desde?: string, hasta?: string) =>
+    api.get("/web-traffic/daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+};
+
 // Signup Forms
 export const formsApi = {
   list: () => api.get("/forms"),

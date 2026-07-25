@@ -232,6 +232,50 @@ export interface AutomationStats {
   click_rate: number;
 }
 
+export interface WebTrafficDay {
+  day: string;
+  total_sessions: number;
+  useful_sessions: number;
+  whatsapp_clicks: number;
+  went_to_booking: number;
+  viewed_price: number;
+  selected_date: number;
+  booking_completed_events: number;
+  viewed_price_left: number;
+  paid: number;
+  popup_fills: number;
+  conversion_rate: number;
+  found_expensive_rate: number;
+  popup_fill_rate: number;
+  whatsapp_click_rate: number;
+  went_to_booking_rate: number;
+}
+
+export interface WebTrafficTotals {
+  total_sessions: number;
+  useful_sessions: number;
+  bounce_rate: number;
+  popup_fills: number;
+  popup_fill_rate: number;
+  whatsapp_clicks: number;
+  whatsapp_click_rate: number;
+  went_to_booking: number;
+  went_to_booking_rate: number;
+  viewed_price: number;
+  viewed_price_left: number;
+  found_expensive_rate: number;
+  selected_date: number;
+  paid: number;
+  conversion_rate: number;
+}
+
+export interface WebTrafficResponse {
+  desde: string;
+  hasta: string;
+  daily: WebTrafficDay[];
+  totals: WebTrafficTotals;
+}
+
 export interface OverviewStats {
   contacts: { total: number; opted_in: number };
   campaigns: { total: number; sent: number };
