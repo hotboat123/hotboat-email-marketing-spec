@@ -149,12 +149,13 @@ function groupByGranularityWA(daily: WhatsappTrafficDay[], granularity: Granular
 // dashboard) — un valor como 1.00 o 0.40 no debe perder el cero final.
 function pct2(n: number | undefined) { return (n ?? 0).toFixed(2); }
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function StatCard({ label, value, sub, def }: { label: string; value: string; sub?: string; def?: string }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
       <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{label}</p>
       <p className="text-2xl font-bold text-gray-900 tabular-nums">{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      {def && <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">{def}</p>}
     </div>
   );
 }
@@ -348,17 +349,28 @@ export default function TraficoWebPage() {
       <>
       {/* Resumen del rango */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Sesiones totales" value={(t?.total_sessions ?? 0).toLocaleString("es-CL")} />
+        <StatCard
+          label="Sesiones totales"
+          value={(t?.total_sessions ?? 0).toLocaleString("es-CL")}
+          def="Todas las sesiones que entraron al sitio, sin filtrar"
+        />
         <StatCard
           label="Sesiones útiles"
           value={(t?.useful_sessions ?? 0).toLocaleString("es-CL")}
           sub={`${t?.bounce_rate ?? 0}% rebote (≤5s)`}
+          def="Estuvieron más de 5 segundos en el sitio"
         />
-        <StatCard label="Conversión" value={`${t?.conversion_rate ?? 0}%`} sub={`${t?.paid ?? 0} pagaron`} />
+        <StatCard
+          label="Conversión"
+          value={`${t?.conversion_rate ?? 0}%`}
+          sub={`${t?.paid ?? 0} pagaron`}
+          def="Sesiones útiles que terminaron con un pago real registrado"
+        />
         <StatCard
           label="Encontraron caro"
           value={`${t?.found_expensive_rate ?? 0}%`}
           sub={`${(t?.viewed_price_left ?? 0).toLocaleString("es-CL")} de ${(t?.viewed_price ?? 0).toLocaleString("es-CL")} vieron precio`}
+          def="Vieron el precio y no llegaron a elegir fecha en la misma sesión"
         />
       </div>
 
@@ -421,16 +433,19 @@ export default function TraficoWebPage() {
           label="Llenaron el pop-up"
           value={`${pct2(t?.popup_fill_rate)}%`}
           sub={`${(t?.popup_fills ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
+          def="Completaron el pop-up de suscripción del sitio"
         />
         <StatCard
           label="Abrieron WhatsApp"
           value={`${pct2(t?.whatsapp_click_rate)}%`}
           sub={`${(t?.whatsapp_clicks ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
+          def="Hicieron click en el botón o link de WhatsApp del sitio"
         />
         <StatCard
           label="Fueron al sistema de reservas"
           value={`${pct2(t?.went_to_booking_rate)}%`}
           sub={`${(t?.went_to_booking ?? 0).toLocaleString("es-CL")} de ${(t?.useful_sessions ?? 0).toLocaleString("es-CL")} sesiones útiles`}
+          def="Hicieron click en 'Reservar' desde la landing"
         />
       </div>
 
@@ -443,21 +458,25 @@ export default function TraficoWebPage() {
             <p className="text-xs text-gray-400 uppercase tracking-wide">Vio el precio</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.viewed_price_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.viewed_price ?? 0).toLocaleString("es-CL")} sesiones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Llegó a la pantalla de precios del sistema de reservas</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Eligió fecha</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.selected_date_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.selected_date ?? 0).toLocaleString("es-CL")} sesiones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Seleccionó una fecha disponible en el calendario</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Reservó</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.reserved_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.booking_completed_events ?? 0).toLocaleString("es-CL")} sesiones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Completó el flujo de reserva (no implica que pagó)</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Pagó</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(t?.conversion_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(t?.paid ?? 0).toLocaleString("es-CL")} sesiones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Tiene un pago real registrado — transferencia, efectivo o tarjeta</p>
           </div>
         </div>
       </div>
@@ -468,17 +487,28 @@ export default function TraficoWebPage() {
       <>
       {/* Resumen del rango */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Conversaciones totales" value={(wt?.total_conversations ?? 0).toLocaleString("es-CL")} />
+        <StatCard
+          label="Conversaciones totales"
+          value={(wt?.total_conversations ?? 0).toLocaleString("es-CL")}
+          def="Todos los números que escribieron en el rango elegido"
+        />
         <StatCard
           label="Conversaciones útiles"
           value={(wt?.useful_conversations ?? 0).toLocaleString("es-CL")}
           sub={`${wt?.discard_rate ?? 0}% descartadas (1 mensaje)`}
+          def="2 o más mensajes del cliente (descarta el saludo automático del anuncio)"
         />
-        <StatCard label="Conversión" value={`${pct2(wt?.conversion_rate)}%`} sub={`${wt?.paid ?? 0} pagaron`} />
+        <StatCard
+          label="Conversión"
+          value={`${pct2(wt?.conversion_rate)}%`}
+          sub={`${wt?.paid ?? 0} pagaron`}
+          def="Conversaciones útiles que terminaron con un pago real registrado"
+        />
         <StatCard
           label="Encontraron caro"
           value={`${pct2(wt?.found_expensive_rate)}%`}
           sub={`${(wt?.found_expensive ?? 0).toLocaleString("es-CL")} de ${(wt?.asked_price ?? 0).toLocaleString("es-CL")} preguntaron precio`}
+          def="Preguntaron precio y no siguieron avanzando (sin preguntar fecha, click en el link ni reserva)"
         />
       </div>
 
@@ -540,26 +570,31 @@ export default function TraficoWebPage() {
             <p className="text-xs text-gray-400 uppercase tracking-wide">Preguntó precio</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.asked_price_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(wt?.asked_price ?? 0).toLocaleString("es-CL")} conversaciones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Mencionó precio, valor, cuánto cuesta, etc. en algún mensaje</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Preguntó fecha</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.asked_date_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(wt?.asked_date ?? 0).toLocaleString("es-CL")} conversaciones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Mencionó fecha, disponibilidad, agendar, etc. en algún mensaje</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Click en el link</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.clicked_link_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(wt?.clicked_link ?? 0).toLocaleString("es-CL")} conversaciones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Hizo click en el link de cotización enviado por WhatsApp</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Reservó</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.reserved_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(wt?.reserved ?? 0).toLocaleString("es-CL")} conversaciones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Su teléfono está asociado a una reserva (no implica que pagó)</p>
           </div>
           <div>
             <p className="text-xs text-gray-400 uppercase tracking-wide">Pagó</p>
             <p className="text-xl font-bold text-gray-900 tabular-nums">{pct2(wt?.conversion_rate)}%</p>
             <p className="text-xs text-gray-400 tabular-nums">{(wt?.paid ?? 0).toLocaleString("es-CL")} conversaciones</p>
+            <p className="text-[11px] text-gray-400 italic mt-1 leading-snug">Tiene un pago real registrado — transferencia, efectivo o tarjeta</p>
           </div>
         </div>
       </div>
