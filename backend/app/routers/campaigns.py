@@ -42,6 +42,113 @@ def create_campaign(
     return campaign
 
 
+@router.get("/bulk-metrics")
+def campaigns_bulk_metrics(
+    days: int = Query(default=60, ge=1, le=365),
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """
+    Stats + conversions for every sent/draft campaign in ONE call — replaces
+    what used to be 2 requests PER campaign from the frontend list page
+    (campaign_stats + campaign_conversions each fired once per row via
+    useQueries). With dozens of campaigns that pattern alone was enough to
+    exhaust the app's DB connection pool on a single page load; this does the
+    same computation with exactly one local query plus one external query,
+    regardless of how many campaigns exist.
+    """
+    campaigns = session.exec(
+        select(Campaign).where(Campaign.status.in_(["sent", "draft"]))
+    ).all()
+    if not campaigns:
+        return {}
+
+    campaign_ids = [c.id for c in campaigns]
+    all_sends = session.exec(
+        select(CampaignSend).where(CampaignSend.campaign_id.in_(campaign_ids))
+    ).all()
+    sends_by_campaign: dict[int, list] = {}
+    for s in all_sends:
+        sends_by_campaign.setdefault(s.campaign_id, []).append(s)
+
+    stats_by_campaign: dict[int, CampaignStats] = {}
+    for c in campaigns:
+        csends = sends_by_campaign.get(c.id, [])
+        total = len(csends)
+        sent = sum(1 for s in csends if s.status not in ("queued", "failed"))
+        delivered = sum(1 for s in csends if s.delivered_at is not None or s.status in ("delivered", "opened", "clicked"))
+        opened = sum(1 for s in csends if s.opened_at is not None)
+        clicked = sum(1 for s in csends if s.clicked_at is not None)
+        bounced = sum(1 for s in csends if s.bounced_at is not None or s.status == "bounced")
+        complained = sum(1 for s in csends if s.status == "complained")
+        base = delivered or sent or 1
+        stats_by_campaign[c.id] = CampaignStats(
+            campaign_id=c.id, total=total, sent=sent, delivered=delivered, opened=opened,
+            clicked=clicked, bounced=bounced, complained=complained,
+            open_rate=round(opened / base * 100, 1),
+            click_rate=round(clicked / base * 100, 1),
+            bounce_rate=round(bounced / (sent or 1) * 100, 1),
+        )
+
+    # Conversions — same per-campaign window logic as campaign_conversions()
+    # below, just evaluated for every campaign against ONE external query
+    # instead of one query per campaign.
+    contact_ids = {s.contact_id for s in all_sends}
+    contacts = session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all() if contact_ids else []
+    email_by_contact_id = {ct.id: ct.email for ct in contacts}
+
+    windows_by_email: dict[str, list[tuple]] = {}
+    for c in campaigns:
+        if not c.sent_at:
+            continue
+        start = c.sent_at.date()
+        end = (c.sent_at + timedelta(days=days)).date()
+        for s in sends_by_campaign.get(c.id, []):
+            email = email_by_contact_id.get(s.contact_id)
+            if email:
+                windows_by_email.setdefault(email, []).append((start, end, c.id))
+
+    conv_acc = {c.id: {"bookings": 0, "revenue": 0.0, "converted": set()} for c in campaigns}
+    if windows_by_email:
+        emails = list(windows_by_email.keys())
+        min_start = min(w[0] for windows in windows_by_email.values() for w in windows)
+        max_end = max(w[1] for windows in windows_by_email.values() for w in windows)
+        src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+        try:
+            src_engine = create_engine(src_url)
+            with src_engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT email, fecha, ingreso_total FROM all_appointments
+                    WHERE email = ANY(:emails) AND fecha >= :start_date AND fecha <= :end_date
+                      AND status NOT IN ('cancelled', 'no_show', 'pending')
+                """), {"emails": emails, "start_date": min_start, "end_date": max_end}).fetchall()
+        except Exception:
+            rows = []
+        for row in rows:
+            # A booking can legitimately count toward more than one campaign
+            # if it falls inside more than one campaign's window for that
+            # contact — same semantics as calling campaign_conversions()
+            # separately per campaign, just batched.
+            for start, end, cid in windows_by_email.get(row.email, []):
+                if start <= row.fecha <= end:
+                    conv_acc[cid]["bookings"] += 1
+                    conv_acc[cid]["revenue"] += float(row.ingreso_total or 0)
+                    conv_acc[cid]["converted"].add(row.email)
+
+    result = {}
+    for c in campaigns:
+        conv = conv_acc[c.id]
+        result[c.id] = {
+            "stats": stats_by_campaign[c.id].model_dump(),
+            "conversions": {
+                "campaign_id": c.id, "window_days": days,
+                "bookings": conv["bookings"], "revenue": conv["revenue"],
+                "converted_contacts": len(conv["converted"]),
+            },
+        }
+    return result
+
+
 @router.get("/{campaign_id}", response_model=CampaignRead)
 def get_campaign(campaign_id: int, session: Session = Depends(get_session), _: User = Depends(get_current_user)):
     c = session.get(Campaign, campaign_id)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi, segmentsApi } from "@/lib/api";
 import { Campaign, CampaignConversions, CampaignStats, Segment } from "@/lib/types";
 import {
@@ -183,30 +183,20 @@ export default function CampaignsPage() {
 
   const segMap = Object.fromEntries(segments.map((s) => [s.id, s]));
 
-  // Fetch stats + conversions for sent campaigns AND drafts that may have partial sends
-  const sentCampaigns = campaigns.filter((c) => c.status === "sent" || c.status === "draft");
-  const statsQueries = useQueries({
-    queries: sentCampaigns.map((c) => ({
-      queryKey: ["campaign-stats", c.id],
-      queryFn: () => campaignsApi.stats(c.id).then((r) => r.data as CampaignStats),
-      staleTime: 10 * 60_000,
-    })),
+  // Stats + conversions for every sent/draft campaign in ONE request — used
+  // to be 2 requests PER campaign (useQueries firing stats+conversions per
+  // row), which with 70+ campaigns was enough to exhaust the backend's DB
+  // connection pool on a single page load.
+  const { data: bulkMetrics } = useQuery<Record<string, { stats: CampaignStats; conversions: CampaignConversions }>>({
+    queryKey: ["campaigns-bulk-metrics"],
+    queryFn: () => campaignsApi.bulkMetrics().then((r) => r.data),
+    staleTime: 10 * 60_000,
   });
   const statsMap: Record<number, CampaignStats> = {};
-  statsQueries.forEach((q) => {
-    if (q.data) statsMap[q.data.campaign_id] = q.data;
-  });
-
-  const convQueries = useQueries({
-    queries: sentCampaigns.map((c) => ({
-      queryKey: ["campaign-conversions", c.id],
-      queryFn: () => campaignsApi.conversions(c.id).then((r) => r.data as CampaignConversions),
-      staleTime: 15 * 60_000,
-    })),
-  });
   const convMap: Record<number, CampaignConversions> = {};
-  convQueries.forEach((q) => {
-    if (q.data) convMap[q.data.campaign_id] = q.data;
+  Object.values(bulkMetrics ?? {}).forEach(({ stats, conversions }) => {
+    statsMap[stats.campaign_id] = stats;
+    convMap[conversions.campaign_id] = conversions;
   });
 
   const sendMutation = useMutation({
