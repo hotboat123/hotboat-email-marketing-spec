@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
-import resend
 from jinja2 import Template as JTemplate
 
 from app.core.config import settings
 from app.database import get_session
 from app.core.deps import get_current_user, require_editor
+from app.email.send_email import default_from_address, send_email
 from app.models.user import User
 from app.models.contact_crm import ContactCRM, ContactCRMRead, CallStatusUpdate, ReferralCountUpdate
 from app.models.call_activity import CallActivity, CallActivityRead
@@ -600,7 +600,6 @@ def send_referral_reminder(
     }
     html = _inject_footer(JTemplate(tpl.html_content).render(**vars_), contact.email)
     subject = JTemplate(auto.subject).render(**vars_)
-    resend.api_key = settings.RESEND_API_KEY
 
     run = AutomationRun(
         automation_id=auto.id,
@@ -609,28 +608,27 @@ def send_referral_reminder(
         trigger_key=f"manual_referral:{contact_crm_id}:{datetime.utcnow().isoformat()}",
         triggered_at=datetime.utcnow(),
     )
-    try:
-        result = resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [contact.email],
-            "subject": subject,
-            "html": html,
-            "headers": _unsub_headers(contact.email),
-        })
-        resend_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+    result = send_email(
+        to=contact.email,
+        subject=subject,
+        html=html,
+        from_address=default_from_address(),
+        headers=_unsub_headers(contact.email),
+        trigger="manual_referral",
+    )
+    run.executed_at = datetime.utcnow()
+    if result["sent"]:
         run.status = "sent"
-        run.resend_id = resend_id
-        run.executed_at = datetime.utcnow()
-    except Exception as exc:
-        run.status = "failed"
-        run.error = str(exc)
-        run.executed_at = datetime.utcnow()
+        run.resend_id = result["message_id"]
         session.add(run)
         session.commit()
-        raise HTTPException(status_code=500, detail=f"Error al enviar: {exc}")
+    else:
+        run.status = "failed"
+        run.error = result["reason"]
+        session.add(run)
+        session.commit()
+        raise HTTPException(status_code=500, detail=f"Error al enviar: {result['reason']}")
 
-    session.add(run)
-    session.commit()
     return {"sent": True, "reward_label": reward_label, "referrals_needed": referrals_needed}
 
 

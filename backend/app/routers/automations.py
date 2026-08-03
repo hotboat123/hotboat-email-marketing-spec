@@ -1,12 +1,12 @@
 from datetime import datetime, date
 from typing import List
-import resend
 from fastapi import APIRouter, Depends, HTTPException
 from jinja2 import Template as JTemplate
 from sqlmodel import Session, select, func
 from app.core.config import settings
 from app.database import get_session
 from app.core.deps import get_current_user, require_editor
+from app.email.send_email import default_from_address, send_email
 from app.models.user import User
 from app.models.template import Template
 from app.models.automation import (
@@ -145,18 +145,17 @@ def test_automation(
         "pay_url": f"{settings.WOO_URL}/es/checkout/order-pay/0/?pay_for_order=true&key=test_preview",
     }
 
-    try:
-        html = _inject_footer(JTemplate(tpl.html_content).render(**sample_vars), settings.NOTIFY_EMAIL)
-        resend.api_key = settings.RESEND_API_KEY
-        resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [settings.NOTIFY_EMAIL],
-            "subject": f"[TEST] {a.subject}",
-            "html": html,
-            "headers": _unsub_headers(settings.NOTIFY_EMAIL),
-        })
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error al enviar: {exc}")
+    html = _inject_footer(JTemplate(tpl.html_content).render(**sample_vars), settings.NOTIFY_EMAIL)
+    result = send_email(
+        to=settings.NOTIFY_EMAIL,
+        subject=f"[TEST] {a.subject}",
+        html=html,
+        from_address=default_from_address(),
+        headers=_unsub_headers(settings.NOTIFY_EMAIL),
+        trigger="automation_test_send",
+    )
+    if not result["sent"]:
+        raise HTTPException(status_code=500, detail=f"Error al enviar: {result['reason']}")
 
     return {"ok": True, "sent_to": settings.NOTIFY_EMAIL}
 

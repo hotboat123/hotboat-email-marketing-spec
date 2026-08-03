@@ -5,10 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, select, func
 from jinja2 import Template as JTemplate
-import resend
 from app.database import get_session, engine
 from app.core.config import settings
 from app.core.deps import get_current_user, require_editor
+from app.email.send_email import default_from_address, send_email
 from app.models.user import User
 from app.models.campaign import Campaign, CampaignCreate, CampaignRead, CampaignStats, CampaignUpdate, CampaignSend
 from app.models.contact import Contact
@@ -167,19 +167,17 @@ def send_test_email(
     nombre = current_user.name or current_user.email.split("@")[0]
     html = _inject_footer(JTemplate(tpl.html_content).render(nombre=nombre), current_user.email)
 
-    resend.api_key = settings.RESEND_API_KEY
-    try:
-        result = resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [current_user.email],
-            "subject": f"[PRUEBA] {c.subject}",
-            "html": html,
-            "headers": _unsub_headers(current_user.email),
-        })
-        email_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
-        return {"ok": True, "sent_to": current_user.email, "email_id": email_id}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    result = send_email(
+        to=current_user.email,
+        subject=f"[PRUEBA] {c.subject}",
+        html=html,
+        from_address=default_from_address(),
+        headers=_unsub_headers(current_user.email),
+        trigger="campaign_test_send",
+    )
+    if not result["sent"]:
+        raise HTTPException(status_code=500, detail=result["reason"])
+    return {"ok": True, "sent_to": current_user.email, "email_id": result["message_id"]}
 
 
 @router.get("/{campaign_id}/stats", response_model=CampaignStats)

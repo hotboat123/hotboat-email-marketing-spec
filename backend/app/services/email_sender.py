@@ -2,12 +2,12 @@ import logging
 import time
 from typing import List
 from datetime import datetime
-import resend
 from jinja2 import Template as Jinja2Template
 from sqlmodel import Session, select, func
 from app.core.config import settings
 from app.core.unsub_token import unsub_url
 from app.database import engine
+from app.email.send_email import default_from_address, send_email
 from app.models.contact import Contact
 from app.models.campaign import Campaign, CampaignSend
 from app.models.template import Template
@@ -68,7 +68,6 @@ def render_html(html_content: str, contact: Contact) -> str:
 
 
 def _send_one(campaign: Campaign, template: Template, contact: Contact, session: Session) -> None:
-    resend.api_key = settings.RESEND_API_KEY
     html = _inject_footer(render_html(template.html_content, contact), contact.email)
     subject = Jinja2Template(campaign.subject).render(nombre=_fmt_nombre(contact.name, contact.email))
 
@@ -79,30 +78,25 @@ def _send_one(campaign: Campaign, template: Template, contact: Contact, session:
         )
     ).first()
 
-    try:
-        response = resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [contact.email],
-            "subject": subject,
-            "html": html,
-            "headers": _unsub_headers(contact.email),
-            "tags": [
-                {"name": "campaign_id", "value": str(campaign.id)},
-                {"name": "contact_id",  "value": str(contact.id)},
-            ],
-        })
-        if send:
-            send.resend_id = response["id"]
+    result = send_email(
+        to=contact.email,
+        subject=subject,
+        html=html,
+        from_address=default_from_address(),
+        headers=_unsub_headers(contact.email),
+        tags={"campaign_id": str(campaign.id), "contact_id": str(contact.id)},
+        trigger="campaign_send",
+    )
+    if send:
+        if result["sent"]:
+            send.resend_id = result["message_id"]
             send.status = "sent"
             send.sent_at = datetime.utcnow()
-            session.add(send)
-            session.commit()
-    except Exception as exc:
-        logger.error("Error enviando a %s: %s", contact.email, exc)
-        if send:
+        else:
+            logger.error("Error enviando a %s: %s", contact.email, result["reason"])
             send.status = "failed"  # error técnico de envío, no rebote real
-            session.add(send)
-            session.commit()
+        session.add(send)
+        session.commit()
 
 
 def send_campaign_sync(campaign_id: int, contact_ids: List[int], total_in_segment: int = 0) -> None:

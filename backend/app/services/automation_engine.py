@@ -13,13 +13,13 @@ import time
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
-import resend
 from jinja2 import Template as JTemplate
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.database import engine as db_engine
+from app.email.send_email import default_from_address, send_email
 from app.models.automation import Automation, AutomationRun
 from app.models.campaign import Campaign, CampaignSend
 from app.models.contact import Contact
@@ -101,7 +101,6 @@ def _send_email(
     }
     html = _inject_footer(JTemplate(tpl.html_content).render(**vars_), contact.email)
     subject = JTemplate(automation.subject).render(**vars_)
-    resend.api_key = settings.RESEND_API_KEY
 
     run = AutomationRun(
         automation_id=automation.id,
@@ -111,27 +110,24 @@ def _send_email(
         triggered_at=datetime.utcnow(),
         extra_data=extra_vars or None,
     )
-    try:
-        payload = {
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [contact.email],
-            "subject": subject,
-            "html": html,
-            "headers": _unsub_headers(contact.email),
-        }
-        if bcc:
-            payload["bcc"] = [bcc]
-        result = resend.Emails.send(payload)
-        resend_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+    result = send_email(
+        to=contact.email,
+        subject=subject,
+        html=html,
+        from_address=default_from_address(),
+        bcc=[bcc] if bcc else None,
+        headers=_unsub_headers(contact.email),
+        trigger=f"automation_{trigger_key}",
+    )
+    run.executed_at = datetime.utcnow()
+    if result["sent"]:
         run.status = "sent"
-        run.resend_id = resend_id
-        run.executed_at = datetime.utcnow()
+        run.resend_id = result["message_id"]
         logger.info("Automation %d sent to %s (key=%s)", automation.id, contact.email, trigger_key)
-    except Exception as exc:
+    else:
         run.status = "failed"
-        run.error = str(exc)[:500]
-        run.executed_at = datetime.utcnow()
-        logger.error("Automation %d failed for %s: %s", automation.id, contact.email, exc)
+        run.error = result["reason"][:500]
+        logger.error("Automation %d failed for %s: %s", automation.id, contact.email, result["reason"])
 
     session.add(run)
     session.commit()
@@ -850,45 +846,44 @@ def _notify_campaign_reminder(campaign: Campaign) -> None:
     """Envía alerta a NOTIFY_EMAIL 24h antes del envío de una campaña."""
     if not settings.NOTIFY_EMAIL:
         return
-    try:
-        resend.api_key = settings.RESEND_API_KEY
-        scheduled_str = campaign.scheduled_at.strftime("%d/%m/%Y %H:%M") if campaign.scheduled_at else "?"
-        resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [settings.NOTIFY_EMAIL],
-            "subject": f"⏰ Mañana se envía: {campaign.name}",
-            "html": (
-                f"<p>La campaña <strong>{campaign.name}</strong> está programada para mañana "
-                f"a las <strong>{scheduled_str} UTC</strong>.</p>"
-                f"<p>Si querés pausarla o modificarla, podés hacerlo desde "
-                f"<a href='{settings.FRONTEND_URL}/campaigns/{campaign.id}'>el panel</a> "
-                f"antes de que se dispare.</p>"
-            ),
-        })
+    scheduled_str = campaign.scheduled_at.strftime("%d/%m/%Y %H:%M") if campaign.scheduled_at else "?"
+    result = send_email(
+        to=settings.NOTIFY_EMAIL,
+        subject=f"⏰ Mañana se envía: {campaign.name}",
+        html=(
+            f"<p>La campaña <strong>{campaign.name}</strong> está programada para mañana "
+            f"a las <strong>{scheduled_str} UTC</strong>.</p>"
+            f"<p>Si querés pausarla o modificarla, podés hacerlo desde "
+            f"<a href='{settings.FRONTEND_URL}/campaigns/{campaign.id}'>el panel</a> "
+            f"antes de que se dispare.</p>"
+        ),
+        from_address=default_from_address(),
+        trigger="campaign_reminder_notification",
+    )
+    if result["sent"]:
         logger.info("Recordatorio enviado para campaña %d (%s)", campaign.id, campaign.name)
-    except Exception as exc:
-        logger.warning("No se pudo enviar recordatorio para campaña %d: %s", campaign.id, exc)
+    else:
+        logger.warning("No se pudo enviar recordatorio para campaña %d: %s", campaign.id, result["reason"])
 
 
 def _notify_campaign_fired(campaign: Campaign, contact_count: int) -> None:
     """Envía alerta a NOTIFY_EMAIL cuando una campaña comienza a enviarse."""
     if not settings.NOTIFY_EMAIL:
         return
-    try:
-        resend.api_key = settings.RESEND_API_KEY
-        resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [settings.NOTIFY_EMAIL],
-            "subject": f"🚀 Enviando ahora: {campaign.name}",
-            "html": (
-                f"<p>La campaña <strong>{campaign.name}</strong> acaba de comenzar su envío "
-                f"a <strong>{contact_count}</strong> contactos.</p>"
-                f"<p>Podés seguir el progreso en tiempo real en "
-                f"<a href='{settings.FRONTEND_URL}/campaigns/{campaign.id}'>el panel</a>.</p>"
-            ),
-        })
-    except Exception as exc:
-        logger.warning("No se pudo enviar notificación de envío para campaña %d: %s", campaign.id, exc)
+    result = send_email(
+        to=settings.NOTIFY_EMAIL,
+        subject=f"🚀 Enviando ahora: {campaign.name}",
+        html=(
+            f"<p>La campaña <strong>{campaign.name}</strong> acaba de comenzar su envío "
+            f"a <strong>{contact_count}</strong> contactos.</p>"
+            f"<p>Podés seguir el progreso en tiempo real en "
+            f"<a href='{settings.FRONTEND_URL}/campaigns/{campaign.id}'>el panel</a>.</p>"
+        ),
+        from_address=default_from_address(),
+        trigger="campaign_fired_notification",
+    )
+    if not result["sent"]:
+        logger.warning("No se pudo enviar notificación de envío para campaña %d: %s", campaign.id, result["reason"])
 
 
 def run_campaign_reminders() -> None:
