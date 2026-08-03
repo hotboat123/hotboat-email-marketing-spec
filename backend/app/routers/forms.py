@@ -155,6 +155,10 @@ def submit_form(
     email = payload.email.lower().strip()
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="Email inválido")
+    if f.collect_name and f.require_name and not (payload.name or "").strip():
+        raise HTTPException(status_code=422, detail="El nombre es obligatorio")
+    if f.collect_phone and f.require_phone and not (payload.phone or "").strip():
+        raise HTTPException(status_code=422, detail="El teléfono es obligatorio")
 
     origin = payload.source_url or f"Formulario #{form_id}"
     birthday = _extract_birthday(f, payload.extra_data)
@@ -220,6 +224,8 @@ def embed_js(form_id: int, session: Session = Depends(get_session)):
         "success_message": f.success_message,
         "collect_name": f.collect_name,
         "collect_phone": f.collect_phone,
+        "require_name": f.require_name,
+        "require_phone": f.require_phone,
         "custom_fields": f.custom_form_fields or [],
         "trigger": f.popup_trigger,
         "delay_seconds": f.popup_delay_seconds,
@@ -351,7 +357,7 @@ def _build_embed_js(cfg: dict) -> str:
           animation:hbFadeIn 0.25s ease;
         }}
         #hb-popup-header {{
-          background:linear-gradient(135deg,#0369a1 0%,#0ea5e9 100%);
+          background:linear-gradient(135deg,#2c7a72 0%,#34897f 100%);
           padding:20px 48px 20px 24px;position:relative;
         }}
         #hb-popup-close {{
@@ -362,7 +368,6 @@ def _build_embed_js(cfg: dict) -> str:
           transition:background .2s;
         }}
         #hb-popup-close:hover {{ background:rgba(255,255,255,0.35); }}
-        #hb-popup-brand {{ margin:0 0 4px;color:rgba(255,255,255,0.7);font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:700; }}
         #hb-popup-title {{ margin:0;color:#fff;font-size:19px;font-weight:700;line-height:1.3; }}
         #hb-popup-body {{ padding:20px 24px; }}
         #hb-popup-desc {{ margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.5; }}
@@ -372,10 +377,10 @@ def _build_embed_js(cfg: dict) -> str:
           margin-bottom:10px;box-sizing:border-box;outline:none;
           transition:border-color .2s;font-family:inherit;
         }}
-        .hb-input:focus {{ border-color:#0ea5e9; }}
+        .hb-input:focus {{ border-color:#34897f; }}
         #hb-popup-btn {{
           width:100%;padding:12px;
-          background:linear-gradient(135deg,#0369a1,#0ea5e9);
+          background:linear-gradient(135deg,#2c7a72,#34897f);
           color:#fff;border:none;border-radius:10px;font-size:15px;
           font-weight:700;cursor:pointer;transition:opacity .2s;margin-top:4px;font-family:inherit;
         }}
@@ -391,13 +396,14 @@ def _build_embed_js(cfg: dict) -> str:
       var customFieldsHtml = {custom_fields_html_js};
 
       function buildAutoPopup() {{
-        var nameF  = C.collect_name  ? '<input class="hb-input" id="hb-inp-name"  type="text" name="name"  placeholder="Tu nombre" />' : '';
-        var phoneF = C.collect_phone ? '<input class="hb-input" id="hb-inp-phone" type="tel"  name="phone" placeholder="Tu teléfono" />' : '';
+        var nameReq  = C.require_name  ? ' required' : '';
+        var phoneReq = C.require_phone ? ' required' : '';
+        var nameF  = C.collect_name  ? '<input class="hb-input" id="hb-inp-name"  type="text" name="name"  placeholder="Tu nombre' + (C.require_name ? ' *' : '') + '"' + nameReq + ' />' : '';
+        var phoneF = C.collect_phone ? '<input class="hb-input" id="hb-inp-phone" type="tel"  name="phone" placeholder="Tu teléfono' + (C.require_phone ? ' *' : '') + '"' + phoneReq + ' />' : '';
         var descH  = C.description   ? '<p id="hb-popup-desc">' + C.description + '</p>' : '';
         return (
           '<div id="hb-popup-header">' +
           '  <button id="hb-popup-close" aria-label="Cerrar">&#x2715;</button>' +
-          '  <p id="hb-popup-brand">HotBoat</p>' +
           '  <h2 id="hb-popup-title">' + C.title + '</h2>' +
           '</div>' +
           '<div id="hb-popup-body">' +
@@ -413,9 +419,9 @@ def _build_embed_js(cfg: dict) -> str:
           '    <div style="font-size:40px;margin-bottom:8px;">&#x2705;</div>' +
           '    <p style="color:#166534;font-weight:700;font-size:15px;margin:0 0 12px">' + C.success_message + '</p>' +
           (C.coupon_code ? (
-          '    <div style="margin:4px 0 12px;padding:14px 20px;background:#f0f9ff;border:2px dashed #0ea5e9;border-radius:12px;text-align:center">' +
+          '    <div style="margin:4px 0 12px;padding:14px 20px;background:#f0f9f8;border:2px dashed #34897f;border-radius:12px;text-align:center">' +
           '      <p style="margin:0 0 6px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Tu cupón de reserva</p>' +
-          '      <p style="margin:0;font-size:26px;font-weight:900;color:#0369a1;letter-spacing:4px">' + C.coupon_code + '</p>' +
+          '      <p style="margin:0;font-size:26px;font-weight:900;color:#2c7a72;letter-spacing:4px">' + C.coupon_code + '</p>' +
           '      <p style="margin:8px 0 0;font-size:12px;color:#64748b">Úsalo al reservar en hotboat.cl</p>' +
           '    </div>'
           ) : '') +
@@ -485,7 +491,7 @@ def _build_embed_js(cfg: dict) -> str:
             else                    data.extra_data[n] = v;
           }});
 
-          if (!data.email) {{
+          if (!data.email || (C.require_name && !data.name) || (C.require_phone && !data.phone)) {{
             if (btn) {{ btn.disabled = false; btn.textContent = C.button_text; }}
             return;
           }}

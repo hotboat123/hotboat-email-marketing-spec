@@ -18,6 +18,8 @@ export default function NewFormPage() {
   const [successMessage, setSuccessMessage] = useState("¡Gracias! Pronto recibirás noticias nuestras.");
   const [collectName, setCollectName] = useState(true);
   const [collectPhone, setCollectPhone] = useState(false);
+  const [requireName, setRequireName] = useState(false);
+  const [requirePhone, setRequirePhone] = useState(false);
   const [trigger, setTrigger] = useState<FormTrigger>("delay");
   const [delaySeconds, setDelaySeconds] = useState(5);
   const [scrollPct, setScrollPct] = useState(50);
@@ -32,6 +34,8 @@ export default function NewFormPage() {
         success_message: successMessage,
         collect_name: collectName,
         collect_phone: collectPhone,
+        require_name: requireName,
+        require_phone: requirePhone,
         popup_trigger: trigger,
         popup_delay_seconds: delaySeconds,
         popup_scroll_pct: scrollPct,
@@ -112,24 +116,50 @@ export default function NewFormPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
           <p className="text-sm font-semibold text-gray-700">Campos del formulario</p>
           <p className="text-xs text-gray-400">El campo de email siempre se incluye.</p>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={collectName}
-              onChange={(e) => setCollectName(e.target.checked)}
-              className="w-4 h-4 accent-brand-600"
-            />
-            <span className="text-sm text-gray-700">Pedir nombre</span>
-          </label>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={collectPhone}
-              onChange={(e) => setCollectPhone(e.target.checked)}
-              className="w-4 h-4 accent-brand-600"
-            />
-            <span className="text-sm text-gray-700">Pedir teléfono</span>
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={collectName}
+                onChange={(e) => { setCollectName(e.target.checked); if (!e.target.checked) setRequireName(false); }}
+                className="w-4 h-4 accent-brand-600"
+              />
+              <span className="text-sm text-gray-700">Pedir nombre</span>
+            </label>
+            {collectName && (
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={requireName}
+                  onChange={(e) => setRequireName(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-brand-600"
+                />
+                Obligatorio
+              </label>
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={collectPhone}
+                onChange={(e) => { setCollectPhone(e.target.checked); if (!e.target.checked) setRequirePhone(false); }}
+                className="w-4 h-4 accent-brand-600"
+              />
+              <span className="text-sm text-gray-700">Pedir teléfono</span>
+            </label>
+            {collectPhone && (
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={requirePhone}
+                  onChange={(e) => setRequirePhone(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-brand-600"
+                />
+                Obligatorio
+              </label>
+            )}
+          </div>
         </div>
 
         {/* Trigger */}

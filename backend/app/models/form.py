@@ -15,6 +15,9 @@ class SignupForm(SQLModel, table=True):
     success_message: str = Field(default="¡Gracias! Pronto recibirás noticias nuestras.")
     collect_name: bool = Field(default=True)
     collect_phone: bool = Field(default=False)
+    # Only meaningful when the matching collect_* is also true.
+    require_name: bool = Field(default=False)
+    require_phone: bool = Field(default=False)
     # delay | exit_intent | scroll
     popup_trigger: str = Field(default="delay")
     popup_delay_seconds: int = Field(default=5)
@@ -53,6 +56,8 @@ class SignupFormCreate(SQLModel):
     success_message: str = "¡Gracias! Pronto recibirás noticias nuestras."
     collect_name: bool = True
     collect_phone: bool = False
+    require_name: bool = False
+    require_phone: bool = False
     popup_trigger: str = "delay"
     popup_delay_seconds: int = 5
     popup_scroll_pct: int = 50
@@ -69,6 +74,8 @@ class SignupFormUpdate(SQLModel):
     success_message: Optional[str] = None
     collect_name: Optional[bool] = None
     collect_phone: Optional[bool] = None
+    require_name: Optional[bool] = None
+    require_phone: Optional[bool] = None
     popup_trigger: Optional[str] = None
     popup_delay_seconds: Optional[int] = None
     popup_scroll_pct: Optional[int] = None
@@ -87,6 +94,8 @@ class SignupFormRead(SQLModel):
     success_message: str
     collect_name: bool
     collect_phone: bool
+    require_name: bool
+    require_phone: bool
     popup_trigger: str
     popup_delay_seconds: int
     popup_scroll_pct: int

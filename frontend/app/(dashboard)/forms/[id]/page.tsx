@@ -28,14 +28,13 @@ const FIELD_TYPES = [
 ];
 
 const HTML_TEMPLATE = (title: string, btnText: string, successMsg: string) => `<!--
-  Popup personalizado HotBoat
+  Popup personalizado
   Elementos requeridos: #hb-popup-form con input name="email"
   Opcional: #hb-popup-close para el botón de cerrar
              #hb-popup-success para el mensaje de éxito
 -->
-<div style="background:linear-gradient(135deg,#0369a1,#0ea5e9);padding:24px 48px 24px 24px;position:relative">
+<div style="background:linear-gradient(135deg,#2c7a72,#34897f);padding:24px 48px 24px 24px;position:relative">
   <button id="hb-popup-close" style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,0.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:18px;line-height:28px">×</button>
-  <p style="margin:0 0 4px;color:rgba(255,255,255,0.7);font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:700">HotBoat</p>
   <h2 style="margin:0;color:#fff;font-size:20px;font-weight:700">${title}</h2>
 </div>
 <div style="padding:24px">
@@ -51,7 +50,7 @@ const HTML_TEMPLATE = (title: string, btnText: string, successMsg: string) => `<
     <!-- Añade más campos aquí -->
 
     <button type="submit"
-      style="width:100%;padding:12px;background:linear-gradient(135deg,#0369a1,#0ea5e9);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px">
+      style="width:100%;padding:12px;background:linear-gradient(135deg,#2c7a72,#34897f);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px">
       ${btnText}
     </button>
   </form>
@@ -444,21 +443,20 @@ export default function FormDetailPage() {
                 <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-sm w-full border border-gray-200">
                   {previewScreen === 1 ? (
                     <>
-                      <div className="bg-gradient-to-r from-sky-700 to-sky-500 px-6 py-5 relative">
-                        <p className="text-xs text-sky-200 font-bold tracking-widest uppercase mb-1">HotBoat</p>
+                      <div className="bg-gradient-to-r from-brand-700 to-brand-600 px-6 py-5 relative">
                         <h3 className="text-white font-bold text-lg">{form.title}</h3>
                       </div>
                       <div className="px-6 py-5 space-y-2">
                         {form.description && <p className="text-gray-500 text-sm mb-2">{form.description}</p>}
-                        {form.collect_name && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu nombre</div>}
+                        {form.collect_name && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu nombre{form.require_name ? " *" : ""}</div>}
                         <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu email *</div>
-                        {form.collect_phone && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu teléfono</div>}
+                        {form.collect_phone && <div className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400">Tu teléfono{form.require_phone ? " *" : ""}</div>}
                         {currentFields.map((f) => (
                           <div key={f.key} className="rounded-lg border border-gray-200 bg-gray-50 px-3 flex items-center text-sm text-gray-400" style={{ height: f.type === "textarea" ? 64 : 36 }}>
                             {f.label}{f.required ? " *" : ""}
                           </div>
                         ))}
-                        <div className="h-10 rounded-xl bg-gradient-to-r from-sky-700 to-sky-500 flex items-center justify-center text-white text-sm font-bold">{form.button_text}</div>
+                        <div className="h-10 rounded-xl bg-gradient-to-r from-brand-700 to-brand-600 flex items-center justify-center text-white text-sm font-bold">{form.button_text}</div>
                       </div>
                     </>
                   ) : (
@@ -466,9 +464,9 @@ export default function FormDetailPage() {
                       <div className="text-4xl">✅</div>
                       <p className="text-green-700 font-bold text-sm">{form.success_message}</p>
                       {(localCoupon ?? form.coupon_code) && (
-                        <div className="mt-2 p-4 bg-sky-50 border-2 border-dashed border-sky-400 rounded-xl">
+                        <div className="mt-2 p-4 bg-brand-50 border-2 border-dashed border-brand-400 rounded-xl">
                           <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-1">Tu cupón de reserva</p>
-                          <p className="text-2xl font-black text-sky-700 tracking-widest">{localCoupon ?? form.coupon_code}</p>
+                          <p className="text-2xl font-black text-brand-700 tracking-widest">{localCoupon ?? form.coupon_code}</p>
                           <p className="text-xs text-gray-400 mt-1">Úsalo al reservar en hotboat.cl</p>
                         </div>
                       )}

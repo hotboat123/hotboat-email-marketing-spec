@@ -60,6 +60,9 @@ migrations = [
     "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMP",
     "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMP",
     "CREATE INDEX IF NOT EXISTS ix_automation_runs_resend_id ON automation_runs (resend_id)",
+    # signup_forms — "requerido" toggle for name/phone, independent of collect_*
+    "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS require_name BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS require_phone BOOLEAN DEFAULT FALSE",
     # signup_forms (ensure new table exists)
     """CREATE TABLE IF NOT EXISTS signup_forms (
         id SERIAL PRIMARY KEY,

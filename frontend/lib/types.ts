@@ -162,6 +162,8 @@ export interface SignupForm {
   success_message: string;
   collect_name: boolean;
   collect_phone: boolean;
+  require_name: boolean;
+  require_phone: boolean;
   popup_trigger: FormTrigger;
   popup_delay_seconds: number;
   popup_scroll_pct: number;
