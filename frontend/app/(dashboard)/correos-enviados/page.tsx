@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { sentEmailsApi } from "@/lib/api";
 import { SentEmail, SentEmailsPage } from "@/lib/types";
 import { formatDateTime, statusLabel } from "@/lib/utils";
-import { Search, Mail, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Mail, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 
 const PAGE_SIZE = 50;
 
@@ -26,6 +26,17 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const PROVIDER_LABEL: Record<string, string> = { ses: "SES", resend: "Resend" };
+
+type SortBy = "at" | "email" | "subject" | "origin" | "status";
+type SortDir = "asc" | "desc";
+
+const COLUMNS: { key: SortBy; label: string; align?: "center" }[] = [
+  { key: "email", label: "Email" },
+  { key: "at", label: "Fecha" },
+  { key: "subject", label: "Asunto" },
+  { key: "origin", label: "Origen" },
+  { key: "status", label: "Estado", align: "center" },
+];
 
 function SkeletonRow() {
   return (
@@ -48,6 +59,8 @@ export default function SentEmailsPageRoute() {
   const [status, setStatus] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("at");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(0);
 
   function debounce(setDebounced: (v: string) => void) {
@@ -63,8 +76,18 @@ export default function SentEmailsPageRoute() {
   const debounceEmail = debounce(setDebouncedEmail);
   const debounceSubject = debounce(setDebouncedSubject);
 
+  function toggleSort(col: SortBy) {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(col);
+      setSortDir(col === "at" ? "desc" : "asc");
+    }
+    setPage(0);
+  }
+
   const { data, isLoading, isError, refetch } = useQuery<SentEmailsPage>({
-    queryKey: ["sent-emails", debouncedEmail, debouncedSubject, origin, status, dateFrom, dateTo, page],
+    queryKey: ["sent-emails", debouncedEmail, debouncedSubject, origin, status, dateFrom, dateTo, sortBy, sortDir, page],
     queryFn: () =>
       sentEmailsApi
         .list({
@@ -74,6 +97,8 @@ export default function SentEmailsPageRoute() {
           status: status || undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
+          sort_by: sortBy,
+          sort_dir: sortDir,
           skip: page * PAGE_SIZE,
           limit: PAGE_SIZE,
         })
@@ -84,16 +109,35 @@ export default function SentEmailsPageRoute() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const sesCount = data?.ses_count ?? 0;
+  const resendCount = data?.resend_count ?? 0;
   const hasNextPage = (page + 1) * PAGE_SIZE < total;
   const hasPrevPage = page > 0;
 
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Correos enviados</h1>
-        <p className="text-gray-500 mt-1 text-sm">
-          Campañas y automatizaciones — {total.toLocaleString("es-CL")} envíos
-        </p>
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Correos enviados</h1>
+          <p className="text-gray-500 mt-1 text-sm">
+            Campañas y automatizaciones — {total.toLocaleString("es-CL")} envíos
+          </p>
+        </div>
+
+        {/* Resumen para saber cuánto se debe pagar: cuenta por proveedor,
+           independiente del filtro de proveedor mismo — así un rango de
+           fechas muestra "cuántos SES en esta ventana" sin tener que elegir
+           el proveedor en el dropdown primero. */}
+        <div className="flex gap-3">
+          <div className="bg-white rounded-xl border border-gray-200 px-4 py-2.5 text-right">
+            <p className="text-lg font-bold text-gray-900 tabular-nums">{sesCount.toLocaleString("es-CL")}</p>
+            <p className="text-[11px] text-gray-400 uppercase tracking-wide">vía SES</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 px-4 py-2.5 text-right">
+            <p className="text-lg font-bold text-gray-500 tabular-nums">{resendCount.toLocaleString("es-CL")}</p>
+            <p className="text-[11px] text-gray-400 uppercase tracking-wide">vía Resend</p>
+          </div>
+        </div>
       </div>
 
       {isError && (
@@ -169,11 +213,22 @@ export default function SentEmailsPageRoute() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Asunto</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Origen</th>
-                <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
+                {COLUMNS.map((col) => (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key)}
+                    className={`px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 transition-colors ${col.align === "center" ? "text-center" : "text-left"}`}
+                  >
+                    <span className={`inline-flex items-center gap-1 ${col.align === "center" ? "justify-center" : ""}`}>
+                      {col.label}
+                      {sortBy === col.key ? (
+                        sortDir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                      ) : (
+                        <ArrowUpDown size={12} className="text-gray-300" />
+                      )}
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>

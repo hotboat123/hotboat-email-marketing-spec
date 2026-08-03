@@ -256,6 +256,8 @@ export interface SentEmail {
 export interface SentEmailsPage {
   items: SentEmail[];
   total: number;
+  ses_count: number;
+  resend_count: number;
 }
 
 export interface WebTrafficDay {

@@ -215,7 +215,8 @@ export const adsApi = {
 export const sentEmailsApi = {
   list: (params: {
     email?: string; subject?: string; origin?: string; status?: string; provider?: string;
-    date_from?: string; date_to?: string; skip?: number; limit?: number;
+    date_from?: string; date_to?: string; sort_by?: string; sort_dir?: string;
+    skip?: number; limit?: number;
   }) => api.get("/sent-emails", { params }),
 };
 

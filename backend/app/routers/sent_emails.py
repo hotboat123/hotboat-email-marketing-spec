@@ -1,10 +1,10 @@
 """
 Unified sent-email log — combines campaign sends and automation runs into
-a single, filterable, paginated view (mirrors the "Correos enviados" page
-from the sibling Happy Lápiz product). A raw SQL UNION ALL over both tables
-(rather than two ORM queries merged in Python) is what makes global sorting
-+ pagination across ~15k+ rows correct and cheap — Postgres does the work,
-not this process.
+a single, filterable, sortable, paginated view (mirrors the "Correos
+enviados" page from the sibling Happy Lápiz product). A raw SQL UNION ALL
+over both tables (rather than two ORM queries merged in Python) is what
+makes global sorting + pagination correct and cheap across the current
+~15k+ rows — Postgres does the work, not this process.
 
 `provider` (SES vs Resend) isn't a stored column on either table — adding
 one would need a migration and can't be back-filled for historical rows
@@ -12,6 +12,12 @@ anyway. Instead it's derived from resend_id length: Resend's ids are
 always a 36-char UUID; SES's (sesv2) are much longer
 (hex-hyphen-uuid-hyphen-seq, ~59-70 chars). Good enough to answer "how much
 do I owe for SES" without a schema change.
+
+ses_count/resend_count in the response are computed from every filter
+EXCEPT provider (date range, search, origin, status still apply) — so
+picking a date range shows "how many SES sends in this window" regardless
+of whether the provider dropdown itself is set, which is the number that
+actually matters for reading an AWS bill.
 """
 from datetime import date, datetime, timedelta
 from typing import List, Optional
@@ -69,6 +75,15 @@ WITH unified AS (
 )
 """
 
+# Whitelisted — never interpolate the raw sort_by/sort_dir query params into SQL.
+_SORT_COLUMNS = {
+    "at": "at",
+    "email": "email",
+    "subject": "subject",
+    "origin": "source_type",
+    "status": "status",
+}
+
 
 class SentEmailRow(BaseModel):
     id: int
@@ -84,24 +99,15 @@ class SentEmailRow(BaseModel):
 class SentEmailsPage(BaseModel):
     items: List[SentEmailRow]
     total: int
+    ses_count: int
+    resend_count: int
 
 
-@router.get("", response_model=SentEmailsPage)
-def list_sent_emails(
-    email: Optional[str] = Query(None, description="Búsqueda parcial en el email del destinatario"),
-    subject: Optional[str] = Query(None, description="Búsqueda parcial en el asunto"),
-    origin: Optional[str] = Query(None, description="'campaign' o 'automation'"),
-    status: Optional[str] = Query(None),
-    provider: Optional[str] = Query(None, description="'ses' o 'resend'"),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-    session: Session = Depends(get_session),
-    _: User = Depends(get_current_user),
-):
+def _build_where(
+    *, email, subject, origin, status, date_from, date_to, include_provider, provider,
+) -> tuple[list, dict]:
     where = []
-    params: dict = {"skip": skip, "limit": limit}
+    params: dict = {}
 
     if email:
         where.append("email ILIKE :email")
@@ -115,35 +121,79 @@ def list_sent_emails(
     if status:
         where.append("status = :status")
         params["status"] = status
-    if provider in ("ses", "resend"):
-        if provider == "ses":
-            where.append(f"LENGTH(resend_id) >= {_SES_ID_MIN_LEN}")
-        else:
-            where.append(f"(resend_id IS NOT NULL AND LENGTH(resend_id) < {_SES_ID_MIN_LEN})")
     if date_from:
         where.append("at >= :date_from")
         params["date_from"] = date_from
     if date_to:
         where.append("at < :date_to_excl")
         params["date_to_excl"] = date_to + timedelta(days=1)
+    if include_provider and provider in ("ses", "resend"):
+        if provider == "ses":
+            where.append(f"LENGTH(resend_id) >= {_SES_ID_MIN_LEN}")
+        else:
+            where.append(f"(resend_id IS NOT NULL AND LENGTH(resend_id) < {_SES_ID_MIN_LEN})")
 
-    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    return where, params
 
-    query = text(f"""
+
+@router.get("", response_model=SentEmailsPage)
+def list_sent_emails(
+    email: Optional[str] = Query(None, description="Búsqueda parcial en el email del destinatario"),
+    subject: Optional[str] = Query(None, description="Búsqueda parcial en el asunto"),
+    origin: Optional[str] = Query(None, description="'campaign' o 'automation'"),
+    status: Optional[str] = Query(None),
+    provider: Optional[str] = Query(None, description="'ses' o 'resend'"),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    sort_by: str = Query("at", description="at | email | subject | origin | status"),
+    sort_dir: str = Query("desc", description="asc | desc"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    sort_col = _SORT_COLUMNS.get(sort_by, "at")
+    sort_direction = "ASC" if sort_dir == "asc" else "DESC"
+
+    # Counts (ses/resend/total) ignore the provider filter on purpose — see
+    # module docstring — so they reflect the other active filters only.
+    counts_where, counts_params = _build_where(
+        email=email, subject=subject, origin=origin, status=status,
+        date_from=date_from, date_to=date_to, include_provider=False, provider=None,
+    )
+    counts_where_sql = f"WHERE {' AND '.join(counts_where)}" if counts_where else ""
+    counts_query = text(f"""
+        {_UNIFIED_CTE}
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE LENGTH(resend_id) >= {_SES_ID_MIN_LEN}) AS ses_count,
+            COUNT(*) FILTER (WHERE resend_id IS NOT NULL AND LENGTH(resend_id) < {_SES_ID_MIN_LEN}) AS resend_count
+        FROM unified
+        {counts_where_sql}
+    """)
+    counts_row = session.connection().execute(counts_query, counts_params).one()
+
+    # Page of rows — same filters plus provider, with the requested sort.
+    page_where, page_params = _build_where(
+        email=email, subject=subject, origin=origin, status=status,
+        date_from=date_from, date_to=date_to, include_provider=True, provider=provider,
+    )
+    page_where_sql = f"WHERE {' AND '.join(page_where)}" if page_where else ""
+    page_params["skip"] = skip
+    page_params["limit"] = limit
+
+    page_query = text(f"""
         {_UNIFIED_CTE}
         SELECT
             row_id, source_type, source_name, email, at, subject, status,
-            CASE WHEN LENGTH(resend_id) >= {_SES_ID_MIN_LEN} THEN 'ses' ELSE 'resend' END AS provider,
-            COUNT(*) OVER() AS total_count
+            CASE WHEN LENGTH(resend_id) >= {_SES_ID_MIN_LEN} THEN 'ses' ELSE 'resend' END AS provider
         FROM unified
-        {where_sql}
-        ORDER BY at DESC
+        {page_where_sql}
+        ORDER BY {sort_col} {sort_direction} NULLS LAST, source_type, row_id
         LIMIT :limit OFFSET :skip
     """)
-    result = session.connection().execute(query, params)
-    rows = result.fetchall()
+    rows = session.connection().execute(page_query, page_params).fetchall()
 
-    total = rows[0].total_count if rows else 0
     items = [
         SentEmailRow(
             id=r.row_id, source_type=r.source_type, source_name=r.source_name,
@@ -151,4 +201,9 @@ def list_sent_emails(
         )
         for r in rows
     ]
-    return SentEmailsPage(items=items, total=total)
+    # total for pagination reflects the provider filter too (matches what's shown).
+    total = counts_row.ses_count if provider == "ses" else counts_row.resend_count if provider == "resend" else counts_row.total
+    return SentEmailsPage(
+        items=items, total=total,
+        ses_count=counts_row.ses_count, resend_count=counts_row.resend_count,
+    )
