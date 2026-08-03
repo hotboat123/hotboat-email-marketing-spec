@@ -26,6 +26,29 @@ Definiciones acordadas con el dueño del negocio:
 - "% que llenaron WhatsApp" = evento click_whatsapp (solo se dispara en la
   landing) — cuenta a quien hizo click para abrir WhatsApp, no a quien
   efectivamente escribió algo ahí.
+
+Clasificación de tráfico (agregado 2026-08-03, corrige doble conteo entre
+esta pestaña y la de WhatsApp): booking_visitor_events no distingue el
+origen de una sesión con una columna propia, pero cuando el bot de
+WhatsApp le manda a un lead un link de reserva (tracked_quote_links), TODA
+la sesión de booking-soft.html que resulta de abrir ese link queda marcada
+con link_token IS NOT NULL (ver visitor_tracking.py en hotboat-whatsapp).
+Antes, esas sesiones se contaban acá como "web" Y en la pestaña WhatsApp
+por teléfono — la misma persona aparecía dos veces. Ahora se excluyen de
+TODAS las consultas de esta página: "sesión web" pasa a significar
+específicamente "sesión que nunca llegó por un link que mandó el bot".
+
+Esto separa limpio el Flujo 1 (WhatsApp puro) del Flujo 2 (web puro). El
+Flujo 3 (web → clic en WhatsApp → reserva) es el caso intermedio: la
+sesión original en la landing SIGUE contando como web (nunca tuvo
+link_token), y el evento click_whatsapp que ya se registra ahí es
+exactamente el "% que hizo click en WhatsApp" que se pedía — pero la
+reserva final, si se completó charlando con el bot, se sigue contando
+también en la pestaña WhatsApp por teléfono: hoy no existe ningún dato que
+pruebe con certeza que esa conversación específica es la misma persona
+que la sesión web (WhatsApp no deja pasar ningún identificador a través
+del link wa.me). Decisión explícita del dueño: dejarlo así por ahora en
+vez de adivinar con una aproximación poco confiable.
 """
 from datetime import date, timedelta
 from typing import Optional
@@ -63,12 +86,24 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)  # rango inclusivo del lado del cliente
 
+    # Sesiones que llegaron por un link que mandó el bot de WhatsApp — se
+    # excluyen de TODO lo de abajo para que "sesión web" no cuente dos
+    # veces a la misma persona (una vez acá, otra en la pestaña WhatsApp
+    # por teléfono). Ver nota de clasificación en el docstring del módulo.
+    _EXCLUDE_WHATSAPP_SESSIONS = """
+        AND session_id NOT IN (
+            SELECT session_id FROM booking_visitor_events
+            WHERE link_token IS NOT NULL
+              AND recorded_at >= :desde AND recorded_at < :hasta_excl
+        )
+    """
+
     with engine.connect() as conn:
         # Sesiones totales + útiles por día. Un CTE agrupa cada sesión a su
         # primer día visto y su duración (último evento menos primero),
         # luego se cuenta por día — evita contar dos veces una sesión que
         # cruzó medianoche.
-        sessions_rows = conn.execute(text("""
+        sessions_rows = conn.execute(text(f"""
             WITH session_days AS (
                 SELECT
                     session_id,
@@ -76,6 +111,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
                     EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at))) > :useful_seconds AS interacted
                 FROM booking_visitor_events
                 WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+                {_EXCLUDE_WHATSAPP_SESSIONS}
                 GROUP BY session_id
             )
             SELECT day, COUNT(*) AS total, COUNT(*) FILTER (WHERE interacted) AS useful
@@ -86,7 +122,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # Eventos puntuales por día (cada uno cuenta sesiones DISTINTAS con
         # ese evento ese día, no el total de disparos — dos clicks en el
         # mismo botón en la misma sesión cuentan una vez).
-        event_rows = conn.execute(text("""
+        event_rows = conn.execute(text(f"""
             SELECT
                 DATE(recorded_at AT TIME ZONE 'America/Santiago') AS day,
                 event_type,
@@ -94,12 +130,13 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
             FROM booking_visitor_events
             WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
               AND event_type IN ('click_whatsapp', 'click_reservar', 'view_precio', 'view_prices', 'date_selected', 'booking_completed')
+              {_EXCLUDE_WHATSAPP_SESSIONS}
             GROUP BY day, event_type
         """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
 
         # "Vio precio y se fue" — sesiones con view_precio/view_prices que
         # NUNCA llegaron a date_selected en esa misma sesión.
-        price_left_rows = conn.execute(text("""
+        price_left_rows = conn.execute(text(f"""
             WITH price_sessions AS (
                 SELECT
                     session_id,
@@ -107,6 +144,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
                     BOOL_OR(event_type = 'date_selected') AS advanced
                 FROM booking_visitor_events
                 WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+                  {_EXCLUDE_WHATSAPP_SESSIONS}
                   AND session_id IN (
                       SELECT session_id FROM booking_visitor_events
                       WHERE event_type IN ('view_precio', 'view_prices')
@@ -283,6 +321,11 @@ def get_session_duration_histogram(desde: date, hasta: date) -> dict:
                 EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at))) AS seconds
             FROM booking_visitor_events
             WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+              AND session_id NOT IN (
+                  SELECT session_id FROM booking_visitor_events
+                  WHERE link_token IS NOT NULL
+                    AND recorded_at >= :desde AND recorded_at < :hasta_excl
+              )
             GROUP BY session_id
         """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
 

@@ -393,14 +393,20 @@ export default function TraficoWebPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="% Conversión" sub="Pagaron ÷ sesiones útiles, por día">
+        <ChartCard title="% Conversión" sub="Pagaron ÷ sesiones útiles, por día — línea punteada: # de pagos">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} unit="%" />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, "Conversión"]} />
-              <Line type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} unit="%" />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                formatter={(v, name) => (name === "Conversión" ? [`${v}%`, name] : [v, name])}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line yAxisId="left" type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+              <Line yAxisId="right" type="monotone" dataKey="paid" name="# Pagos" stroke="#0369a1" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -531,14 +537,20 @@ export default function TraficoWebPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="% Conversión" sub="Pagaron ÷ conversaciones útiles, por día">
+        <ChartCard title="% Conversión" sub="Pagaron ÷ conversaciones útiles, por día — línea punteada: # de pagos">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={waChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} unit="%" />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, "Conversión"]} />
-              <Line type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} unit="%" />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                formatter={(v, name) => (name === "Conversión" ? [`${v}%`, name] : [v, name])}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line yAxisId="left" type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+              <Line yAxisId="right" type="monotone" dataKey="paid" name="# Pagos" stroke="#0369a1" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
