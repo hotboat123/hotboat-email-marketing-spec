@@ -25,7 +25,10 @@ class CampaignSend(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     campaign_id: int = Field(foreign_key="campaigns.id", index=True)
-    contact_id: int = Field(foreign_key="contacts.id", index=True)
+    # Nullable: test sends (send-test) aren't addressed to a real segment
+    # contact, so they fall back to to_email instead.
+    contact_id: Optional[int] = Field(default=None, foreign_key="contacts.id", index=True)
+    to_email: Optional[str] = None
     resend_id: Optional[str] = Field(default=None, index=True)
     # queued | sent | delivered | opened | clicked | bounced | complained
     status: str = Field(default="queued")

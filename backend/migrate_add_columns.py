@@ -63,6 +63,12 @@ migrations = [
     # signup_forms — "requerido" toggle for name/phone, independent of collect_*
     "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS require_name BOOLEAN DEFAULT FALSE",
     "ALTER TABLE signup_forms ADD COLUMN IF NOT EXISTS require_phone BOOLEAN DEFAULT FALSE",
+    # campaign_sends — test sends (send-test) have no real segment contact
+    # behind them, so contact_id has to be nullable, with to_email as the
+    # free-text fallback (same pattern automation_runs already uses via
+    # contact_email) so test sends can be tracked for billing/history too.
+    "ALTER TABLE campaign_sends ALTER COLUMN contact_id DROP NOT NULL",
+    "ALTER TABLE campaign_sends ADD COLUMN IF NOT EXISTS to_email VARCHAR",
     # signup_forms (ensure new table exists)
     """CREATE TABLE IF NOT EXISTS signup_forms (
         id SERIAL PRIMARY KEY,

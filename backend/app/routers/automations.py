@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, date, timedelta
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -157,6 +158,20 @@ def test_automation(
     )
     if not result["sent"]:
         raise HTTPException(status_code=500, detail=f"Error al enviar: {result['reason']}")
+
+    # Test sends still cost real money on whichever provider is active — track
+    # them the same way a real run would (contact_id=None since there's no
+    # real contact behind a test) so they show up in Correos enviados and
+    # count toward the SES/Resend totals used for billing.
+    session.add(AutomationRun(
+        automation_id=a.id,
+        contact_email=settings.NOTIFY_EMAIL,
+        trigger_key=f"test_{uuid.uuid4().hex[:12]}",
+        status="sent",
+        resend_id=result.get("message_id"),
+        executed_at=datetime.utcnow(),
+    ))
+    session.commit()
 
     return {"ok": True, "sent_to": settings.NOTIFY_EMAIL}
 

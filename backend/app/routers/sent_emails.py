@@ -41,14 +41,14 @@ WITH unified AS (
         cs.id AS row_id,
         'campaign' AS source_type,
         c.name AS source_name,
-        ct.email AS email,
+        COALESCE(ct.email, cs.to_email) AS email,
         cs.sent_at AS at,
         c.subject AS subject,
         cs.status AS status,
         cs.resend_id AS resend_id
     FROM campaign_sends cs
     JOIN campaigns c ON c.id = cs.campaign_id
-    JOIN contacts ct ON ct.id = cs.contact_id
+    LEFT JOIN contacts ct ON ct.id = cs.contact_id
     WHERE cs.sent_at IS NOT NULL
 
     UNION ALL

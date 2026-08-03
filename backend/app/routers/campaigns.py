@@ -93,7 +93,7 @@ def campaigns_bulk_metrics(
     # Conversions — same per-campaign window logic as campaign_conversions()
     # below, just evaluated for every campaign against ONE external query
     # instead of one query per campaign.
-    contact_ids = {s.contact_id for s in all_sends}
+    contact_ids = {s.contact_id for s in all_sends if s.contact_id is not None}
     contacts = session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all() if contact_ids else []
     email_by_contact_id = {ct.id: ct.email for ct in contacts}
 
@@ -284,6 +284,20 @@ def send_test_email(
     )
     if not result["sent"]:
         raise HTTPException(status_code=500, detail=result["reason"])
+
+    # Test sends still cost real money on whichever provider is active — track
+    # them (contact_id=None, no real segment contact behind a test) so they
+    # show up in Correos enviados and count toward the SES/Resend totals.
+    session.add(CampaignSend(
+        campaign_id=campaign_id,
+        contact_id=None,
+        to_email=current_user.email,
+        resend_id=result.get("message_id"),
+        status="sent",
+        sent_at=datetime.utcnow(),
+    ))
+    session.commit()
+
     return {"ok": True, "sent_to": current_user.email, "email_id": result["message_id"]}
 
 
@@ -345,8 +359,8 @@ def campaign_conversions(
     if not sends:
         return empty
 
-    contact_ids = list({s.contact_id for s in sends})
-    contacts_q = session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all()
+    contact_ids = list({s.contact_id for s in sends if s.contact_id is not None})
+    contacts_q = session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all() if contact_ids else []
     emails = [ct.email for ct in contacts_q]
     if not emails:
         return empty
@@ -402,14 +416,14 @@ def campaign_sends(
         select(CampaignSend).where(CampaignSend.campaign_id == campaign_id)
     ).all()
 
-    contact_ids = [s.contact_id for s in sends]
-    contacts = {c.id: c for c in session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all()}
+    contact_ids = [s.contact_id for s in sends if s.contact_id is not None]
+    contacts = {c.id: c for c in session.exec(select(Contact).where(Contact.id.in_(contact_ids))).all()} if contact_ids else {}
 
     return [
         {
             "contact_id": s.contact_id,
             "name":       contacts[s.contact_id].name if s.contact_id in contacts else "—",
-            "email":      contacts[s.contact_id].email if s.contact_id in contacts else "—",
+            "email":      contacts[s.contact_id].email if s.contact_id in contacts else (s.to_email or "—"),
             "opted_in":   contacts[s.contact_id].opted_in if s.contact_id in contacts else None,
             "status":     s.status,
             "sent_at":    s.sent_at,
