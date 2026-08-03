@@ -240,6 +240,24 @@ export interface AutomationConversions {
   converted_contacts: number;
 }
 
+export type SentEmailOrigin = "campaign" | "automation";
+
+export interface SentEmail {
+  id: number;
+  source_type: SentEmailOrigin;
+  source_name: string;
+  email: string;
+  at: string | null;
+  subject: string;
+  status: string;
+  provider: "ses" | "resend";
+}
+
+export interface SentEmailsPage {
+  items: SentEmail[];
+  total: number;
+}
+
 export interface WebTrafficDay {
   day: string;
   total_sessions: number;

@@ -211,6 +211,14 @@ export const adsApi = {
     api.get("/ads/bookings", { params: { level, id, date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
 };
 
+// Correos enviados (log unificado de campañas + automatizaciones)
+export const sentEmailsApi = {
+  list: (params: {
+    email?: string; subject?: string; origin?: string; status?: string; provider?: string;
+    date_from?: string; date_to?: string; skip?: number; limit?: number;
+  }) => api.get("/sent-emails", { params }),
+};
+
 // Sync
 export const syncApi = {
   run: () => api.post("/sync/run"),

@@ -1,0 +1,250 @@
+"use client";
+
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { sentEmailsApi } from "@/lib/api";
+import { SentEmail, SentEmailsPage } from "@/lib/types";
+import { formatDateTime, statusLabel } from "@/lib/utils";
+import { Search, Mail, ChevronLeft, ChevronRight } from "lucide-react";
+
+const PAGE_SIZE = 50;
+
+const ORIGIN_LABEL: Record<string, string> = {
+  campaign: "Campaña",
+  automation: "Automatización",
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  queued: "bg-gray-100 text-gray-600",
+  sent: "bg-blue-50 text-blue-700",
+  delivered: "bg-green-50 text-green-700",
+  opened: "bg-purple-50 text-purple-700",
+  clicked: "bg-brand-50 text-brand-700",
+  bounced: "bg-red-50 text-red-600",
+  complained: "bg-red-50 text-red-600",
+  failed: "bg-red-50 text-red-600",
+};
+
+const PROVIDER_LABEL: Record<string, string> = { ses: "SES", resend: "Resend" };
+
+function SkeletonRow() {
+  return (
+    <tr className="border-b border-gray-100">
+      <td className="px-5 py-3"><div className="h-4 bg-gray-200 rounded w-44 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-32 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-56 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-40 animate-pulse" /></td>
+      <td className="px-5 py-3"><div className="h-5 bg-gray-100 rounded-full w-16 animate-pulse mx-auto" /></td>
+    </tr>
+  );
+}
+
+export default function SentEmailsPageRoute() {
+  const [email, setEmail] = useState("");
+  const [debouncedEmail, setDebouncedEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [debouncedSubject, setDebouncedSubject] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [status, setStatus] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(0);
+
+  function debounce(setDebounced: (v: string) => void) {
+    return (val: string) => {
+      clearTimeout((window as unknown as { _st?: ReturnType<typeof setTimeout> })._st);
+      (window as unknown as { _st?: ReturnType<typeof setTimeout> })._st = setTimeout(() => {
+        setDebounced(val);
+        setPage(0);
+      }, 300);
+    };
+  }
+
+  const debounceEmail = debounce(setDebouncedEmail);
+  const debounceSubject = debounce(setDebouncedSubject);
+
+  const { data, isLoading, isError, refetch } = useQuery<SentEmailsPage>({
+    queryKey: ["sent-emails", debouncedEmail, debouncedSubject, origin, status, dateFrom, dateTo, page],
+    queryFn: () =>
+      sentEmailsApi
+        .list({
+          email: debouncedEmail || undefined,
+          subject: debouncedSubject || undefined,
+          origin: origin || undefined,
+          status: status || undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+          skip: page * PAGE_SIZE,
+          limit: PAGE_SIZE,
+        })
+        .then((r) => r.data),
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const hasNextPage = (page + 1) * PAGE_SIZE < total;
+  const hasPrevPage = page > 0;
+
+  return (
+    <div className="p-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Correos enviados</h1>
+        <p className="text-gray-500 mt-1 text-sm">
+          Campañas y automatizaciones — {total.toLocaleString("es-CL")} envíos
+        </p>
+      </div>
+
+      {isError && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center justify-between">
+          <span>Error al cargar los envíos.</span>
+          <button onClick={() => refetch()} className="text-xs font-medium underline">Reintentar</button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {/* Filtros */}
+        <div className="px-5 py-3.5 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <div className="relative w-56">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); debounceEmail(e.target.value); }}
+              placeholder="Buscar por email..."
+              className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+            />
+          </div>
+          <div className="relative w-56">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={subject}
+              onChange={(e) => { setSubject(e.target.value); debounceSubject(e.target.value); }}
+              placeholder="Buscar por asunto..."
+              className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+            />
+          </div>
+          <select
+            value={origin}
+            onChange={(e) => { setOrigin(e.target.value); setPage(0); }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Todos los orígenes</option>
+            <option value="campaign">Campaña</option>
+            <option value="automation">Automatización</option>
+          </select>
+          <select
+            value={status}
+            onChange={(e) => { setStatus(e.target.value); setPage(0); }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">Todos los estados</option>
+            <option value="queued">En cola</option>
+            <option value="sent">Enviado</option>
+            <option value="delivered">Entregado</option>
+            <option value="opened">Abierto</option>
+            <option value="clicked">Clic</option>
+            <option value="bounced">Rebotado</option>
+            <option value="complained">Spam</option>
+            <option value="failed">Falló</option>
+          </select>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
+              className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <span className="text-gray-400 text-xs">–</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
+              className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Asunto</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Origen</th>
+                <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                [...Array(10)].map((_, i) => <SkeletonRow key={i} />)
+              ) : items.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-16 text-center">
+                    <Mail size={36} className="mx-auto text-gray-300 mb-3" />
+                    <p className="text-gray-500 font-medium">Sin envíos</p>
+                    <p className="text-gray-400 text-xs mt-1">Prueba con otros filtros o un rango de fechas distinto</p>
+                  </td>
+                </tr>
+              ) : (
+                items.map((it: SentEmail) => (
+                  <tr key={`${it.source_type}-${it.id}`} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 text-gray-700 text-xs max-w-[220px] truncate" title={it.email}>
+                      {it.email}
+                    </td>
+                    <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
+                      {formatDateTime(it.at)}
+                    </td>
+                    <td className="px-5 py-3 text-gray-700 text-xs max-w-[320px] truncate" title={it.subject}>
+                      {it.subject}
+                    </td>
+                    <td className="px-5 py-3 text-gray-500 text-xs">
+                      {ORIGIN_LABEL[it.source_type] ?? it.source_type}
+                      <span className="text-gray-300"> · </span>
+                      <span className="text-gray-400">{it.source_name}</span>
+                      <span
+                        className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500"
+                        title="Proveedor de envío"
+                      >
+                        {PROVIDER_LABEL[it.provider] ?? it.provider}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[it.status] ?? "bg-gray-100 text-gray-600"}`}>
+                        {statusLabel(it.status)}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Paginación */}
+        {(hasPrevPage || hasNextPage) && (
+          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={!hasPrevPage}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft size={13} /> Anterior
+            </button>
+            <span className="text-xs text-gray-400">
+              {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} de {total.toLocaleString("es-CL")}
+            </span>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={!hasNextPage}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Siguiente <ChevronRight size={13} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
