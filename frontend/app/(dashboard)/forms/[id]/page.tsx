@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formsApi } from "@/lib/api";
-import { SignupForm, FormSubmission, FormField } from "@/lib/types";
+import { SignupForm, FormSubmission, FormField, FormTrigger } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import {
   ArrowLeft, Copy, Check, Users, Code, Plus, Trash2,
@@ -64,6 +64,214 @@ const HTML_TEMPLATE = (title: string, btnText: string, successMsg: string) => `<
     Respetamos tu privacidad. Puedes darte de baja cuando quieras.
   </p>
 </div>`;
+
+// ── Content editor (título, descripción, campos fijos, cuándo mostrar) ────────
+function ContentEditor({
+  form,
+  onSave,
+  saving,
+}: {
+  form: SignupForm;
+  onSave: (data: Partial<SignupForm>) => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState(form.name);
+  const [title, setTitle] = useState(form.title);
+  const [description, setDescription] = useState(form.description ?? "");
+  const [buttonText, setButtonText] = useState(form.button_text);
+  const [successMessage, setSuccessMessage] = useState(form.success_message);
+  const [collectName, setCollectName] = useState(form.collect_name);
+  const [collectPhone, setCollectPhone] = useState(form.collect_phone);
+  const [requireName, setRequireName] = useState(form.require_name);
+  const [requirePhone, setRequirePhone] = useState(form.require_phone);
+  const [trigger, setTrigger] = useState<FormTrigger>(form.popup_trigger);
+  const [delaySeconds, setDelaySeconds] = useState(form.popup_delay_seconds);
+  const [scrollPct, setScrollPct] = useState(form.popup_scroll_pct);
+
+  const isValid = !!(name && title && buttonText);
+
+  function handleSave() {
+    onSave({
+      name,
+      title,
+      description: description || null,
+      button_text: buttonText,
+      success_message: successMessage,
+      collect_name: collectName,
+      collect_phone: collectPhone,
+      require_name: requireName,
+      require_phone: requirePhone,
+      popup_trigger: trigger,
+      popup_delay_seconds: delaySeconds,
+      popup_scroll_pct: scrollPct,
+    });
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Nombre interno *</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <p className="text-sm font-semibold text-gray-700">Contenido del popup</p>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Texto del botón *</label>
+            <input
+              value={buttonText}
+              onChange={(e) => setButtonText(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mensaje de éxito</label>
+            <input
+              value={successMessage}
+              onChange={(e) => setSuccessMessage(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+        <p className="text-sm font-semibold text-gray-700">Campos del formulario</p>
+        <p className="text-xs text-gray-400">El campo de email siempre se incluye y siempre es obligatorio.</p>
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={collectName}
+              onChange={(e) => { setCollectName(e.target.checked); if (!e.target.checked) setRequireName(false); }}
+              className="w-4 h-4 accent-brand-600"
+            />
+            <span className="text-sm text-gray-700">Pedir nombre</span>
+          </label>
+          {collectName && (
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500">
+              <input
+                type="checkbox"
+                checked={requireName}
+                onChange={(e) => setRequireName(e.target.checked)}
+                className="w-3.5 h-3.5 accent-brand-600"
+              />
+              Obligatorio
+            </label>
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={collectPhone}
+              onChange={(e) => { setCollectPhone(e.target.checked); if (!e.target.checked) setRequirePhone(false); }}
+              className="w-4 h-4 accent-brand-600"
+            />
+            <span className="text-sm text-gray-700">Pedir teléfono</span>
+          </label>
+          {collectPhone && (
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500">
+              <input
+                type="checkbox"
+                checked={requirePhone}
+                onChange={(e) => setRequirePhone(e.target.checked)}
+                className="w-3.5 h-3.5 accent-brand-600"
+              />
+              Obligatorio
+            </label>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <p className="text-sm font-semibold text-gray-700">¿Cuándo mostrar el popup?</p>
+        <div className="space-y-2">
+          {([
+            { value: "delay", label: "Después de X segundos" },
+            { value: "exit_intent", label: "Al intentar salir de la página (exit intent)" },
+            { value: "scroll", label: "Al hacer scroll hasta X%" },
+          ] as { value: FormTrigger; label: string }[]).map((t) => (
+            <label key={t.value} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+              trigger === t.value ? "border-brand-400 bg-brand-50" : "border-gray-200 hover:border-gray-300"
+            }`}>
+              <input
+                type="radio"
+                name="trigger"
+                value={t.value}
+                checked={trigger === t.value}
+                onChange={() => setTrigger(t.value)}
+                className="accent-brand-600"
+              />
+              <span className="text-sm text-gray-700">{t.label}</span>
+            </label>
+          ))}
+        </div>
+
+        {trigger === "delay" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Segundos de espera</label>
+            <input
+              type="number"
+              min={0}
+              value={delaySeconds}
+              onChange={(e) => setDelaySeconds(Number(e.target.value))}
+              className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+        )}
+
+        {trigger === "scroll" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Porcentaje de scroll</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={10}
+                max={90}
+                step={5}
+                value={scrollPct}
+                onChange={(e) => setScrollPct(Number(e.target.value))}
+                className="flex-1 accent-brand-600"
+              />
+              <span className="text-sm font-semibold text-gray-700 w-10">{scrollPct}%</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={handleSave}
+        disabled={saving || !isValid}
+        className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-60 transition-colors"
+      >
+        <Save size={14} /> {saving ? "Guardando…" : "Guardar contenido"}
+      </button>
+    </div>
+  );
+}
 
 // ── Custom fields editor ──────────────────────────────────────────────────────
 function FieldsEditor({
@@ -281,7 +489,7 @@ export default function FormDetailPage() {
   const formId = Number(id);
   const qc = useQueryClient();
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"install" | "fields" | "html">("install");
+  const [activeTab, setActiveTab] = useState<"content" | "install" | "fields" | "html">("content");
 
   const { data: form, isLoading } = useQuery<SignupForm>({
     queryKey: ["form", formId],
@@ -370,6 +578,7 @@ export default function FormDetailPage() {
       {/* Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
         {([
+          { key: "content", label: "Contenido" },
           { key: "install", label: "Instalación" },
           { key: "fields",  label: `Campos${currentFields.length ? ` (${currentFields.length})` : ""}` },
           { key: "html",    label: "HTML personalizado" },
@@ -387,6 +596,15 @@ export default function FormDetailPage() {
           </button>
         ))}
       </div>
+
+      {/* ── Tab: Contenido ── */}
+      {activeTab === "content" && (
+        <ContentEditor
+          form={form}
+          saving={saveMutation.isPending}
+          onSave={(data) => saveMutation.mutate(data)}
+        />
+      )}
 
       {/* ── Tab: Instalación ── */}
       {activeTab === "install" && (
