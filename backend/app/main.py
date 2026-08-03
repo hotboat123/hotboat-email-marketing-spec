@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.database import create_db_and_tables
-from app.routers import auth, contacts, segments, templates, campaigns, webhooks, analytics, sync, automations, forms, admin, brand_assets, crm, ads, web_traffic
+from app.routers import auth, contacts, segments, templates, campaigns, webhooks, ses_webhook, analytics, sync, automations, forms, admin, brand_assets, crm, ads, web_traffic
 from app.models import brand_asset as _brand_asset_models  # noqa: registers table
 from app.models import contact_crm as _contact_crm_models  # noqa: registers table
 from app.models import call_activity as _call_activity_models  # noqa: registers table
@@ -29,6 +29,7 @@ app.include_router(segments.router, prefix="/api/segments", tags=["segments"])
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
 app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
+app.include_router(ses_webhook.router, prefix="/api/webhooks", tags=["webhooks"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(automations.router, prefix="/api/automations", tags=["automations"])
