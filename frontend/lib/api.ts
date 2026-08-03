@@ -155,6 +155,7 @@ export const automationsApi = {
   test: (id: number) => api.post(`/automations/${id}/test`),
   runs: (id: number) => api.get(`/automations/${id}/runs`),
   stats: (id: number) => api.get(`/automations/${id}/stats`),
+  conversions: (id: number, days = 60) => api.get(`/automations/${id}/conversions?days=${days}`),
 };
 
 // CRM (cola de llamadas)

@@ -232,6 +232,14 @@ export interface AutomationStats {
   click_rate: number;
 }
 
+export interface AutomationConversions {
+  automation_id: number;
+  window_days: number;
+  bookings: number;
+  revenue: number;
+  converted_contacts: number;
+}
+
 export interface WebTrafficDay {
   day: string;
   total_sessions: number;

@@ -1,7 +1,8 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from jinja2 import Template as JTemplate
+from sqlalchemy import create_engine, text
 from sqlmodel import Session, select, func
 from app.core.config import settings
 from app.database import get_session
@@ -186,4 +187,85 @@ def automation_stats(
         "delivered": delivered, "opened": opened, "clicked": clicked, "bounced": bounced,
         "open_rate": round(opened / base * 100, 1),
         "click_rate": round(clicked / base * 100, 1),
+    }
+
+
+@router.get("/{auto_id}/conversions")
+def automation_conversions(
+    auto_id: int,
+    days: int = Query(default=60, ge=1, le=365),
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """
+    Atribución de reservas: contactos que recibieron un envío de esta
+    automatización y tuvieron una visita confirmada en HotBoat dentro de
+    `days` días posteriores a SU envío. A diferencia de campaign_conversions
+    (una campaña = un solo sent_at para todos los contactos), cada
+    AutomationRun dispara en un momento distinto por contacto (cumpleaños,
+    reserva abandonada, etc.) — así que la ventana se evalúa por envío, no
+    de forma global. Si un mismo email tuvo varios envíos de esta
+    automatización, una reserva que cae en más de una ventana se cuenta una
+    sola vez (mismo criterio de no-doble-conteo que sync_hotboat.py).
+    """
+    automation = session.get(Automation, auto_id)
+    if not automation:
+        raise HTTPException(status_code=404, detail="Automatización no encontrada")
+
+    empty = {"automation_id": auto_id, "window_days": days, "bookings": 0, "revenue": 0.0, "converted_contacts": 0}
+
+    runs = session.exec(
+        select(AutomationRun).where(
+            AutomationRun.automation_id == auto_id,
+            AutomationRun.status == "sent",
+        )
+    ).all()
+
+    windows_by_email: dict[str, list[tuple[date, date]]] = {}
+    for r in runs:
+        if not r.contact_email:
+            continue
+        start = r.triggered_at.date()
+        windows_by_email.setdefault(r.contact_email, []).append((start, start + timedelta(days=days)))
+    if not windows_by_email:
+        return empty
+
+    emails = list(windows_by_email.keys())
+    min_start = min(w[0] for windows in windows_by_email.values() for w in windows)
+    max_end = max(w[1] for windows in windows_by_email.values() for w in windows)
+
+    src_url = settings.HOTBOAT_DATABASE_URL or settings.DATABASE_URL
+    try:
+        src_engine = create_engine(src_url)
+        with src_engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT email, fecha, ingreso_total
+                FROM all_appointments
+                WHERE email = ANY(:emails)
+                  AND fecha >= :start_date
+                  AND fecha <= :end_date
+                  AND status NOT IN ('cancelled', 'no_show', 'pending')
+            """), {
+                "emails": emails,
+                "start_date": min_start,
+                "end_date": max_end,
+            }).fetchall()
+    except Exception:
+        return empty
+
+    total_bookings = 0
+    total_revenue = 0.0
+    converted_emails: set[str] = set()
+    for row in rows:
+        if any(start <= row.fecha <= end for start, end in windows_by_email.get(row.email, [])):
+            total_bookings += 1
+            total_revenue += float(row.ingreso_total or 0)
+            converted_emails.add(row.email)
+
+    return {
+        "automation_id": auto_id,
+        "window_days": days,
+        "bookings": total_bookings,
+        "revenue": total_revenue,
+        "converted_contacts": len(converted_emails),
     }

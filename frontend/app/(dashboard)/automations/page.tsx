@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { automationsApi, templatesApi } from "@/lib/api";
-import { Automation, AutomationStats, Template } from "@/lib/types";
+import { Automation, AutomationConversions, AutomationStats, Template } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { Plus, Zap, Play, Pause, Trash2, ChevronDown, ChevronUp, Pencil, Save, X, Send, Bell } from "lucide-react";
 import Link from "next/link";
@@ -246,6 +246,13 @@ function AutomationRow({ auto, templates }: { auto: Automation; templates: Templ
     staleTime: 60_000,
   });
 
+  const { data: conv } = useQuery<AutomationConversions>({
+    queryKey: ["automation-conversions", auto.id],
+    queryFn: () => automationsApi.conversions(auto.id).then((r) => r.data),
+    staleTime: 15 * 60_000,
+    enabled: !!stats?.sent,
+  });
+
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error">("idle");
 
   const toggleMutation = useMutation({
@@ -329,6 +336,11 @@ function AutomationRow({ auto, templates }: { auto: Automation; templates: Templ
                 🖱 {stats.click_rate}%
               </span>
             </div>
+          )}
+          {!!conv?.bookings && (
+            <p className="text-xs font-medium text-green-600 mt-1" title={`${conv.converted_contacts} contacto${conv.converted_contacts !== 1 ? "s" : ""} reservó dentro de ${conv.window_days} días`}>
+              💰 {conv.bookings} reserva{conv.bookings !== 1 ? "s" : ""} · CLP {Math.round(conv.revenue).toLocaleString("es-CL")}
+            </p>
           )}
           {stats?.last_run && (
             <p className="text-xs text-gray-400 mt-0.5">Último: {formatDate(stats.last_run)}</p>
