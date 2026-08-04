@@ -99,6 +99,32 @@ migrations = [
         extra_data JSONB,
         created_at TIMESTAMP
     )""",
+    # campaign_sends / automation_runs — store the actual rendered HTML per
+    # send so "Correos enviados" can show exactly what went out, not just
+    # metadata (click-to-preview).
+    "ALTER TABLE campaign_sends ADD COLUMN IF NOT EXISTS html_content TEXT",
+    "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS html_content TEXT",
+    "ALTER TABLE campaign_sends ADD COLUMN IF NOT EXISTS rendered_subject VARCHAR",
+    "ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS rendered_subject VARCHAR",
+    # email_log — catch-all for every send_email() call NOT already tracked
+    # via campaign_sends/automation_runs (unsubscribe notices, internal admin
+    # alerts, and a safety net for any future call site), so "Correos
+    # enviados" is comprehensive by construction — see app/email/send_email.py.
+    """CREATE TABLE IF NOT EXISTS email_log (
+        id SERIAL PRIMARY KEY,
+        to_email VARCHAR NOT NULL,
+        subject VARCHAR NOT NULL,
+        html_content TEXT NOT NULL,
+        provider VARCHAR,
+        message_id VARCHAR,
+        sent BOOLEAN DEFAULT FALSE,
+        error VARCHAR,
+        trigger VARCHAR NOT NULL,
+        created_at TIMESTAMP
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_email_log_message_id ON email_log (message_id)",
+    "CREATE INDEX IF NOT EXISTS ix_email_log_trigger ON email_log (trigger)",
+    "CREATE INDEX IF NOT EXISTS ix_email_log_created_at ON email_log (created_at)",
 ]
 
 for sql in migrations:

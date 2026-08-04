@@ -109,6 +109,8 @@ def _send_email(
         trigger_key=trigger_key,
         triggered_at=datetime.utcnow(),
         extra_data=extra_vars or None,
+        html_content=html,
+        rendered_subject=subject,
     )
     result = send_email(
         to=contact.email,

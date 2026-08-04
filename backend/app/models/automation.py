@@ -51,6 +51,12 @@ class AutomationRun(SQLModel, table=True):
     # a sequence (e.g. abandoned-cart follow-up) reuse them once the source
     # row they came from (all_appointments) is gone.
     extra_data: Optional[Any] = Field(default=None, sa_column=Column(JSON))
+    # Subject/HTML actually rendered and sent for this run (post-Jinja,
+    # post-[OVERRIDE] prefix if applicable) — automations.subject is the raw
+    # template with {{ nombre }} unrendered, so "Correos enviados" needs
+    # these to show exactly what went out, not just metadata.
+    rendered_subject: Optional[str] = None
+    html_content: Optional[str] = None
 
 
 class AutomationCreate(SQLModel):

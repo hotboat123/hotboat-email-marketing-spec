@@ -170,6 +170,8 @@ def test_automation(
         status="sent",
         resend_id=result.get("message_id"),
         executed_at=datetime.utcnow(),
+        html_content=html,
+        rendered_subject=f"[TEST] {a.subject}",
     ))
     session.commit()
 

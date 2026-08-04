@@ -228,6 +228,7 @@ export const sentEmailsApi = {
     date_from?: string; date_to?: string; sort_by?: string; sort_dir?: string;
     skip?: number; limit?: number;
   }) => api.get("/sent-emails", { params }),
+  detail: (sourceType: string, id: number) => api.get(`/sent-emails/${sourceType}/${id}`),
 };
 
 // Sync

@@ -22,7 +22,7 @@ actually matters for reading an AWS bill.
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import Session
@@ -43,7 +43,7 @@ WITH unified AS (
         c.name AS source_name,
         COALESCE(ct.email, cs.to_email) AS email,
         cs.sent_at AS at,
-        c.subject AS subject,
+        COALESCE(cs.rendered_subject, c.subject) AS subject,
         cs.status AS status,
         cs.resend_id AS resend_id
     FROM campaign_sends cs
@@ -59,7 +59,7 @@ WITH unified AS (
         a.name AS source_name,
         ar.contact_email AS email,
         ar.triggered_at AS at,
-        a.subject AS subject,
+        COALESCE(ar.rendered_subject, a.subject) AS subject,
         CASE
             WHEN ar.status != 'sent' THEN ar.status
             WHEN ar.opened_at IS NOT NULL THEN 'opened'
@@ -72,6 +72,23 @@ WITH unified AS (
     FROM automation_runs ar
     JOIN automations a ON a.id = ar.automation_id
     WHERE ar.status != 'skipped'
+
+    UNION ALL
+
+    -- Todo lo que send_email() manda que NO tiene su propia fila de
+    -- CampaignSend/AutomationRun (avisos de desuscripción, alertas internas
+    -- al admin, y cualquier envío futuro que no agregue su propio tracking)
+    -- — ver _TRACKED_ELSEWHERE en app/email/send_email.py.
+    SELECT
+        el.id AS row_id,
+        'other' AS source_type,
+        el.trigger AS source_name,
+        el.to_email AS email,
+        el.created_at AS at,
+        el.subject AS subject,
+        CASE WHEN el.sent THEN 'sent' ELSE 'failed' END AS status,
+        el.message_id AS resend_id
+    FROM email_log el
 )
 """
 
@@ -115,7 +132,7 @@ def _build_where(
     if subject:
         where.append("subject ILIKE :subject")
         params["subject"] = f"%{subject}%"
-    if origin in ("campaign", "automation"):
+    if origin in ("campaign", "automation", "other"):
         where.append("source_type = :origin")
         params["origin"] = origin
     if status:
@@ -207,3 +224,44 @@ def list_sent_emails(
         items=items, total=total,
         ses_count=counts_row.ses_count, resend_count=counts_row.resend_count,
     )
+
+
+class SentEmailDetail(BaseModel):
+    subject: str
+    html: Optional[str] = None
+    # False for sends made before html_content started being stored — the
+    # frontend shows "no disponible" instead of a blank preview.
+    available: bool
+
+
+_DETAIL_QUERIES = {
+    "campaign": """
+        SELECT COALESCE(cs.rendered_subject, c.subject) AS subject, cs.html_content
+        FROM campaign_sends cs JOIN campaigns c ON c.id = cs.campaign_id
+        WHERE cs.id = :id
+    """,
+    "automation": """
+        SELECT COALESCE(ar.rendered_subject, a.subject) AS subject, ar.html_content
+        FROM automation_runs ar JOIN automations a ON a.id = ar.automation_id
+        WHERE ar.id = :id
+    """,
+    "other": "SELECT subject, html_content FROM email_log WHERE id = :id",
+}
+
+
+@router.get("/{source_type}/{row_id}", response_model=SentEmailDetail)
+def get_sent_email_detail(
+    source_type: str,
+    row_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    query = _DETAIL_QUERIES.get(source_type)
+    if not query:
+        raise HTTPException(status_code=400, detail="source_type inválido")
+
+    row = session.connection().execute(text(query), {"id": row_id}).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    return SentEmailDetail(subject=row.subject, html=row.html_content, available=row.html_content is not None)

@@ -30,6 +30,12 @@ class CampaignSend(SQLModel, table=True):
     contact_id: Optional[int] = Field(default=None, foreign_key="contacts.id", index=True)
     to_email: Optional[str] = None
     resend_id: Optional[str] = Field(default=None, index=True)
+    # Subject/HTML actually rendered and sent for this recipient (post-Jinja,
+    # post-[OVERRIDE] prefix if applicable) — campaigns.subject is the raw
+    # template with {{ nombre }} unrendered, so "Correos enviados" needs
+    # these to show exactly what went out, not just metadata.
+    rendered_subject: Optional[str] = None
+    html_content: Optional[str] = None
     # queued | sent | delivered | opened | clicked | bounced | complained
     status: str = Field(default="queued")
     sent_at: Optional[datetime] = None

@@ -12,6 +12,41 @@ from app.core.config import settings as _settings
 
 logger = logging.getLogger(__name__)
 
+# Triggers whose call site already writes its own CampaignSend/AutomationRun
+# row (with html_content — see those call sites) for richer per-contact
+# tracking (open/click/bounce). Logging those again here would double-list
+# them on "Correos enviados". Everything else — unsubscribe notices, internal
+# admin alerts, and any FUTURE call site that forgets to add its own tracking
+# row — gets written to EmailLog unconditionally below, so the log can never
+# silently miss a real send again.
+_TRACKED_ELSEWHERE = {"campaign_send", "campaign_test_send", "manual_referral"}
+
+
+def _already_tracked(trigger: str) -> bool:
+    return trigger in _TRACKED_ELSEWHERE or trigger.startswith("automation_")
+
+
+def _log_untracked_send(
+    *, to, subject: str, html: str, provider: Optional[str],
+    message_id: Optional[str], sent: bool, error: Optional[str], trigger: str,
+) -> None:
+    try:
+        from sqlmodel import Session
+        from app.database import engine
+        from app.models.email_log import EmailLog
+
+        to_str = ", ".join(to) if isinstance(to, list) else to
+        with Session(engine) as session:
+            session.add(EmailLog(
+                to_email=to_str, subject=subject, html_content=html,
+                provider=provider, message_id=message_id, sent=sent,
+                error=error, trigger=trigger,
+            ))
+            session.commit()
+    except Exception:
+        # Logging the send must never be why the send itself fails/looks failed.
+        logger.exception("EmailLog write failed for trigger=%s", trigger)
+
 
 def default_from_address() -> str:
     """The from-address for whichever provider is currently active — one
@@ -73,6 +108,11 @@ def send_email(
                 bcc=bcc, reply_to=reply_to, headers=headers, tags=tags,
             )
             message_id = result.get("id") if isinstance(result, dict) else None
+        if not _already_tracked(trigger):
+            _log_untracked_send(
+                to=real_to, subject=subject, html=html, provider=provider,
+                message_id=message_id, sent=True, error=None, trigger=trigger,
+            )
         return {"sent": True, "reason": "ok", "provider": provider, "message_id": message_id}
     except Exception as e:
         error_detail = str(e)
@@ -89,6 +129,11 @@ def send_email(
             "Email send FAILED provider=%s trigger=%s to=%s from=%s | %s",
             provider, trigger, to, from_address, error_detail,
         )
+        if not _already_tracked(trigger):
+            _log_untracked_send(
+                to=real_to, subject=subject, html=html, provider=provider,
+                message_id=None, sent=False, error=error_detail, trigger=trigger,
+            )
         return {"sent": False, "reason": error_detail, "provider": provider, "message_id": None}
 
 

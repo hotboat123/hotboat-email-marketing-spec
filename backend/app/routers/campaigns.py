@@ -295,6 +295,8 @@ def send_test_email(
         resend_id=result.get("message_id"),
         status="sent",
         sent_at=datetime.utcnow(),
+        html_content=html,
+        rendered_subject=f"[PRUEBA] {c.subject}",
     ))
     session.commit()
 

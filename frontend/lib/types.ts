@@ -242,7 +242,7 @@ export interface AutomationConversions {
   converted_contacts: number;
 }
 
-export type SentEmailOrigin = "campaign" | "automation";
+export type SentEmailOrigin = "campaign" | "automation" | "other";
 
 export interface SentEmail {
   id: number;
@@ -253,6 +253,12 @@ export interface SentEmail {
   subject: string;
   status: string;
   provider: "ses" | "resend";
+}
+
+export interface SentEmailDetail {
+  subject: string;
+  html: string | null;
+  available: boolean;
 }
 
 export interface SentEmailsPage {

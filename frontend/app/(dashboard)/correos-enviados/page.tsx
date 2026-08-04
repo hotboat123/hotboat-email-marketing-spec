@@ -3,16 +3,71 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { sentEmailsApi } from "@/lib/api";
-import { SentEmail, SentEmailsPage } from "@/lib/types";
+import { SentEmail, SentEmailDetail, SentEmailsPage } from "@/lib/types";
 import { formatDateTime, statusLabel } from "@/lib/utils";
-import { Search, Mail, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Search, Mail, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, X, Loader2 } from "lucide-react";
 
 const PAGE_SIZE = 50;
 
 const ORIGIN_LABEL: Record<string, string> = {
   campaign: "Campaña",
   automation: "Automatización",
+  other: "Otro",
 };
+
+// Triggers técnicos de app/email/send_email.py -> etiqueta legible, para la
+// columna Origen de los envíos que no vienen de una campaña/automatización
+// (avisos internos, notificaciones de desuscripción, etc.)
+const OTHER_TRIGGER_LABEL: Record<string, string> = {
+  unsubscribe_notification: "Aviso de desuscripción",
+  campaign_reminder_notification: "Recordatorio interno (campaña)",
+  campaign_fired_notification: "Aviso interno (campaña enviada)",
+};
+
+function PreviewModal({ sourceType, id, onClose }: { sourceType: string; id: number; onClose: () => void }) {
+  const { data, isLoading } = useQuery<SentEmailDetail>({
+    queryKey: ["sent-email-detail", sourceType, id],
+    queryFn: () => sentEmailsApi.detail(sourceType, id).then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-6 overflow-y-auto" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mt-10 overflow-hidden flex flex-col"
+        style={{ maxHeight: "85vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <p className="text-sm font-semibold text-gray-800 truncate pr-4">{data?.subject ?? "Cargando…"}</p>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1 flex-shrink-0">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-hidden bg-gray-50">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+              <Loader2 size={18} className="animate-spin" /> Cargando…
+            </div>
+          ) : !data?.available ? (
+            <div className="py-16 text-center text-gray-400 text-sm px-6">
+              El contenido de este correo no está disponible — se envió antes de que empezáramos
+              a guardar el HTML de cada envío.
+            </div>
+          ) : (
+            <iframe
+              srcDoc={data.html ?? ""}
+              sandbox=""
+              title="Vista previa del correo"
+              className="w-full h-full bg-white"
+              style={{ minHeight: "60vh" }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STATUS_COLOR: Record<string, string> = {
   queued: "bg-gray-100 text-gray-600",
@@ -62,6 +117,7 @@ export default function SentEmailsPageRoute() {
   const [sortBy, setSortBy] = useState<SortBy>("at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(0);
+  const [preview, setPreview] = useState<{ sourceType: string; id: number } | null>(null);
 
   function debounce(setDebounced: (v: string) => void) {
     return (val: string) => {
@@ -176,6 +232,7 @@ export default function SentEmailsPageRoute() {
             <option value="">Todos los orígenes</option>
             <option value="campaign">Campaña</option>
             <option value="automation">Automatización</option>
+            <option value="other">Otro</option>
           </select>
           <select
             value={status}
@@ -244,7 +301,12 @@ export default function SentEmailsPageRoute() {
                 </tr>
               ) : (
                 items.map((it: SentEmail) => (
-                  <tr key={`${it.source_type}-${it.id}`} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={`${it.source_type}-${it.id}`}
+                    onClick={() => setPreview({ sourceType: it.source_type, id: it.id })}
+                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+                    title="Ver el correo enviado"
+                  >
                     <td className="px-5 py-3 text-gray-700 text-xs max-w-[220px] truncate" title={it.email}>
                       {it.email}
                     </td>
@@ -257,7 +319,9 @@ export default function SentEmailsPageRoute() {
                     <td className="px-5 py-3 text-gray-500 text-xs">
                       {ORIGIN_LABEL[it.source_type] ?? it.source_type}
                       <span className="text-gray-300"> · </span>
-                      <span className="text-gray-400">{it.source_name}</span>
+                      <span className="text-gray-400">
+                        {it.source_type === "other" ? (OTHER_TRIGGER_LABEL[it.source_name] ?? it.source_name) : it.source_name}
+                      </span>
                       <span
                         className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500"
                         title="Proveedor de envío"
@@ -300,6 +364,10 @@ export default function SentEmailsPageRoute() {
           </div>
         )}
       </div>
+
+      {preview && (
+        <PreviewModal sourceType={preview.sourceType} id={preview.id} onClose={() => setPreview(null)} />
+      )}
     </div>
   );
 }

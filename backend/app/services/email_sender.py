@@ -88,6 +88,8 @@ def _send_one(campaign: Campaign, template: Template, contact: Contact, session:
         trigger="campaign_send",
     )
     if send:
+        send.html_content = html
+        send.rendered_subject = subject
         if result["sent"]:
             send.resend_id = result["message_id"]
             send.status = "sent"

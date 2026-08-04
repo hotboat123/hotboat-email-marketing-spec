@@ -607,6 +607,8 @@ def send_referral_reminder(
         contact_email=contact.email,
         trigger_key=f"manual_referral:{contact_crm_id}:{datetime.utcnow().isoformat()}",
         triggered_at=datetime.utcnow(),
+        html_content=html,
+        rendered_subject=subject,
     )
     result = send_email(
         to=contact.email,
