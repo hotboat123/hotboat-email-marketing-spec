@@ -189,6 +189,15 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # importa para atribuir la conversión a un día es cuándo la persona
         # reservó, no cuándo se registró el pago (que puede llegar días
         # después, ej. transferencia manual).
+        #
+        # El filtro de rango compara por DATE(... AT TIME ZONE 'America/
+        # Santiago'), igual que el GROUP BY — no created_at crudo contra
+        # :desde/:hasta_excl (que Postgres interpreta en UTC). Si no, una
+        # reserva creada tarde en la noche de Chile (ya "día siguiente" en
+        # UTC) se le atribuía bien al día de Chile en el agregado pero
+        # quedaba afuera del rango de un día puntual — el drill-down de un
+        # solo día terminaba con menos filas que el número que el propio
+        # gráfico mostraba para ese día.
         paid_rows = conn.execute(text(f"""
             SELECT DATE(created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments
@@ -196,10 +205,11 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
                 (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
                 OR payment_status IN ('approved', 'completed')
             )
-              AND created_at >= :desde AND created_at < :hasta_excl
+              AND DATE(created_at AT TIME ZONE 'America/Santiago') >= :desde
+              AND DATE(created_at AT TIME ZONE 'America/Santiago') <= :hasta
               {_EXCLUDE_WHATSAPP_PHONES}
             GROUP BY day ORDER BY day
-        """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
+        """), {"desde": desde, "hasta": hasta}).fetchall()
 
     # Ensamblar por día — arranca de un dict con todos los días del rango en
     # cero, así el front no tiene que rellenar huecos.
@@ -269,12 +279,12 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
 
 def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_web_traffic_daily — mismo
-    criterio de pago, de fecha (created_at, no cuándo se pagó — ver
-    comentario en get_web_traffic_daily) y de exclusión de teléfonos de
-    WhatsApp que la agregada, para que la lista siempre calce con el
-    número de la tarjeta."""
+    criterio de pago, de fecha (created_at en hora de Chile, no cuándo se
+    pagó ni la fecha cruda en UTC — ver los dos comentarios en
+    get_web_traffic_daily) y de exclusión de teléfonos de WhatsApp que la
+    agregada, para que la lista siempre calce con el número de la
+    tarjeta."""
     engine = _source_engine()
-    hasta_excl = hasta + timedelta(days=1)
 
     with engine.connect() as conn:
         rows = conn.execute(text("""
@@ -287,12 +297,13 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
                 (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
                 OR payment_status IN ('approved', 'completed')
             )
-              AND created_at >= :desde AND created_at < :hasta_excl
+              AND DATE(created_at AT TIME ZONE 'America/Santiago') >= :desde
+              AND DATE(created_at AT TIME ZONE 'America/Santiago') <= :hasta
               AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
                   SELECT DISTINCT phone_number FROM whatsapp_conversations
               ))
             ORDER BY created_at DESC
-        """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
+        """), {"desde": desde, "hasta": hasta}).fetchall()
 
     return [
         {
