@@ -182,6 +182,30 @@ function StatCard({ label, value, sub, def, onClick }: { label: string; value: s
   );
 }
 
+// Punto invisible pero clickeable sobre cada dato de la línea de conversión —
+// más confiable que el onClick del propio <LineChart> (en Recharts 3 no
+// dispara de forma consistente), y usa las coordenadas reales que Recharts
+// ya calculó para cada punto en vez de intentar adivinar la posición del click.
+function makeClickableDot<T extends { desde: string; hasta: string; label: string }>(
+  onPick: (row: T) => void
+) {
+  return (props: any) => {
+    const { cx, cy, payload, index } = props;
+    if (cx == null || cy == null) return null;
+    return (
+      <circle
+        key={`dot-${index}`}
+        cx={cx}
+        cy={cy}
+        r={9}
+        fill="transparent"
+        style={{ cursor: "pointer" }}
+        onClick={() => onPick(payload as T)}
+      />
+    );
+  };
+}
+
 const FLUJO_LABEL: Record<string, { text: string; color: string }> = {
   flujo_1: { text: "Flujo 1 · WhatsApp", color: "bg-green-50 text-green-700" },
   flujo_3: { text: "Flujo 3 · Web → WhatsApp", color: "bg-blue-50 text-blue-700" },
@@ -539,15 +563,7 @@ export default function TraficoWebPage() {
 
         <ChartCard title="% Conversión" sub="Pagaron ÷ sesiones útiles, por día — línea punteada: # de pagos. Click en un punto para ver quiénes pagaron ese día">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={chartData}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-              style={{ cursor: "pointer" }}
-              onClick={(e: any) => {
-                const row = e?.activePayload?.[0]?.payload as ChartRow | undefined;
-                if (row) setConversionsRange({ desde: row.desde, hasta: row.hasta, dayLabel: row.label });
-              }}
-            >
+            <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 11 }} unit="%" />
@@ -557,7 +573,11 @@ export default function TraficoWebPage() {
                 formatter={(v, name) => (name === "Conversión" ? [`${v}%`, name] : [v, name])}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line yAxisId="left" type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+              <Line
+                yAxisId="left" type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2}
+                dot={makeClickableDot<ChartRow>((row) => setConversionsRange({ desde: row.desde, hasta: row.hasta, dayLabel: row.label }))}
+                connectNulls
+              />
               <Line yAxisId="right" type="monotone" dataKey="paid" name="# Pagos" stroke="#0369a1" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
@@ -692,15 +712,7 @@ export default function TraficoWebPage() {
 
         <ChartCard title="% Conversión" sub="Pagaron ÷ conversaciones útiles, por día — línea punteada: # de pagos. Click en un punto para ver quiénes pagaron ese día">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={waChartData}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-              style={{ cursor: "pointer" }}
-              onClick={(e: any) => {
-                const row = e?.activePayload?.[0]?.payload as ChartRowWA | undefined;
-                if (row) setConversionsRange({ desde: row.desde, hasta: row.hasta, dayLabel: row.label });
-              }}
-            >
+            <LineChart data={waChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 11 }} unit="%" />
@@ -710,7 +722,11 @@ export default function TraficoWebPage() {
                 formatter={(v, name) => (name === "Conversión" ? [`${v}%`, name] : [v, name])}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line yAxisId="left" type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+              <Line
+                yAxisId="left" type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2}
+                dot={makeClickableDot<ChartRowWA>((row) => setConversionsRange({ desde: row.desde, hasta: row.hasta, dayLabel: row.label }))}
+                connectNulls
+              />
               <Line yAxisId="right" type="monotone" dataKey="paid" name="# Pagos" stroke="#0369a1" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
