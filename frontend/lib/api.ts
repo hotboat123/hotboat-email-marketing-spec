@@ -133,6 +133,10 @@ export const webTrafficApi = {
     api.get("/web-traffic/duration-histogram", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
   whatsappDaily: (desde?: string, hasta?: string) =>
     api.get("/web-traffic/whatsapp-daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  conversions: (desde?: string, hasta?: string) =>
+    api.get("/web-traffic/conversions", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  whatsappConversions: (desde?: string, hasta?: string) =>
+    api.get("/web-traffic/whatsapp-conversions", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
 };
 
 // Signup Forms

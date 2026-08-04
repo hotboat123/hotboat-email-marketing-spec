@@ -147,6 +147,103 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
     return {"desde": desde.isoformat(), "hasta": hasta.isoformat(), "daily": daily, "totals": totals}
 
 
+def get_whatsapp_conversions_detail(desde: date, hasta: date) -> list[dict]:
+    """Quiénes son los "paid" que cuenta get_whatsapp_traffic_daily, más una
+    clasificación por orden cronológico real (no solo "mismo dispositivo
+    alguna vez"): para cada reserva, se busca si ese teléfono tiene una
+    identidad web (booking_visitor_identity, enlazada al reservar) con
+    ALGUNA sesión orgánica (sin link_token — es decir, nunca llegó por un
+    link que mandó el bot) cuyo primer evento sea ANTERIOR al primer
+    mensaje de WhatsApp de ese teléfono. Si existe: la persona ya andaba
+    por la web antes de escribir — flujo 3. Si no: no hay evidencia de que
+    haya pasado por la web antes — flujo 1 (a falta de mejor dato)."""
+    engine = _source_engine()
+    hasta_excl = hasta + timedelta(days=1)
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            WITH conv_first AS (
+                -- Sin filtro de "conversación útil" (>=2 entrantes) a
+                -- propósito: get_whatsapp_traffic_daily tampoco lo aplica a
+                -- paid_n, solo a la métrica "useful" por separado — un
+                -- "pagó" real no debería desaparecer de esta lista solo
+                -- porque escribió un único mensaje.
+                SELECT
+                    phone_number,
+                    MIN(created_at) AS first_msg_at
+                FROM whatsapp_conversations
+                WHERE created_at >= :desde AND created_at < :hasta_excl
+                GROUP BY phone_number
+            ),
+            paid_appts AS (
+                SELECT
+                    id, appointment_id, nombre_cliente, email, telefono,
+                    servicio, fecha, hora, ingreso_total,
+                    regexp_replace(telefono, '[^0-9]', '', 'g') AS phone_norm,
+                    COALESCE(updated_at, created_at) AS paid_at
+                FROM all_appointments
+                WHERE telefono IS NOT NULL
+                  AND (
+                      (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
+                      OR payment_status IN ('approved', 'completed')
+                  )
+            ),
+            matched AS (
+                SELECT pa.*, cf.first_msg_at
+                FROM paid_appts pa
+                JOIN conv_first cf ON cf.phone_number = pa.phone_norm
+            ),
+            identity AS (
+                SELECT DISTINCT
+                    regexp_replace(phone, '[^0-9]', '', 'g') AS phone_norm,
+                    visitor_id, session_id
+                FROM booking_visitor_identity
+                WHERE phone IS NOT NULL
+            ),
+            organic_first AS (
+                SELECT idn.phone_norm, MIN(bve.recorded_at) AS first_organic_at
+                FROM identity idn
+                JOIN booking_visitor_events bve
+                  ON bve.session_id = idn.session_id
+                     OR (idn.visitor_id IS NOT NULL AND bve.visitor_id = idn.visitor_id)
+                WHERE bve.link_token IS NULL
+                GROUP BY idn.phone_norm
+            )
+            SELECT m.*, o.first_organic_at
+            FROM matched m
+            LEFT JOIN organic_first o ON o.phone_norm = m.phone_norm
+            ORDER BY m.paid_at DESC
+        """), {
+            "desde": desde, "hasta_excl": hasta_excl, "useful_min": _USEFUL_MIN_INCOMING,
+        }).fetchall()
+
+    def _naive(dt):
+        return dt.replace(tzinfo=None) if dt and dt.tzinfo else dt
+
+    result = []
+    for r in rows:
+        organic_at, msg_at = _naive(r.first_organic_at), _naive(r.first_msg_at)
+        if organic_at and msg_at and organic_at < msg_at:
+            flujo = "flujo_3"
+        else:
+            flujo = "flujo_1"
+        result.append({
+            "booking_ref": r.appointment_id or f"AA-{r.id}",
+            "name": r.nombre_cliente,
+            "email": r.email,
+            "phone": r.telefono,
+            "servicio": r.servicio,
+            "fecha": r.fecha.isoformat() if r.fecha else None,
+            "hora": str(r.hora)[:5] if r.hora else None,
+            "monto": float(r.ingreso_total) if r.ingreso_total else None,
+            "paid_at": r.paid_at.isoformat() if r.paid_at else None,
+            "flujo": flujo,
+            "first_whatsapp_msg_at": r.first_msg_at.isoformat() if r.first_msg_at else None,
+            "first_web_organic_at": r.first_organic_at.isoformat() if r.first_organic_at else None,
+        })
+    return result
+
+
 def _sum_totals(daily: list[dict]) -> dict:
     total_conversations = sum(r["total_conversations"] for r in daily)
     useful_conversations = sum(r["useful_conversations"] for r in daily)

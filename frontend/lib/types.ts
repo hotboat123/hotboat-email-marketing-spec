@@ -363,6 +363,24 @@ export interface WhatsappTrafficResponse {
   totals: WhatsappTrafficTotals;
 }
 
+export interface ConversionDetailRow {
+  booking_ref: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  servicio: string | null;
+  fecha: string | null;
+  hora: string | null;
+  monto: number | null;
+  paid_at: string | null;
+}
+
+export interface WhatsappConversionDetailRow extends ConversionDetailRow {
+  flujo: "flujo_1" | "flujo_3";
+  first_whatsapp_msg_at: string | null;
+  first_web_organic_at: string | null;
+}
+
 export interface OverviewStats {
   contacts: { total: number; opted_in: number };
   campaigns: { total: number; sent: number };

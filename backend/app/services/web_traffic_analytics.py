@@ -98,6 +98,15 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         )
     """
 
+    # Igual que arriba pero por teléfono, para la tabla de pagos
+    # (all_appointments) — sin filtro de fecha en la conversación: si alguien
+    # chateó hace un mes y pagó hoy, sigue siendo lead de WhatsApp.
+    _EXCLUDE_WHATSAPP_PHONES = """
+        AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
+            SELECT DISTINCT phone_number FROM whatsapp_conversations
+        ))
+    """
+
     with engine.connect() as conn:
         # Sesiones totales + útiles por día. Un CTE agrupa cada sesión a su
         # primer día visto y su duración (último evento menos primero),
@@ -166,7 +175,15 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # aprobado/completado — este cambio quintuplica el conteo real de
         # "pagó" (y por lo tanto la tasa de conversión, que antes se veía
         # muy por debajo de la real).
-        paid_rows = conn.execute(text("""
+        #
+        # Excluye teléfonos que ALGUNA VEZ escribieron por WhatsApp (sin
+        # filtro de fecha — si alguien chateó el mes pasado y pagó hoy,
+        # sigue siendo un lead de WhatsApp, no de la web) — agregado
+        # 2026-08-03: antes este conteo no tenía ninguna noción de canal, así
+        # que una reserva 100% originada en WhatsApp (flujo 1) también se
+        # sumaba acá. Mismo criterio de teléfono normalizado que ya usa
+        # whatsapp_traffic_analytics.py.
+        paid_rows = conn.execute(text(f"""
             SELECT DATE(COALESCE(updated_at, created_at) AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments
             WHERE (
@@ -174,6 +191,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
                 OR payment_status IN ('approved', 'completed')
             )
               AND COALESCE(updated_at, created_at) >= :desde AND COALESCE(updated_at, created_at) < :hasta_excl
+              {_EXCLUDE_WHATSAPP_PHONES}
             GROUP BY day ORDER BY day
         """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
 
@@ -241,6 +259,47 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
 
     totals = _sum_totals(daily)
     return {"desde": desde.isoformat(), "hasta": hasta.isoformat(), "daily": daily, "totals": totals}
+
+
+def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
+    """Quiénes son los "paid" que cuenta get_web_traffic_daily — mismo
+    criterio de pago y de exclusión de teléfonos de WhatsApp que la
+    agregada, para que la lista siempre calce con el número de la tarjeta."""
+    engine = _source_engine()
+    hasta_excl = hasta + timedelta(days=1)
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT
+                id, appointment_id, nombre_cliente, email, telefono,
+                servicio, fecha, hora, ingreso_total,
+                COALESCE(updated_at, created_at) AS paid_at
+            FROM all_appointments
+            WHERE (
+                (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
+                OR payment_status IN ('approved', 'completed')
+            )
+              AND COALESCE(updated_at, created_at) >= :desde AND COALESCE(updated_at, created_at) < :hasta_excl
+              AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
+                  SELECT DISTINCT phone_number FROM whatsapp_conversations
+              ))
+            ORDER BY paid_at DESC
+        """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
+
+    return [
+        {
+            "booking_ref": r.appointment_id or f"AA-{r.id}",
+            "name": r.nombre_cliente,
+            "email": r.email,
+            "phone": r.telefono,
+            "servicio": r.servicio,
+            "fecha": r.fecha.isoformat() if r.fecha else None,
+            "hora": str(r.hora)[:5] if r.hora else None,
+            "monto": float(r.ingreso_total) if r.ingreso_total else None,
+            "paid_at": r.paid_at.isoformat() if r.paid_at else None,
+        }
+        for r in rows
+    ]
 
 
 def _popup_fills_by_day(desde: date, hasta_excl: date) -> dict:
