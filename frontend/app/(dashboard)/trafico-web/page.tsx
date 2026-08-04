@@ -52,6 +52,7 @@ const SUM_FIELDS = [
 
 interface ChartRow {
   label: string;
+  desde: string; hasta: string; // rango de fechas real que representa este punto/barra — para el drill-down al hacer click
   total_sessions: number; useful_sessions: number;
   whatsapp_clicks: number; went_to_booking: number;
   viewed_price: number; selected_date: number; booking_completed_events: number;
@@ -75,26 +76,30 @@ function bucketKey(day: string, granularity: Granularity): { key: string; label:
 
 function groupByGranularity(daily: WebTrafficDay[], granularity: Granularity): ChartRow[] {
   if (granularity === "day") {
-    return daily.map((d) => ({ ...d, label: shortDate(d.day) }));
+    return daily.map((d) => ({ ...d, label: shortDate(d.day), desde: d.day, hasta: d.day }));
   }
 
   type Sums = { [K in (typeof SUM_FIELDS)[number]]: number };
-  const buckets = new Map<string, { label: string; sortDate: Date; sums: Sums }>();
+  const buckets = new Map<string, { label: string; sortDate: Date; minDay: string; maxDay: string; sums: Sums }>();
   for (const d of daily) {
     const { key, label, sortDate } = bucketKey(d.day, granularity);
     let bucket = buckets.get(key);
     if (!bucket) {
       const zeroed = Object.fromEntries(SUM_FIELDS.map((f) => [f, 0])) as Sums;
-      bucket = { label, sortDate, sums: zeroed };
+      bucket = { label, sortDate, minDay: d.day, maxDay: d.day, sums: zeroed };
       buckets.set(key, bucket);
     }
+    if (d.day < bucket.minDay) bucket.minDay = d.day;
+    if (d.day > bucket.maxDay) bucket.maxDay = d.day;
     for (const f of SUM_FIELDS) bucket.sums[f] += d[f];
   }
 
   return Array.from(buckets.values())
     .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
-    .map(({ label, sums: s }) => ({
+    .map(({ label, minDay, maxDay, sums: s }) => ({
       label,
+      desde: minDay,
+      hasta: maxDay,
       ...s,
       conversion_rate: s.useful_sessions ? round2((s.paid / s.useful_sessions) * 100) : 0,
       found_expensive_rate: s.viewed_price ? round1((s.viewed_price_left / s.viewed_price) * 100) : 0,
@@ -115,6 +120,7 @@ const SUM_FIELDS_WA = [
 
 interface ChartRowWA {
   label: string;
+  desde: string; hasta: string; // rango de fechas real que representa este punto/barra — para el drill-down al hacer click
   total_conversations: number; useful_conversations: number;
   asked_price: number; found_expensive: number; asked_date: number;
   clicked_link: number; reserved: number; paid: number;
@@ -123,26 +129,30 @@ interface ChartRowWA {
 
 function groupByGranularityWA(daily: WhatsappTrafficDay[], granularity: Granularity): ChartRowWA[] {
   if (granularity === "day") {
-    return daily.map((d) => ({ ...d, label: shortDate(d.day) }));
+    return daily.map((d) => ({ ...d, label: shortDate(d.day), desde: d.day, hasta: d.day }));
   }
 
   type Sums = { [K in (typeof SUM_FIELDS_WA)[number]]: number };
-  const buckets = new Map<string, { label: string; sortDate: Date; sums: Sums }>();
+  const buckets = new Map<string, { label: string; sortDate: Date; minDay: string; maxDay: string; sums: Sums }>();
   for (const d of daily) {
     const { key, label, sortDate } = bucketKey(d.day, granularity);
     let bucket = buckets.get(key);
     if (!bucket) {
       const zeroed = Object.fromEntries(SUM_FIELDS_WA.map((f) => [f, 0])) as Sums;
-      bucket = { label, sortDate, sums: zeroed };
+      bucket = { label, sortDate, minDay: d.day, maxDay: d.day, sums: zeroed };
       buckets.set(key, bucket);
     }
+    if (d.day < bucket.minDay) bucket.minDay = d.day;
+    if (d.day > bucket.maxDay) bucket.maxDay = d.day;
     for (const f of SUM_FIELDS_WA) bucket.sums[f] += d[f];
   }
 
   return Array.from(buckets.values())
     .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
-    .map(({ label, sums: s }) => ({
+    .map(({ label, minDay, maxDay, sums: s }) => ({
       label,
+      desde: minDay,
+      hasta: maxDay,
       ...s,
       conversion_rate: s.useful_conversations ? round2((s.paid / s.useful_conversations) * 100) : 0,
       found_expensive_rate: s.asked_price ? round1((s.found_expensive / s.asked_price) * 100) : 0,
@@ -370,20 +380,22 @@ export default function TraficoWebPage() {
     enabled: source === "whatsapp",
   });
 
-  const [showConversions, setShowConversions] = useState(false);
+  // null = modal cerrado. dayLabel presente = se hizo click en un punto del gráfico
+  // (un día/semana/mes puntual) en vez de en la tarjeta de resumen (todo el rango elegido arriba).
+  const [conversionsRange, setConversionsRange] = useState<{ desde: string; hasta: string; dayLabel?: string } | null>(null);
 
   const { data: webConversions, isLoading: webConversionsLoading } = useQuery<ConversionDetailRow[]>({
-    queryKey: ["web-conversions-detail", desde, hasta],
-    queryFn: () => webTrafficApi.conversions(desde, hasta).then((r) => r.data),
+    queryKey: ["web-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta],
+    queryFn: () => webTrafficApi.conversions(conversionsRange!.desde, conversionsRange!.hasta).then((r) => r.data),
     staleTime: 2 * 60_000,
-    enabled: showConversions && source === "web",
+    enabled: !!conversionsRange && source === "web",
   });
 
   const { data: waConversions, isLoading: waConversionsLoading } = useQuery<WhatsappConversionDetailRow[]>({
-    queryKey: ["whatsapp-conversions-detail", desde, hasta],
-    queryFn: () => webTrafficApi.whatsappConversions(desde, hasta).then((r) => r.data),
+    queryKey: ["whatsapp-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta],
+    queryFn: () => webTrafficApi.whatsappConversions(conversionsRange!.desde, conversionsRange!.hasta).then((r) => r.data),
     staleTime: 2 * 60_000,
-    enabled: showConversions && source === "whatsapp",
+    enabled: !!conversionsRange && source === "whatsapp",
   });
 
   const chartData = useMemo(
@@ -496,7 +508,7 @@ export default function TraficoWebPage() {
           value={`${t?.conversion_rate ?? 0}%`}
           sub={`${t?.paid ?? 0} pagaron`}
           def="Sesiones útiles que terminaron con un pago real registrado"
-          onClick={() => setShowConversions(true)}
+          onClick={() => setConversionsRange({ desde, hasta })}
         />
         <StatCard
           label="Encontraron caro"
@@ -525,9 +537,17 @@ export default function TraficoWebPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="% Conversión" sub="Pagaron ÷ sesiones útiles, por día — línea punteada: # de pagos">
+        <ChartCard title="% Conversión" sub="Pagaron ÷ sesiones útiles, por día — línea punteada: # de pagos. Click en un punto para ver quiénes pagaron ese día">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <LineChart
+              data={chartData}
+              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              style={{ cursor: "pointer" }}
+              onClick={(e: any) => {
+                const row = e?.activePayload?.[0]?.payload as ChartRow | undefined;
+                if (row) setConversionsRange({ desde: row.desde, hasta: row.hasta, dayLabel: row.label });
+              }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 11 }} unit="%" />
@@ -641,7 +661,7 @@ export default function TraficoWebPage() {
           value={`${pct2(wt?.conversion_rate)}%`}
           sub={`${wt?.paid ?? 0} pagaron`}
           def="Conversaciones útiles que terminaron con un pago real registrado"
-          onClick={() => setShowConversions(true)}
+          onClick={() => setConversionsRange({ desde, hasta })}
         />
         <StatCard
           label="Encontraron caro"
@@ -670,9 +690,17 @@ export default function TraficoWebPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="% Conversión" sub="Pagaron ÷ conversaciones útiles, por día — línea punteada: # de pagos">
+        <ChartCard title="% Conversión" sub="Pagaron ÷ conversaciones útiles, por día — línea punteada: # de pagos. Click en un punto para ver quiénes pagaron ese día">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={waChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <LineChart
+              data={waChartData}
+              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              style={{ cursor: "pointer" }}
+              onClick={(e: any) => {
+                const row = e?.activePayload?.[0]?.payload as ChartRowWA | undefined;
+                if (row) setConversionsRange({ desde: row.desde, hasta: row.hasta, dayLabel: row.label });
+              }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 11 }} unit="%" />
@@ -748,10 +776,13 @@ export default function TraficoWebPage() {
 
       {(source === "web" ? isLoading : waLoading) && <p className="text-sm text-gray-400 mt-4">Cargando...</p>}
 
-      {showConversions && (
+      {conversionsRange && (
         <ConversionsModal
-          title={source === "web" ? "Quiénes pagaron — Web" : "Quiénes pagaron — WhatsApp"}
-          onClose={() => setShowConversions(false)}
+          title={
+            (source === "web" ? "Quiénes pagaron — Web" : "Quiénes pagaron — WhatsApp") +
+            (conversionsRange.dayLabel ? ` · ${conversionsRange.dayLabel}` : "")
+          }
+          onClose={() => setConversionsRange(null)}
           rows={source === "web" ? (webConversions ?? []) : (waConversions ?? [])}
           isLoading={source === "web" ? webConversionsLoading : waConversionsLoading}
           isWhatsapp={source === "whatsapp"}
