@@ -33,6 +33,7 @@ Definiciones acordadas con el dueño del negocio (2026-07-26):
 from datetime import date, timedelta
 from sqlalchemy import create_engine, text
 from app.core.config import settings
+from app.services.web_traffic_analytics import PHONE_FLUJO_CTE
 
 _USEFUL_MIN_INCOMING = 2
 
@@ -54,8 +55,9 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
     hasta_excl = hasta + timedelta(days=1)
 
     with engine.connect() as conn:
-        rows = conn.execute(text("""
-            WITH conv AS (
+        rows = conn.execute(text(f"""
+            WITH {PHONE_FLUJO_CTE},
+            conv AS (
                 SELECT
                     phone_number,
                     MIN(DATE(created_at AT TIME ZONE 'America/Santiago')) AS day,
@@ -82,13 +84,20 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
             -- WhatsApp (transferencia + captura de pantalla). Verificado:
             -- 113 reservas tienen pagos real vs. solo 23 con payment_status
             -- aprobado/completado.
+            --
+            -- Solo cuenta acá si es flujo_1 (WhatsApp puro) — un flujo_3
+            -- (web → WhatsApp) se cuenta en la pestaña Web, ver
+            -- PHONE_FLUJO_CTE y la nota "Atribución del pago para Flujo 3"
+            -- en web_traffic_analytics.py.
             paid_phones AS (
-                SELECT DISTINCT regexp_replace(telefono, '[^0-9]', '', 'g') AS phone
-                FROM all_appointments
-                WHERE telefono IS NOT NULL
+                SELECT DISTINCT regexp_replace(a.telefono, '[^0-9]', '', 'g') AS phone
+                FROM all_appointments a
+                JOIN phone_flujo pf ON pf.phone_norm = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+                WHERE a.telefono IS NOT NULL
+                  AND pf.flujo = 'flujo_1'
                   AND (
-                      (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
-                      OR payment_status IN ('approved', 'completed')
+                      (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
+                      OR a.payment_status IN ('approved', 'completed')
                   )
             ),
             clicked_phones AS (
@@ -150,15 +159,11 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
 def get_whatsapp_conversions_detail(
     desde: date, hasta: date, cohort_from: date | None = None, cohort_to: date | None = None
 ) -> list[dict]:
-    """Quiénes son los "paid" que cuenta get_whatsapp_traffic_daily, más una
-    clasificación por orden cronológico real (no solo "mismo dispositivo
-    alguna vez"): para cada reserva, se busca si ese teléfono tiene una
-    identidad web (booking_visitor_identity, enlazada al reservar) con
-    ALGUNA sesión orgánica (sin link_token — es decir, nunca llegó por un
-    link que mandó el bot) cuyo primer evento sea ANTERIOR al primer
-    mensaje de WhatsApp de ese teléfono. Si existe: la persona ya andaba
-    por la web antes de escribir — flujo 3. Si no: no hay evidencia de que
-    haya pasado por la web antes — flujo 1 (a falta de mejor dato).
+    """Quiénes son los "paid" que cuenta get_whatsapp_traffic_daily — solo
+    flujo_1 (WhatsApp puro), usando la misma clasificación por teléfono
+    que PHONE_FLUJO_CTE (ver web_traffic_analytics.py): los flujo_3 (web →
+    WhatsApp) ya no se cuentan acá, se cuentan en la pestaña Web — ver la
+    nota "Atribución del pago para Flujo 3" en ese módulo.
 
     desde/hasta deben ser el MISMO rango completo que se le pasó a
     get_whatsapp_traffic_daily (no el día puntual que se está mirando) —
@@ -173,8 +178,9 @@ def get_whatsapp_conversions_detail(
     hasta_excl = hasta + timedelta(days=1)
 
     with engine.connect() as conn:
-        rows = conn.execute(text("""
-            WITH conv_first AS (
+        rows = conn.execute(text(f"""
+            WITH {PHONE_FLUJO_CTE},
+            conv_first AS (
                 -- Sin filtro de "conversación útil" (>=2 entrantes) a
                 -- propósito: get_whatsapp_traffic_daily tampoco lo aplica a
                 -- paid_n, solo a la métrica "useful" por separado — un
@@ -182,7 +188,6 @@ def get_whatsapp_conversions_detail(
                 -- porque escribió un único mensaje.
                 SELECT
                     phone_number,
-                    MIN(created_at) AS first_msg_at,
                     MIN(DATE(created_at AT TIME ZONE 'America/Santiago')) AS day
                 FROM whatsapp_conversations
                 WHERE created_at >= :desde AND created_at < :hasta_excl
@@ -200,50 +205,22 @@ def get_whatsapp_conversions_detail(
                       (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
                       OR payment_status IN ('approved', 'completed')
                   )
-            ),
-            matched AS (
-                SELECT pa.*, cf.first_msg_at
-                FROM paid_appts pa
-                JOIN conv_first cf ON cf.phone_number = pa.phone_norm
-                WHERE ((:cohort_from)::date IS NULL OR cf.day >= (:cohort_from)::date)
-                  AND ((:cohort_to)::date IS NULL OR cf.day <= (:cohort_to)::date)
-            ),
-            identity AS (
-                SELECT DISTINCT
-                    regexp_replace(phone, '[^0-9]', '', 'g') AS phone_norm,
-                    visitor_id, session_id
-                FROM booking_visitor_identity
-                WHERE phone IS NOT NULL
-            ),
-            organic_first AS (
-                SELECT idn.phone_norm, MIN(bve.recorded_at) AS first_organic_at
-                FROM identity idn
-                JOIN booking_visitor_events bve
-                  ON bve.session_id = idn.session_id
-                     OR (idn.visitor_id IS NOT NULL AND bve.visitor_id = idn.visitor_id)
-                WHERE bve.link_token IS NULL
-                GROUP BY idn.phone_norm
             )
-            SELECT m.*, o.first_organic_at
-            FROM matched m
-            LEFT JOIN organic_first o ON o.phone_norm = m.phone_norm
-            ORDER BY m.created_at DESC
+            SELECT pa.*
+            FROM paid_appts pa
+            JOIN conv_first cf ON cf.phone_number = pa.phone_norm
+            JOIN phone_flujo pf ON pf.phone_norm = pa.phone_norm
+            WHERE pf.flujo = 'flujo_1'
+              AND ((:cohort_from)::date IS NULL OR cf.day >= (:cohort_from)::date)
+              AND ((:cohort_to)::date IS NULL OR cf.day <= (:cohort_to)::date)
+            ORDER BY pa.created_at DESC
         """), {
             "desde": desde, "hasta_excl": hasta_excl,
             "cohort_from": cohort_from, "cohort_to": cohort_to,
         }).fetchall()
 
-    def _naive(dt):
-        return dt.replace(tzinfo=None) if dt and dt.tzinfo else dt
-
-    result = []
-    for r in rows:
-        organic_at, msg_at = _naive(r.first_organic_at), _naive(r.first_msg_at)
-        if organic_at and msg_at and organic_at < msg_at:
-            flujo = "flujo_3"
-        else:
-            flujo = "flujo_1"
-        result.append({
+    return [
+        {
             "booking_ref": r.appointment_id or f"AA-{r.id}",
             "name": r.nombre_cliente,
             "email": r.email,
@@ -253,11 +230,9 @@ def get_whatsapp_conversions_detail(
             "hora": str(r.hora)[:5] if r.hora else None,
             "monto": float(r.ingreso_total) if r.ingreso_total else None,
             "created_at": r.created_at.isoformat() if r.created_at else None,
-            "flujo": flujo,
-            "first_whatsapp_msg_at": r.first_msg_at.isoformat() if r.first_msg_at else None,
-            "first_web_organic_at": r.first_organic_at.isoformat() if r.first_organic_at else None,
-        })
-    return result
+        }
+        for r in rows
+    ]
 
 
 def _sum_totals(daily: list[dict]) -> dict:

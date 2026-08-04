@@ -207,7 +207,7 @@ function makeClickableDot<T extends { desde: string; hasta: string; label: strin
 }
 
 const FLUJO_LABEL: Record<string, { text: string; color: string }> = {
-  flujo_1: { text: "Flujo 1 · WhatsApp", color: "bg-green-50 text-green-700" },
+  flujo_2: { text: "Flujo 2 · Solo web", color: "bg-gray-50 text-gray-600" },
   flujo_3: { text: "Flujo 3 · Web → WhatsApp", color: "bg-blue-50 text-blue-700" },
 };
 
@@ -225,14 +225,18 @@ function ConversionsModal({
   onClose,
   rows,
   isLoading,
-  isWhatsapp,
 }: {
   title: string;
   onClose: () => void;
-  rows: (ConversionDetailRow | WhatsappConversionDetailRow)[];
+  rows: ConversionDetailRow[];
   isLoading: boolean;
-  isWhatsapp: boolean;
 }) {
+  // El campo "flujo" solo viene en la lista de Web (flujo_2/flujo_3) — la
+  // de WhatsApp ya no lo manda, porque solo incluye flujo_1 (ver
+  // ConversionDetailRow.flujo). Mostrar la columna según qué trajo el
+  // backend, no según qué pestaña está activa.
+  const hasFlujo = rows.some((r) => r.flujo);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-6 overflow-y-auto" onClick={onClose}>
       <div
@@ -249,9 +253,9 @@ function ConversionsModal({
           </button>
         </div>
 
-        {isWhatsapp && rows.length > 0 && (
+        {hasFlujo && rows.length > 0 && (
           <div className="px-5 py-2.5 bg-blue-50/60 border-b border-blue-100 text-xs text-blue-800">
-            <strong>Flujo 3</strong> = tenía una sesión web orgánica (no llegó por un link del bot) <em>antes</em> de su primer mensaje de WhatsApp — evidencia de que ya andaba por la web. <strong>Flujo 1</strong> = sin esa evidencia.
+            <strong>Flujo 3</strong> = tenía una sesión web orgánica (no llegó por un link del bot de WhatsApp) <em>antes</em> de su primer mensaje de WhatsApp — se cuenta como venta web porque la web fue la entrada real. <strong>Flujo 2</strong> = nunca escribió por WhatsApp.
           </div>
         )}
 
@@ -271,35 +275,34 @@ function ConversionsModal({
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reserva</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Monto</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reservó</th>
-                  {isWhatsapp && <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Flujo</th>}
+                  {hasFlujo && <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Flujo</th>}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
-                  const wa = r as WhatsappConversionDetailRow;
-                  return (
-                    <tr key={r.booking_ref} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-2.5 text-gray-800 font-medium">{r.name || "—"}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs">
-                        {r.phone && <div>{r.phone}</div>}
-                        {r.email && <div className="text-gray-400">{r.email}</div>}
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs">
-                        <div className="font-mono">{r.booking_ref}</div>
-                        <div className="text-gray-400">{r.servicio} {r.fecha ? `· ${r.fecha}` : ""}</div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-gray-800 tabular-nums">{money(r.monto)}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{fmtDateTime(r.created_at)}</td>
-                      {isWhatsapp && (
-                        <td className="px-4 py-2.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${FLUJO_LABEL[wa.flujo]?.color ?? "bg-gray-100 text-gray-600"}`}>
-                            {FLUJO_LABEL[wa.flujo]?.text ?? wa.flujo}
+                {rows.map((r) => (
+                  <tr key={r.booking_ref} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-2.5 text-gray-800 font-medium">{r.name || "—"}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">
+                      {r.phone && <div>{r.phone}</div>}
+                      {r.email && <div className="text-gray-400">{r.email}</div>}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">
+                      <div className="font-mono">{r.booking_ref}</div>
+                      <div className="text-gray-400">{r.servicio} {r.fecha ? `· ${r.fecha}` : ""}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-800 tabular-nums">{money(r.monto)}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{fmtDateTime(r.created_at)}</td>
+                    {hasFlujo && (
+                      <td className="px-4 py-2.5">
+                        {r.flujo && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${FLUJO_LABEL[r.flujo]?.color ?? "bg-gray-100 text-gray-600"}`}>
+                            {FLUJO_LABEL[r.flujo]?.text ?? r.flujo}
                           </span>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
@@ -814,7 +817,6 @@ export default function TraficoWebPage() {
           onClose={() => setConversionsRange(null)}
           rows={source === "web" ? (webConversions ?? []) : (waConversions ?? [])}
           isLoading={source === "web" ? webConversionsLoading : waConversionsLoading}
-          isWhatsapp={source === "whatsapp"}
         />
       )}
     </div>

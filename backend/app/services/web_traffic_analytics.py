@@ -42,13 +42,20 @@ Esto separa limpio el Flujo 1 (WhatsApp puro) del Flujo 2 (web puro). El
 Flujo 3 (web → clic en WhatsApp → reserva) es el caso intermedio: la
 sesión original en la landing SIGUE contando como web (nunca tuvo
 link_token), y el evento click_whatsapp que ya se registra ahí es
-exactamente el "% que hizo click en WhatsApp" que se pedía — pero la
-reserva final, si se completó charlando con el bot, se sigue contando
-también en la pestaña WhatsApp por teléfono: hoy no existe ningún dato que
-pruebe con certeza que esa conversación específica es la misma persona
-que la sesión web (WhatsApp no deja pasar ningún identificador a través
-del link wa.me). Decisión explícita del dueño: dejarlo así por ahora en
-vez de adivinar con una aproximación poco confiable.
+exactamente el "% que hizo click en WhatsApp" que se pedía.
+
+Atribución del pago para Flujo 3 (agregado 2026-08-04, reemplaza la
+decisión anterior de "hoy no existe dato para probarlo, dejarlo en
+WhatsApp"): esa decisión era de cuando esto era una exclusión ciega por
+teléfono (cualquier teléfono que alguna vez escribió por WhatsApp se
+sacaba de Web entero). Después se construyó, para el drill-down de la
+pestaña WhatsApp, una heurística real de orden cronológico
+(booking_visitor_identity cruzado con booking_visitor_events): si esa
+persona tiene una sesión web orgánica ANTES de su primer mensaje de
+WhatsApp, es evidencia de que la web fue la entrada real. El dueño pidió
+usar esa misma heurística para decidir DÓNDE se cuenta la venta, no solo
+para mostrarla en el detalle — ver _PHONE_FLUJO_CTE. Flujo 1 (sin esa
+evidencia) sigue excluido de acá y se cuenta en WhatsApp.
 """
 from datetime import date, timedelta
 from typing import Optional
@@ -58,6 +65,48 @@ from app.core.config import settings
 # Umbral de duración (segundos) para considerar una sesión "útil" — ver
 # nota arriba.
 _USEFUL_SESSION_SECONDS = 5
+
+# Clasificación de flujo por teléfono — ver nota "Atribución del pago para
+# Flujo 3" arriba. Tabla derivada de TODO el historial (no del rango de
+# fechas que se esté mirando): el flujo de una persona es un hecho sobre
+# ella, no algo que deba cambiar según qué rango se elija en la página.
+# Reutilizada tal cual por whatsapp_traffic_analytics.py — no duplicar
+# esta lógica ahí, importarla de acá, para que ambas pestañas siempre
+# clasifiquen a la misma persona de la misma forma.
+PHONE_FLUJO_CTE = """
+    phone_flujo AS (
+        SELECT
+            cf.phone_number AS phone_norm,
+            CASE WHEN og.first_organic_at IS NOT NULL AND og.first_organic_at < cf.first_msg_at
+                 THEN 'flujo_3' ELSE 'flujo_1' END AS flujo
+        FROM (
+            SELECT phone_number, MIN(created_at) AS first_msg_at
+            FROM whatsapp_conversations
+            GROUP BY phone_number
+        ) cf
+        LEFT JOIN (
+            SELECT
+                regexp_replace(bvi.phone, '[^0-9]', '', 'g') AS phone_norm,
+                MIN(bve.recorded_at) AS first_organic_at
+            FROM booking_visitor_identity bvi
+            JOIN booking_visitor_events bve
+              ON bve.session_id = bvi.session_id
+                 OR (bvi.visitor_id IS NOT NULL AND bve.visitor_id = bvi.visitor_id)
+            WHERE bvi.phone IS NOT NULL AND bve.link_token IS NULL
+            GROUP BY regexp_replace(bvi.phone, '[^0-9]', '', 'g')
+        ) og ON og.phone_norm = cf.phone_number
+    )
+"""
+
+# Excluye SOLO los teléfonos "flujo_1" (WhatsApp puro, sin evidencia de
+# sesión web antes) de los conteos de pago de esta página — los "flujo_3"
+# (web → WhatsApp) se quedan, ya que la sesión web fue la entrada real.
+# Requiere que la consulta que use esto tenga PHONE_FLUJO_CTE en su WITH.
+_EXCLUDE_FLUJO1_PHONES = """
+    AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
+        SELECT phone_norm FROM phone_flujo WHERE flujo = 'flujo_1'
+    ))
+"""
 
 # Buckets del histograma de distribución de duración — mismos cortes que el
 # artefacto que se le mostró al dueño antes de fijar el umbral de 5s.
@@ -96,15 +145,6 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
             WHERE link_token IS NOT NULL
               AND recorded_at >= :desde AND recorded_at < :hasta_excl
         )
-    """
-
-    # Igual que arriba pero por teléfono, para la tabla de pagos
-    # (all_appointments) — sin filtro de fecha en la conversación: si alguien
-    # chateó hace un mes y pagó hoy, sigue siendo lead de WhatsApp.
-    _EXCLUDE_WHATSAPP_PHONES = """
-        AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
-            SELECT DISTINCT phone_number FROM whatsapp_conversations
-        ))
     """
 
     with engine.connect() as conn:
@@ -176,13 +216,10 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # "pagó" (y por lo tanto la tasa de conversión, que antes se veía
         # muy por debajo de la real).
         #
-        # Excluye teléfonos que ALGUNA VEZ escribieron por WhatsApp (sin
-        # filtro de fecha — si alguien chateó el mes pasado y pagó hoy,
-        # sigue siendo un lead de WhatsApp, no de la web) — agregado
-        # 2026-08-03: antes este conteo no tenía ninguna noción de canal, así
-        # que una reserva 100% originada en WhatsApp (flujo 1) también se
-        # sumaba acá. Mismo criterio de teléfono normalizado que ya usa
-        # whatsapp_traffic_analytics.py.
+        # Excluye teléfonos "flujo_1" (WhatsApp puro, sin evidencia de sesión
+        # web antes de escribir) — ver PHONE_FLUJO_CTE y la nota "Atribución
+        # del pago para Flujo 3" en el docstring del módulo. Los "flujo_3"
+        # (web → WhatsApp) se quedan acá, no en la pestaña WhatsApp.
         #
         # Se cuenta por created_at (cuándo se creó la reserva), no por
         # updated_at/fecha de pago — a pedido del dueño 2026-08-04: lo que
@@ -199,6 +236,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # solo día terminaba con menos filas que el número que el propio
         # gráfico mostraba para ese día.
         paid_rows = conn.execute(text(f"""
+            WITH {PHONE_FLUJO_CTE}
             SELECT DATE(created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments
             WHERE (
@@ -207,7 +245,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
             )
               AND DATE(created_at AT TIME ZONE 'America/Santiago') >= :desde
               AND DATE(created_at AT TIME ZONE 'America/Santiago') <= :hasta
-              {_EXCLUDE_WHATSAPP_PHONES}
+              {_EXCLUDE_FLUJO1_PHONES}
             GROUP BY day ORDER BY day
         """), {"desde": desde, "hasta": hasta}).fetchall()
 
@@ -281,28 +319,31 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_web_traffic_daily — mismo
     criterio de pago, de fecha (created_at en hora de Chile, no cuándo se
     pagó ni la fecha cruda en UTC — ver los dos comentarios en
-    get_web_traffic_daily) y de exclusión de teléfonos de WhatsApp que la
+    get_web_traffic_daily) y de exclusión de teléfonos flujo_1 que la
     agregada, para que la lista siempre calce con el número de la
-    tarjeta."""
+    tarjeta. Incluye "flujo" (flujo_2 = nunca escribió por WhatsApp,
+    flujo_3 = sí, pero después de una sesión web — ver PHONE_FLUJO_CTE)
+    para poder mostrar el % que igual pasó por WhatsApp en el camino."""
     engine = _source_engine()
 
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        rows = conn.execute(text(f"""
+            WITH {PHONE_FLUJO_CTE}
             SELECT
-                id, appointment_id, nombre_cliente, email, telefono,
-                servicio, fecha, hora, ingreso_total,
-                created_at
-            FROM all_appointments
+                a.id, a.appointment_id, a.nombre_cliente, a.email, a.telefono,
+                a.servicio, a.fecha, a.hora, a.ingreso_total,
+                a.created_at,
+                pf.flujo
+            FROM all_appointments a
+            LEFT JOIN phone_flujo pf ON pf.phone_norm = regexp_replace(a.telefono, '[^0-9]', '', 'g')
             WHERE (
-                (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
-                OR payment_status IN ('approved', 'completed')
+                (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
+                OR a.payment_status IN ('approved', 'completed')
             )
-              AND DATE(created_at AT TIME ZONE 'America/Santiago') >= :desde
-              AND DATE(created_at AT TIME ZONE 'America/Santiago') <= :hasta
-              AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
-                  SELECT DISTINCT phone_number FROM whatsapp_conversations
-              ))
-            ORDER BY created_at DESC
+              AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
+              AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
+              {_EXCLUDE_FLUJO1_PHONES}
+            ORDER BY a.created_at DESC
         """), {"desde": desde, "hasta": hasta}).fetchall()
 
     return [
@@ -316,6 +357,7 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
             "hora": str(r.hora)[:5] if r.hora else None,
             "monto": float(r.ingreso_total) if r.ingreso_total else None,
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "flujo": r.flujo or "flujo_2",
         }
         for r in rows
     ]

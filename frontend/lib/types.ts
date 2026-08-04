@@ -373,13 +373,14 @@ export interface ConversionDetailRow {
   hora: string | null;
   monto: number | null;
   created_at: string | null; // cuándo se creó la reserva — no cuándo se pagó
+  // Solo en la lista de Web: flujo_2 = nunca escribió por WhatsApp, flujo_3 =
+  // sí, pero después de una sesión web (por eso se cuenta acá y no en WhatsApp).
+  flujo?: "flujo_2" | "flujo_3";
 }
 
-export interface WhatsappConversionDetailRow extends ConversionDetailRow {
-  flujo: "flujo_1" | "flujo_3";
-  first_whatsapp_msg_at: string | null;
-  first_web_organic_at: string | null;
-}
+// Ya no trae "flujo" — la lista de WhatsApp solo incluye flujo_1 (WhatsApp
+// puro); los flujo_3 se mudaron a la lista de Web, ver ConversionDetailRow.
+export type WhatsappConversionDetailRow = ConversionDetailRow;
 
 export interface OverviewStats {
   contacts: { total: number; opted_in: number };
