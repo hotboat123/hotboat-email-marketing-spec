@@ -54,8 +54,19 @@ pestaña WhatsApp, una heurística real de orden cronológico
 persona tiene una sesión web orgánica ANTES de su primer mensaje de
 WhatsApp, es evidencia de que la web fue la entrada real. El dueño pidió
 usar esa misma heurística para decidir DÓNDE se cuenta la venta, no solo
-para mostrarla en el detalle — ver _PHONE_FLUJO_CTE. Flujo 1 (sin esa
-evidencia) sigue excluido de acá y se cuenta en WhatsApp.
+para mostrarla en el detalle — ver PHONE_FLUJO_LATERAL.
+
+Corrección 2026-08-04 (mismo día): la primera versión de esa heurística
+comparaba "¿ALGUNA VEZ tuvo sesión web antes de escribir por WhatsApp?"
+sin mirar cuándo se hizo ESTA reserva puntual — así que alguien que
+reservó por la web y recién DESPUÉS recibió un WhatsApp (ej. un mensaje
+de seguimiento al día siguiente) quedaba mal clasificado como flujo_3,
+cuando ese WhatsApp no tuvo ningún rol en la venta (caso real: Felipe
+Ortega, reservó el 28/07, WhatsApp del 29/07). Ahora solo cuenta un
+mensaje de WhatsApp si pasó ANTES de created_at de la reserva — por eso
+es un LEFT JOIN LATERAL correlacionado a cada fila de all_appointments,
+no una tabla precalculada por teléfono (el flujo de una reserva puede
+depender de CUÁNDO se hizo, no es un hecho fijo de la persona).
 """
 from datetime import date, timedelta
 from typing import Optional
@@ -66,47 +77,46 @@ from app.core.config import settings
 # nota arriba.
 _USEFUL_SESSION_SECONDS = 5
 
-# Clasificación de flujo por teléfono — ver nota "Atribución del pago para
-# Flujo 3" arriba. Tabla derivada de TODO el historial (no del rango de
-# fechas que se esté mirando): el flujo de una persona es un hecho sobre
-# ella, no algo que deba cambiar según qué rango se elija en la página.
+# Clasificación de flujo POR RESERVA — ver nota "Atribución del pago para
+# Flujo 3" / "Corrección 2026-08-04" arriba. Requiere que la consulta que
+# use esto tenga all_appointments aliased como "a" (usa a.telefono y
+# a.created_at) — el JOIN LATERAL en sí agrega la columna pf.flujo, que
+# nunca es NULL (el CASE siempre resuelve a uno de los 3 valores).
 # Reutilizada tal cual por whatsapp_traffic_analytics.py — no duplicar
 # esta lógica ahí, importarla de acá, para que ambas pestañas siempre
-# clasifiquen a la misma persona de la misma forma.
-PHONE_FLUJO_CTE = """
-    phone_flujo AS (
+# clasifiquen a la misma reserva de la misma forma.
+PHONE_FLUJO_LATERAL = """
+    LEFT JOIN LATERAL (
         SELECT
-            cf.phone_number AS phone_norm,
-            CASE WHEN og.first_organic_at IS NOT NULL AND og.first_organic_at < cf.first_msg_at
-                 THEN 'flujo_3' ELSE 'flujo_1' END AS flujo
+            CASE
+                WHEN fm.first_msg_before IS NULL THEN 'flujo_2'
+                WHEN fo.first_organic_before IS NOT NULL THEN 'flujo_3'
+                ELSE 'flujo_1'
+            END AS flujo
         FROM (
-            SELECT phone_number, MIN(created_at) AS first_msg_at
-            FROM whatsapp_conversations
-            GROUP BY phone_number
-        ) cf
-        LEFT JOIN (
-            SELECT
-                regexp_replace(bvi.phone, '[^0-9]', '', 'g') AS phone_norm,
-                MIN(bve.recorded_at) AS first_organic_at
+            SELECT MIN(wc.created_at) AS first_msg_before
+            FROM whatsapp_conversations wc
+            WHERE wc.phone_number = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+              AND wc.created_at < a.created_at
+        ) fm
+        LEFT JOIN LATERAL (
+            SELECT MIN(bve.recorded_at) AS first_organic_before
             FROM booking_visitor_identity bvi
             JOIN booking_visitor_events bve
               ON bve.session_id = bvi.session_id
                  OR (bvi.visitor_id IS NOT NULL AND bve.visitor_id = bvi.visitor_id)
-            WHERE bvi.phone IS NOT NULL AND bve.link_token IS NULL
-            GROUP BY regexp_replace(bvi.phone, '[^0-9]', '', 'g')
-        ) og ON og.phone_norm = cf.phone_number
-    )
+            WHERE regexp_replace(bvi.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+              AND bve.link_token IS NULL
+              AND bve.recorded_at < fm.first_msg_before
+        ) fo ON fm.first_msg_before IS NOT NULL
+    ) pf ON true
 """
 
-# Excluye SOLO los teléfonos "flujo_1" (WhatsApp puro, sin evidencia de
+# Excluye SOLO las reservas "flujo_1" (WhatsApp puro, sin evidencia de
 # sesión web antes) de los conteos de pago de esta página — los "flujo_3"
 # (web → WhatsApp) se quedan, ya que la sesión web fue la entrada real.
-# Requiere que la consulta que use esto tenga PHONE_FLUJO_CTE en su WITH.
-_EXCLUDE_FLUJO1_PHONES = """
-    AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
-        SELECT phone_norm FROM phone_flujo WHERE flujo = 'flujo_1'
-    ))
-"""
+# Requiere PHONE_FLUJO_LATERAL en la misma consulta.
+_EXCLUDE_FLUJO1_PHONES = "AND pf.flujo != 'flujo_1'"
 
 # Buckets del histograma de distribución de duración — mismos cortes que el
 # artefacto que se le mostró al dueño antes de fijar el umbral de 5s.
@@ -216,10 +226,10 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # "pagó" (y por lo tanto la tasa de conversión, que antes se veía
         # muy por debajo de la real).
         #
-        # Excluye teléfonos "flujo_1" (WhatsApp puro, sin evidencia de sesión
-        # web antes de escribir) — ver PHONE_FLUJO_CTE y la nota "Atribución
-        # del pago para Flujo 3" en el docstring del módulo. Los "flujo_3"
-        # (web → WhatsApp) se quedan acá, no en la pestaña WhatsApp.
+        # Excluye reservas "flujo_1" (WhatsApp puro, sin evidencia de sesión
+        # web antes de escribir) — ver PHONE_FLUJO_LATERAL y la nota
+        # "Atribución del pago para Flujo 3" en el docstring del módulo. Las
+        # "flujo_3" (web → WhatsApp) se quedan acá, no en la pestaña WhatsApp.
         #
         # Se cuenta por created_at (cuándo se creó la reserva), no por
         # updated_at/fecha de pago — a pedido del dueño 2026-08-04: lo que
@@ -236,15 +246,15 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # solo día terminaba con menos filas que el número que el propio
         # gráfico mostraba para ese día.
         paid_rows = conn.execute(text(f"""
-            WITH {PHONE_FLUJO_CTE}
-            SELECT DATE(created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
-            FROM all_appointments
+            SELECT DATE(a.created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
+            FROM all_appointments a
+            {PHONE_FLUJO_LATERAL}
             WHERE (
-                (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
-                OR payment_status IN ('approved', 'completed')
+                (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
+                OR a.payment_status IN ('approved', 'completed')
             )
-              AND DATE(created_at AT TIME ZONE 'America/Santiago') >= :desde
-              AND DATE(created_at AT TIME ZONE 'America/Santiago') <= :hasta
+              AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
+              AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
               {_EXCLUDE_FLUJO1_PHONES}
             GROUP BY day ORDER BY day
         """), {"desde": desde, "hasta": hasta}).fetchall()
@@ -319,23 +329,23 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_web_traffic_daily — mismo
     criterio de pago, de fecha (created_at en hora de Chile, no cuándo se
     pagó ni la fecha cruda en UTC — ver los dos comentarios en
-    get_web_traffic_daily) y de exclusión de teléfonos flujo_1 que la
+    get_web_traffic_daily) y de exclusión de reservas flujo_1 que la
     agregada, para que la lista siempre calce con el número de la
-    tarjeta. Incluye "flujo" (flujo_2 = nunca escribió por WhatsApp,
-    flujo_3 = sí, pero después de una sesión web — ver PHONE_FLUJO_CTE)
-    para poder mostrar el % que igual pasó por WhatsApp en el camino."""
+    tarjeta. Incluye "flujo" (flujo_2 = sin WhatsApp antes de esta
+    reserva, flujo_3 = sí, pero después de una sesión web — ver
+    PHONE_FLUJO_LATERAL) para poder mostrar el % que igual pasó por
+    WhatsApp en el camino."""
     engine = _source_engine()
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
-            WITH {PHONE_FLUJO_CTE}
             SELECT
                 a.id, a.appointment_id, a.nombre_cliente, a.email, a.telefono,
                 a.servicio, a.fecha, a.hora, a.ingreso_total,
                 a.created_at,
                 pf.flujo
             FROM all_appointments a
-            LEFT JOIN phone_flujo pf ON pf.phone_norm = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+            {PHONE_FLUJO_LATERAL}
             WHERE (
                 (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
                 OR a.payment_status IN ('approved', 'completed')

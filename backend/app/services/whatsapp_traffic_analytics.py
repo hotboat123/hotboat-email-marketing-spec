@@ -33,7 +33,7 @@ Definiciones acordadas con el dueño del negocio (2026-07-26):
 from datetime import date, timedelta
 from sqlalchemy import create_engine, text
 from app.core.config import settings
-from app.services.web_traffic_analytics import PHONE_FLUJO_CTE
+from app.services.web_traffic_analytics import PHONE_FLUJO_LATERAL
 
 _USEFUL_MIN_INCOMING = 2
 
@@ -56,8 +56,7 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
-            WITH {PHONE_FLUJO_CTE},
-            conv AS (
+            WITH conv AS (
                 SELECT
                     phone_number,
                     MIN(DATE(created_at AT TIME ZONE 'America/Santiago')) AS day,
@@ -87,12 +86,12 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
             --
             -- Solo cuenta acá si es flujo_1 (WhatsApp puro) — un flujo_3
             -- (web → WhatsApp) se cuenta en la pestaña Web, ver
-            -- PHONE_FLUJO_CTE y la nota "Atribución del pago para Flujo 3"
-            -- en web_traffic_analytics.py.
+            -- PHONE_FLUJO_LATERAL y la nota "Atribución del pago para Flujo
+            -- 3" en web_traffic_analytics.py.
             paid_phones AS (
                 SELECT DISTINCT regexp_replace(a.telefono, '[^0-9]', '', 'g') AS phone
                 FROM all_appointments a
-                JOIN phone_flujo pf ON pf.phone_norm = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+                {PHONE_FLUJO_LATERAL}
                 WHERE a.telefono IS NOT NULL
                   AND pf.flujo = 'flujo_1'
                   AND (
@@ -160,8 +159,8 @@ def get_whatsapp_conversions_detail(
     desde: date, hasta: date, cohort_from: date | None = None, cohort_to: date | None = None
 ) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_whatsapp_traffic_daily — solo
-    flujo_1 (WhatsApp puro), usando la misma clasificación por teléfono
-    que PHONE_FLUJO_CTE (ver web_traffic_analytics.py): los flujo_3 (web →
+    flujo_1 (WhatsApp puro), usando la misma clasificación por reserva que
+    PHONE_FLUJO_LATERAL (ver web_traffic_analytics.py): los flujo_3 (web →
     WhatsApp) ya no se cuentan acá, se cuentan en la pestaña Web — ver la
     nota "Atribución del pago para Flujo 3" en ese módulo.
 
@@ -179,8 +178,7 @@ def get_whatsapp_conversions_detail(
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
-            WITH {PHONE_FLUJO_CTE},
-            conv_first AS (
+            WITH conv_first AS (
                 -- Sin filtro de "conversación útil" (>=2 entrantes) a
                 -- propósito: get_whatsapp_traffic_daily tampoco lo aplica a
                 -- paid_n, solo a la métrica "useful" por separado — un
@@ -195,22 +193,23 @@ def get_whatsapp_conversions_detail(
             ),
             paid_appts AS (
                 SELECT
-                    id, appointment_id, nombre_cliente, email, telefono,
-                    servicio, fecha, hora, ingreso_total,
-                    regexp_replace(telefono, '[^0-9]', '', 'g') AS phone_norm,
-                    created_at
-                FROM all_appointments
-                WHERE telefono IS NOT NULL
+                    a.id, a.appointment_id, a.nombre_cliente, a.email, a.telefono,
+                    a.servicio, a.fecha, a.hora, a.ingreso_total,
+                    regexp_replace(a.telefono, '[^0-9]', '', 'g') AS phone_norm,
+                    a.created_at,
+                    pf.flujo
+                FROM all_appointments a
+                {PHONE_FLUJO_LATERAL}
+                WHERE a.telefono IS NOT NULL
                   AND (
-                      (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
-                      OR payment_status IN ('approved', 'completed')
+                      (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
+                      OR a.payment_status IN ('approved', 'completed')
                   )
             )
             SELECT pa.*
             FROM paid_appts pa
             JOIN conv_first cf ON cf.phone_number = pa.phone_norm
-            JOIN phone_flujo pf ON pf.phone_norm = pa.phone_norm
-            WHERE pf.flujo = 'flujo_1'
+            WHERE pa.flujo = 'flujo_1'
               AND ((:cohort_from)::date IS NULL OR cf.day >= (:cohort_from)::date)
               AND ((:cohort_to)::date IS NULL OR cf.day <= (:cohort_to)::date)
             ORDER BY pa.created_at DESC
