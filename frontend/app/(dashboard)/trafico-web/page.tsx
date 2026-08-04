@@ -406,7 +406,11 @@ export default function TraficoWebPage() {
 
   // null = modal cerrado. dayLabel presente = se hizo click en un punto del gráfico
   // (un día/semana/mes puntual) en vez de en la tarjeta de resumen (todo el rango elegido arriba).
-  const [conversionsRange, setConversionsRange] = useState<{ desde: string; hasta: string; dayLabel?: string } | null>(null);
+  // cohortFrom/cohortTo: solo para WhatsApp — ver comentario en el click del gráfico WA más abajo,
+  // el "día" de cada teléfono se calcula sobre desde/hasta completo, nunca sobre un rango angosto.
+  const [conversionsRange, setConversionsRange] = useState<{
+    desde: string; hasta: string; dayLabel?: string; cohortFrom?: string; cohortTo?: string;
+  } | null>(null);
 
   const { data: webConversions, isLoading: webConversionsLoading } = useQuery<ConversionDetailRow[]>({
     queryKey: ["web-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta],
@@ -416,8 +420,11 @@ export default function TraficoWebPage() {
   });
 
   const { data: waConversions, isLoading: waConversionsLoading } = useQuery<WhatsappConversionDetailRow[]>({
-    queryKey: ["whatsapp-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta],
-    queryFn: () => webTrafficApi.whatsappConversions(conversionsRange!.desde, conversionsRange!.hasta).then((r) => r.data),
+    queryKey: ["whatsapp-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta, conversionsRange?.cohortFrom, conversionsRange?.cohortTo],
+    queryFn: () =>
+      webTrafficApi
+        .whatsappConversions(conversionsRange!.desde, conversionsRange!.hasta, conversionsRange!.cohortFrom, conversionsRange!.cohortTo)
+        .then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: !!conversionsRange && source === "whatsapp",
   });
@@ -724,7 +731,13 @@ export default function TraficoWebPage() {
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Line
                 yAxisId="left" type="monotone" dataKey="conversion_rate" name="Conversión" stroke="#16a34a" strokeWidth={2}
-                dot={makeClickableDot<ChartRowWA>((row) => setConversionsRange({ desde: row.desde, hasta: row.hasta, dayLabel: row.label }))}
+                dot={makeClickableDot<ChartRowWA>((row) =>
+                  // A diferencia de Web, acá "pagó" se le atribuye al día del PRIMER mensaje del
+                  // teléfono dentro del rango completo (cohorte) — así que desde/hasta del filtro
+                  // siguen siendo el rango completo de la página, y row.desde/row.hasta (el día
+                  // puntual clickeado) van como cohortFrom/cohortTo para no romper ese cálculo.
+                  setConversionsRange({ desde, hasta, cohortFrom: row.desde, cohortTo: row.hasta, dayLabel: row.label })
+                )}
                 connectNulls
               />
               <Line yAxisId="right" type="monotone" dataKey="paid" name="# Pagos" stroke="#0369a1" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />

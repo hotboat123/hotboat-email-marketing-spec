@@ -71,10 +71,18 @@ def web_conversions_detail(
 def whatsapp_conversions_detail(
     desde: date = Query(default=None),
     hasta: date = Query(default=None),
+    cohort_desde: date = Query(default=None),
+    cohort_hasta: date = Query(default=None),
     _: User = Depends(get_current_user),
 ):
     """Quiénes son los "paid" de la pestaña WhatsApp, con clasificación por
     orden cronológico (flujo 1 vs flujo 3) — ver
-    get_whatsapp_conversions_detail() para el criterio exacto."""
+    get_whatsapp_conversions_detail() para el criterio exacto.
+
+    desde/hasta siguen siendo el rango completo elegido en la página (para
+    que el "día de cohorte" de cada teléfono se calcule igual que en la
+    agregada). cohort_desde/cohort_hasta son opcionales y acotan el
+    resultado a un día o bucket puntual del gráfico, sin cambiar ese
+    cálculo — ver el docstring de get_whatsapp_conversions_detail()."""
     desde, hasta = _default_range(desde, hasta)
-    return get_whatsapp_conversions_detail(desde, hasta)
+    return get_whatsapp_conversions_detail(desde, hasta, cohort_desde, cohort_hasta)

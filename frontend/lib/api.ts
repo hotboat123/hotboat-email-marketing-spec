@@ -135,8 +135,13 @@ export const webTrafficApi = {
     api.get("/web-traffic/whatsapp-daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
   conversions: (desde?: string, hasta?: string) =>
     api.get("/web-traffic/conversions", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
-  whatsappConversions: (desde?: string, hasta?: string) =>
-    api.get("/web-traffic/whatsapp-conversions", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  whatsappConversions: (desde?: string, hasta?: string, cohortDesde?: string, cohortHasta?: string) =>
+    api.get("/web-traffic/whatsapp-conversions", {
+      params: {
+        desde: desde || undefined, hasta: hasta || undefined,
+        cohort_desde: cohortDesde || undefined, cohort_hasta: cohortHasta || undefined,
+      },
+    }),
 };
 
 // Signup Forms

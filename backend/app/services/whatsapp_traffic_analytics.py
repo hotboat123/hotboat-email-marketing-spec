@@ -147,7 +147,9 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
     return {"desde": desde.isoformat(), "hasta": hasta.isoformat(), "daily": daily, "totals": totals}
 
 
-def get_whatsapp_conversions_detail(desde: date, hasta: date) -> list[dict]:
+def get_whatsapp_conversions_detail(
+    desde: date, hasta: date, cohort_from: date | None = None, cohort_to: date | None = None
+) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_whatsapp_traffic_daily, más una
     clasificación por orden cronológico real (no solo "mismo dispositivo
     alguna vez"): para cada reserva, se busca si ese teléfono tiene una
@@ -156,7 +158,17 @@ def get_whatsapp_conversions_detail(desde: date, hasta: date) -> list[dict]:
     link que mandó el bot) cuyo primer evento sea ANTERIOR al primer
     mensaje de WhatsApp de ese teléfono. Si existe: la persona ya andaba
     por la web antes de escribir — flujo 3. Si no: no hay evidencia de que
-    haya pasado por la web antes — flujo 1 (a falta de mejor dato)."""
+    haya pasado por la web antes — flujo 1 (a falta de mejor dato).
+
+    desde/hasta deben ser el MISMO rango completo que se le pasó a
+    get_whatsapp_traffic_daily (no el día puntual que se está mirando) —
+    la agregada le atribuye cada teléfono al día de su PRIMER mensaje
+    dentro de ese rango completo ("cohorte"), así que angostar desde/hasta
+    a un solo día cambiaría de qué mensaje se calcula ese "primer mensaje"
+    y dejaría de calzar con el número de esa métrica. Para acotar el
+    drill-down a un día (o bucket de semana/mes) puntual del gráfico, se
+    usa cohort_from/cohort_to en cambio — filtran por el día de cohorte ya
+    calculado sobre el rango completo, sin tocar ese cálculo."""
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)
 
@@ -170,7 +182,8 @@ def get_whatsapp_conversions_detail(desde: date, hasta: date) -> list[dict]:
                 -- porque escribió un único mensaje.
                 SELECT
                     phone_number,
-                    MIN(created_at) AS first_msg_at
+                    MIN(created_at) AS first_msg_at,
+                    MIN(DATE(created_at AT TIME ZONE 'America/Santiago')) AS day
                 FROM whatsapp_conversations
                 WHERE created_at >= :desde AND created_at < :hasta_excl
                 GROUP BY phone_number
@@ -192,6 +205,8 @@ def get_whatsapp_conversions_detail(desde: date, hasta: date) -> list[dict]:
                 SELECT pa.*, cf.first_msg_at
                 FROM paid_appts pa
                 JOIN conv_first cf ON cf.phone_number = pa.phone_norm
+                WHERE ((:cohort_from)::date IS NULL OR cf.day >= (:cohort_from)::date)
+                  AND ((:cohort_to)::date IS NULL OR cf.day <= (:cohort_to)::date)
             ),
             identity AS (
                 SELECT DISTINCT
@@ -214,7 +229,8 @@ def get_whatsapp_conversions_detail(desde: date, hasta: date) -> list[dict]:
             LEFT JOIN organic_first o ON o.phone_norm = m.phone_norm
             ORDER BY m.paid_at DESC
         """), {
-            "desde": desde, "hasta_excl": hasta_excl, "useful_min": _USEFUL_MIN_INCOMING,
+            "desde": desde, "hasta_excl": hasta_excl,
+            "cohort_from": cohort_from, "cohort_to": cohort_to,
         }).fetchall()
 
     def _naive(dt):
