@@ -270,7 +270,7 @@ function ConversionsModal({
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contacto</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reserva</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Monto</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Pagó</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reservó</th>
                   {isWhatsapp && <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Flujo</th>}
                 </tr>
               </thead>
@@ -289,7 +289,7 @@ function ConversionsModal({
                         <div className="text-gray-400">{r.servicio} {r.fecha ? `· ${r.fecha}` : ""}</div>
                       </td>
                       <td className="px-4 py-2.5 text-right text-gray-800 tabular-nums">{money(r.monto)}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{fmtDateTime(r.paid_at)}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{fmtDateTime(r.created_at)}</td>
                       {isWhatsapp && (
                         <td className="px-4 py-2.5">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${FLUJO_LABEL[wa.flujo]?.color ?? "bg-gray-100 text-gray-600"}`}>

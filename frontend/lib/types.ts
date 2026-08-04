@@ -372,7 +372,7 @@ export interface ConversionDetailRow {
   fecha: string | null;
   hora: string | null;
   monto: number | null;
-  paid_at: string | null;
+  created_at: string | null; // cuándo se creó la reserva — no cuándo se pagó
 }
 
 export interface WhatsappConversionDetailRow extends ConversionDetailRow {

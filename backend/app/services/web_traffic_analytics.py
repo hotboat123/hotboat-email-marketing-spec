@@ -183,14 +183,20 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # que una reserva 100% originada en WhatsApp (flujo 1) también se
         # sumaba acá. Mismo criterio de teléfono normalizado que ya usa
         # whatsapp_traffic_analytics.py.
+        #
+        # Se cuenta por created_at (cuándo se creó la reserva), no por
+        # updated_at/fecha de pago — a pedido del dueño 2026-08-04: lo que
+        # importa para atribuir la conversión a un día es cuándo la persona
+        # reservó, no cuándo se registró el pago (que puede llegar días
+        # después, ej. transferencia manual).
         paid_rows = conn.execute(text(f"""
-            SELECT DATE(COALESCE(updated_at, created_at) AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
+            SELECT DATE(created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments
             WHERE (
                 (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
                 OR payment_status IN ('approved', 'completed')
             )
-              AND COALESCE(updated_at, created_at) >= :desde AND COALESCE(updated_at, created_at) < :hasta_excl
+              AND created_at >= :desde AND created_at < :hasta_excl
               {_EXCLUDE_WHATSAPP_PHONES}
             GROUP BY day ORDER BY day
         """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
@@ -263,8 +269,10 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
 
 def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_web_traffic_daily — mismo
-    criterio de pago y de exclusión de teléfonos de WhatsApp que la
-    agregada, para que la lista siempre calce con el número de la tarjeta."""
+    criterio de pago, de fecha (created_at, no cuándo se pagó — ver
+    comentario en get_web_traffic_daily) y de exclusión de teléfonos de
+    WhatsApp que la agregada, para que la lista siempre calce con el
+    número de la tarjeta."""
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)
 
@@ -273,17 +281,17 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
             SELECT
                 id, appointment_id, nombre_cliente, email, telefono,
                 servicio, fecha, hora, ingreso_total,
-                COALESCE(updated_at, created_at) AS paid_at
+                created_at
             FROM all_appointments
             WHERE (
                 (pagos IS NOT NULL AND jsonb_array_length(pagos) > 0)
                 OR payment_status IN ('approved', 'completed')
             )
-              AND COALESCE(updated_at, created_at) >= :desde AND COALESCE(updated_at, created_at) < :hasta_excl
+              AND created_at >= :desde AND created_at < :hasta_excl
               AND (telefono IS NULL OR regexp_replace(telefono, '[^0-9]', '', 'g') NOT IN (
                   SELECT DISTINCT phone_number FROM whatsapp_conversations
               ))
-            ORDER BY paid_at DESC
+            ORDER BY created_at DESC
         """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
 
     return [
@@ -296,7 +304,7 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
             "fecha": r.fecha.isoformat() if r.fecha else None,
             "hora": str(r.hora)[:5] if r.hora else None,
             "monto": float(r.ingreso_total) if r.ingreso_total else None,
-            "paid_at": r.paid_at.isoformat() if r.paid_at else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
     ]

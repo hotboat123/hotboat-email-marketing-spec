@@ -193,7 +193,7 @@ def get_whatsapp_conversions_detail(
                     id, appointment_id, nombre_cliente, email, telefono,
                     servicio, fecha, hora, ingreso_total,
                     regexp_replace(telefono, '[^0-9]', '', 'g') AS phone_norm,
-                    COALESCE(updated_at, created_at) AS paid_at
+                    created_at
                 FROM all_appointments
                 WHERE telefono IS NOT NULL
                   AND (
@@ -227,7 +227,7 @@ def get_whatsapp_conversions_detail(
             SELECT m.*, o.first_organic_at
             FROM matched m
             LEFT JOIN organic_first o ON o.phone_norm = m.phone_norm
-            ORDER BY m.paid_at DESC
+            ORDER BY m.created_at DESC
         """), {
             "desde": desde, "hasta_excl": hasta_excl,
             "cohort_from": cohort_from, "cohort_to": cohort_to,
@@ -252,7 +252,7 @@ def get_whatsapp_conversions_detail(
             "fecha": r.fecha.isoformat() if r.fecha else None,
             "hora": str(r.hora)[:5] if r.hora else None,
             "monto": float(r.ingreso_total) if r.ingreso_total else None,
-            "paid_at": r.paid_at.isoformat() if r.paid_at else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
             "flujo": flujo,
             "first_whatsapp_msg_at": r.first_msg_at.isoformat() if r.first_msg_at else None,
             "first_web_organic_at": r.first_organic_at.isoformat() if r.first_organic_at else None,
