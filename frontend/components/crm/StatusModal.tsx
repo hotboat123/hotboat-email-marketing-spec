@@ -17,6 +17,14 @@ export function statusMeta(status: string) {
 }
 
 export function linkFunnelLabel(c: ContactCRM): string | null {
+  // veces_hotboat (reservas reales en all_appointments) manda sobre cualquier señal de
+  // tracking web: un cliente puede terminar de reservar por WhatsApp, llamada, o que el
+  // admin la cree a mano, sin volver a pasar por la página con el evento "booking_completed"
+  // — en ese caso el tracking (web_classification / link_*) se queda pegado en lo último que
+  // sí vimos (ej. "Eligió fecha") aunque la reserva ya esté hecha. Los link_* del funnel
+  // WhatsApp además no tienen ningún equivalente de "completó reserva", su techo real es
+  // selected_date, así que sin este check nunca podrían mostrar "Reservó".
+  if ((c.veces_hotboat ?? 0) > 0) return "✅ Reservó";
   // Preferir la clasificacion real de navegacion directa en la web (booking_visitor_summary)
   // sobre el funnel booleano legacy, que solo cubre leads a los que el bot les mando un link.
   if (c.web_classification) return c.web_classification;
