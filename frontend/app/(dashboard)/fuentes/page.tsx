@@ -43,7 +43,8 @@ const FLUJO_LABEL_FULL: Record<string, string> = {
 
 type RangePreset = "7" | "30" | "60" | "custom";
 type Channel = "web" | "whatsapp";
-type PlatformFilter = PlatformBucket | "todos";
+
+const ALL_PLATFORMS: PlatformBucket[] = ["meta", "google", "otro"];
 
 export default function FuentesPage() {
   const [desde, setDesde] = useState(daysAgoISO(60));
@@ -51,8 +52,20 @@ export default function FuentesPage() {
   const [preset, setPreset] = useState<RangePreset>("60");
 
   const [channel, setChannel] = useState<Channel>("web");
-  const [platform, setPlatform] = useState<PlatformFilter>("todos");
+  // Multi-select: cualquier combinación de Meta/Google/Otro a la vez (ej.
+  // Meta + Google, sin Otro) — no solo una a la vez. Al menos una queda
+  // siempre seleccionada (togglePlatform no permite vaciar del todo).
+  const [platforms, setPlatforms] = useState<PlatformBucket[]>(ALL_PLATFORMS);
   const [granularity, setGranularity] = useState<Granularity>("day");
+
+  function togglePlatform(p: PlatformBucket) {
+    setPlatforms((prev) => {
+      if (prev.includes(p)) {
+        return prev.length > 1 ? prev.filter((x) => x !== p) : prev;
+      }
+      return [...prev, p];
+    });
+  }
 
   function applyPreset(p: RangePreset) {
     setPreset(p);
@@ -73,18 +86,18 @@ export default function FuentesPage() {
     staleTime: 2 * 60_000,
   });
 
-  const apiPlatform = platform === "todos" ? undefined : platform;
+  const platformsKey = platforms.join(",");
 
   const { data: webData, isLoading: webLoading } = useQuery<WebTrafficResponse>({
-    queryKey: ["sources-daily-web", desde, hasta, apiPlatform],
-    queryFn: () => sourcesApi.daily("web", apiPlatform, desde, hasta).then((r) => r.data),
+    queryKey: ["sources-daily-web", desde, hasta, platformsKey],
+    queryFn: () => sourcesApi.daily("web", platforms, desde, hasta).then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: channel === "web",
   });
 
   const { data: waData, isLoading: waLoading } = useQuery<WhatsappTrafficResponse>({
-    queryKey: ["sources-daily-whatsapp", desde, hasta, apiPlatform],
-    queryFn: () => sourcesApi.daily("whatsapp", apiPlatform, desde, hasta).then((r) => r.data),
+    queryKey: ["sources-daily-whatsapp", desde, hasta, platformsKey],
+    queryFn: () => sourcesApi.daily("whatsapp", platforms, desde, hasta).then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: channel === "whatsapp",
   });
@@ -94,10 +107,10 @@ export default function FuentesPage() {
   } | null>(null);
 
   const { data: conversions, isLoading: conversionsLoading } = useQuery<ConversionDetailRow[]>({
-    queryKey: ["sources-conversions", channel, apiPlatform, conversionsRange?.desde, conversionsRange?.hasta, conversionsRange?.cohortFrom, conversionsRange?.cohortTo],
+    queryKey: ["sources-conversions", channel, platformsKey, conversionsRange?.desde, conversionsRange?.hasta, conversionsRange?.cohortFrom, conversionsRange?.cohortTo],
     queryFn: () =>
       sourcesApi
-        .conversions(channel, apiPlatform, conversionsRange!.desde, conversionsRange!.hasta, conversionsRange!.cohortFrom, conversionsRange!.cohortTo)
+        .conversions(channel, platforms, conversionsRange!.desde, conversionsRange!.hasta, conversionsRange!.cohortFrom, conversionsRange!.cohortTo)
         .then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: !!conversionsRange,
@@ -277,18 +290,32 @@ export default function FuentesPage() {
               </button>
             ))}
           </div>
-          <div className="flex gap-1.5 bg-gray-100 rounded-lg p-1">
-            {(["todos", "meta", "google", "otro"] as PlatformFilter[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPlatform(p)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  platform === p ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                {p === "todos" ? "Todos" : PLATFORM_LABEL[p].text}
-              </button>
-            ))}
+          <div className="flex items-center gap-1.5 bg-gray-100 rounded-lg p-1" title="Selecciona una o varias — ej. Meta + Google, sin Otro">
+            <button
+              onClick={() => setPlatforms(ALL_PLATFORMS)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                platforms.length === ALL_PLATFORMS.length ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Todos
+            </button>
+            <span className="w-px h-4 bg-gray-300 mx-0.5" />
+            {ALL_PLATFORMS.map((p) => {
+              const active = platforms.includes(p);
+              return (
+                <button
+                  key={p}
+                  onClick={() => togglePlatform(p)}
+                  aria-pressed={active}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    active ? "bg-white text-gray-900 shadow-sm" : "text-gray-400 hover:text-gray-600"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${active ? PLATFORM_LABEL[p].dot : "bg-gray-300"}`} />
+                  {PLATFORM_LABEL[p].text}
+                </button>
+              );
+            })}
           </div>
           <div className="flex gap-1.5">
             {(["day", "week", "month"] as Granularity[]).map((g) => (
@@ -434,7 +461,7 @@ export default function FuentesPage() {
         <ConversionsModal
           title={
             (channel === "web" ? "Quiénes pagaron — Web" : "Quiénes pagaron — WhatsApp") +
-            (platform !== "todos" ? ` · ${PLATFORM_LABEL[platform].text}` : "") +
+            (platforms.length < ALL_PLATFORMS.length ? ` · ${platforms.map((p) => PLATFORM_LABEL[p].text).join(" + ")}` : "") +
             (conversionsRange.dayLabel ? ` · ${conversionsRange.dayLabel}` : "")
           }
           onClose={() => setConversionsRange(null)}

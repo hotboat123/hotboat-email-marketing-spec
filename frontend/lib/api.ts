@@ -145,22 +145,29 @@ export const webTrafficApi = {
 };
 
 // Fuentes (comparación Google/Meta/Otro)
+type PlatformFilterArg = ("meta" | "google" | "otro")[];
+// El backend acepta uno o varios buckets separados por coma (ej.
+// "meta,google" = Meta O Google, sin Otro) — ver _parse_platforms en
+// sources.py. Un array vacío o los 3 juntos equivalen a "sin filtro".
+const _joinPlatforms = (platforms?: PlatformFilterArg) =>
+  platforms && platforms.length > 0 ? platforms.join(",") : undefined;
+
 export const sourcesApi = {
   comparison: (desde?: string, hasta?: string) =>
     api.get("/sources/comparison", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
   crosstab: (desde?: string, hasta?: string) =>
     api.get("/sources/crosstab", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
-  daily: (channel: "web" | "whatsapp", platform?: "meta" | "google" | "otro", desde?: string, hasta?: string) =>
+  daily: (channel: "web" | "whatsapp", platforms?: PlatformFilterArg, desde?: string, hasta?: string) =>
     api.get("/sources/daily", {
-      params: { channel, platform: platform || undefined, desde: desde || undefined, hasta: hasta || undefined },
+      params: { channel, platform: _joinPlatforms(platforms), desde: desde || undefined, hasta: hasta || undefined },
     }),
   conversions: (
-    channel: "web" | "whatsapp", platform?: "meta" | "google" | "otro",
+    channel: "web" | "whatsapp", platforms?: PlatformFilterArg,
     desde?: string, hasta?: string, cohortDesde?: string, cohortHasta?: string,
   ) =>
     api.get("/sources/conversions", {
       params: {
-        channel, platform: platform || undefined,
+        channel, platform: _joinPlatforms(platforms),
         desde: desde || undefined, hasta: hasta || undefined,
         cohort_desde: cohortDesde || undefined, cohort_hasta: cohortHasta || undefined,
       },
