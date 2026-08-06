@@ -20,6 +20,7 @@ import {
   TrendingUp,
   LineChart,
   Globe,
+  Compass,
 } from "lucide-react";
 import { clearToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ const nav = [
   { href: "/embudo",       label: "Embudo",           icon: TrendingUp },
   { href: "/anuncios",     label: "Anuncios",         icon: LineChart },
   { href: "/trafico-web",  label: "Tráfico Web",      icon: Globe },
+  { href: "/fuentes",      label: "Fuentes",          icon: Compass },
   { href: "/segments",     label: "Segmentos",        icon: Filter },
   { href: "/templates",    label: "Plantillas",       icon: FileText },
   { href: "/campaigns",    label: "Campañas",         icon: Send },

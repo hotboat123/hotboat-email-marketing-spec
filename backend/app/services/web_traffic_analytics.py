@@ -141,7 +141,11 @@ def _source_engine():
     return create_engine(url)
 
 
-def get_web_traffic_daily(desde: date, hasta: date) -> dict:
+def get_web_traffic_daily(desde: date, hasta: date, platform: str | None = None) -> dict:
+    """platform (opcional): "meta"/"google"/"otro" — filtra sesiones por
+    SESSION_PLATFORM_BUCKET_SQL y reservas por CC_PLATFORM_BUCKET_SQL (ver
+    platform_attribution.py). Sin este parámetro, comportamiento 100%
+    idéntico a antes — usado por la pestaña "Tráfico Web" existente."""
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)  # rango inclusivo del lado del cliente
 
@@ -157,6 +161,22 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         )
     """
 
+    from app.services.platform_attribution import SESSION_PLATFORM_BUCKET_SQL_AGG, CC_PLATFORM_BUCKET_SQL
+    # session_id IN (...) con HAVING sobre la versión agregada (MAX) —
+    # nunca un WHERE fila-por-fila: referrer/utm_source/utm_medium suelen
+    # venir solo en la primera fila de la sesión, filtrar por fila antes de
+    # agrupar sesgaría el MIN/MAX(recorded_at) de duración al descartar
+    # filas sin utm/referrer propio (ej. un click posterior en la sesión).
+    _SESSION_PLATFORM_FILTER = f"""
+        AND session_id IN (
+            SELECT session_id FROM booking_visitor_events
+            WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+            GROUP BY session_id
+            HAVING {SESSION_PLATFORM_BUCKET_SQL_AGG} = :platform
+        )
+    """ if platform else ""
+    _params_platform = {"platform": platform} if platform else {}
+
     with engine.connect() as conn:
         # Sesiones totales + útiles por día. Un CTE agrupa cada sesión a su
         # primer día visto y su duración (último evento menos primero),
@@ -171,12 +191,13 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
                 FROM booking_visitor_events
                 WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
                 {_EXCLUDE_WHATSAPP_SESSIONS}
+                {_SESSION_PLATFORM_FILTER}
                 GROUP BY session_id
             )
             SELECT day, COUNT(*) AS total, COUNT(*) FILTER (WHERE interacted) AS useful
             FROM session_days
             GROUP BY day ORDER BY day
-        """), {"useful_seconds": _USEFUL_SESSION_SECONDS, "desde": desde, "hasta_excl": hasta_excl}).fetchall()
+        """), {"useful_seconds": _USEFUL_SESSION_SECONDS, "desde": desde, "hasta_excl": hasta_excl, **_params_platform}).fetchall()
 
         # Eventos puntuales por día (cada uno cuenta sesiones DISTINTAS con
         # ese evento ese día, no el total de disparos — dos clicks en el
@@ -190,8 +211,9 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
             WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
               AND event_type IN ('click_whatsapp', 'click_reservar', 'view_precio', 'view_prices', 'date_selected', 'booking_completed')
               {_EXCLUDE_WHATSAPP_SESSIONS}
+              {_SESSION_PLATFORM_FILTER}
             GROUP BY day, event_type
-        """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
+        """), {"desde": desde, "hasta_excl": hasta_excl, **_params_platform}).fetchall()
 
         # "Vio precio y se fue" — sesiones con view_precio/view_prices que
         # NUNCA llegaron a date_selected en esa misma sesión.
@@ -204,6 +226,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
                 FROM booking_visitor_events
                 WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
                   {_EXCLUDE_WHATSAPP_SESSIONS}
+                  {_SESSION_PLATFORM_FILTER}
                   AND session_id IN (
                       SELECT session_id FROM booking_visitor_events
                       WHERE event_type IN ('view_precio', 'view_prices')
@@ -213,7 +236,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
             )
             SELECT day, COUNT(*) FILTER (WHERE NOT advanced) AS left_after_price, COUNT(*) AS saw_price
             FROM price_sessions GROUP BY day ORDER BY day
-        """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
+        """), {"desde": desde, "hasta_excl": hasta_excl, **_params_platform}).fetchall()
 
         # Pagos confirmados — pagos (registro real de transferencia/efectivo/
         # MercadoPago que el operador carga a mano) es la fuente real, NO
@@ -245,10 +268,16 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         # quedaba afuera del rango de un día puntual — el drill-down de un
         # solo día terminaba con menos filas que el número que el propio
         # gráfico mostraba para ese día.
+        _PLATFORM_JOIN = """
+            LEFT JOIN contacts_crm cc
+              ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+        """ if platform else ""
+        _PLATFORM_FILTER_PAID = f"AND {CC_PLATFORM_BUCKET_SQL} = :platform" if platform else ""
         paid_rows = conn.execute(text(f"""
             SELECT DATE(a.created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments a
             {PHONE_FLUJO_LATERAL}
+            {_PLATFORM_JOIN}
             WHERE (
                 (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
                 OR a.payment_status IN ('approved', 'completed')
@@ -256,8 +285,9 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
               {_EXCLUDE_FLUJO1_PHONES}
+              {_PLATFORM_FILTER_PAID}
             GROUP BY day ORDER BY day
-        """), {"desde": desde, "hasta": hasta}).fetchall()
+        """), {"desde": desde, "hasta": hasta, **_params_platform}).fetchall()
 
     # Ensamblar por día — arranca de un dict con todos los días del rango en
     # cero, así el front no tiene que rellenar huecos.
@@ -305,10 +335,16 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
         if key in by_day:
             by_day[key]["paid"] = n
 
-    popup_by_day = _popup_fills_by_day(desde, hasta_excl)
-    for key, n in popup_by_day.items():
-        if key in by_day:
-            by_day[key]["popup_fills"] = n
+    # form_submissions no tiene session_id/teléfono para cruzar contra un
+    # bucket de plataforma — con un filtro de plataforma activo se deja en
+    # 0 (no atribuible) en vez de mostrar el total sin filtrar, que
+    # confundiría al mezclar un número de "todas las fuentes" dentro de una
+    # vista que dice estar filtrada a una sola.
+    if not platform:
+        popup_by_day = _popup_fills_by_day(desde, hasta_excl)
+        for key, n in popup_by_day.items():
+            if key in by_day:
+                by_day[key]["popup_fills"] = n
 
     daily = []
     for row in by_day.values():
@@ -325,7 +361,7 @@ def get_web_traffic_daily(desde: date, hasta: date) -> dict:
     return {"desde": desde.isoformat(), "hasta": hasta.isoformat(), "daily": daily, "totals": totals}
 
 
-def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
+def get_web_conversions_detail(desde: date, hasta: date, platform: str | None = None) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_web_traffic_daily — mismo
     criterio de pago, de fecha (created_at en hora de Chile, no cuándo se
     pagó ni la fecha cruda en UTC — ver los dos comentarios en
@@ -334,8 +370,16 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
     tarjeta. Incluye "flujo" (flujo_2 = sin WhatsApp antes de esta
     reserva, flujo_3 = sí, pero después de una sesión web — ver
     PHONE_FLUJO_LATERAL) para poder mostrar el % que igual pasó por
-    WhatsApp en el camino."""
+    WhatsApp en el camino. platform (opcional): ver get_web_traffic_daily."""
+    from app.services.platform_attribution import CC_PLATFORM_BUCKET_SQL
     engine = _source_engine()
+
+    _platform_join = """
+        LEFT JOIN contacts_crm cc
+          ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+    """ if platform else ""
+    _platform_filter = f"AND {CC_PLATFORM_BUCKET_SQL} = :platform" if platform else ""
+    _params_platform = {"platform": platform} if platform else {}
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
@@ -346,6 +390,7 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
                 pf.flujo
             FROM all_appointments a
             {PHONE_FLUJO_LATERAL}
+            {_platform_join}
             WHERE (
                 (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
                 OR a.payment_status IN ('approved', 'completed')
@@ -353,8 +398,9 @@ def get_web_conversions_detail(desde: date, hasta: date) -> list[dict]:
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
               {_EXCLUDE_FLUJO1_PHONES}
+              {_platform_filter}
             ORDER BY a.created_at DESC
-        """), {"desde": desde, "hasta": hasta}).fetchall()
+        """), {"desde": desde, "hasta": hasta, **_params_platform}).fetchall()
 
     return [
         {

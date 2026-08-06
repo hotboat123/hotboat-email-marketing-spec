@@ -50,9 +50,21 @@ def _source_engine():
     return create_engine(url)
 
 
-def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
+def get_whatsapp_traffic_daily(desde: date, hasta: date, platform: str | None = None) -> dict:
+    """platform (opcional): "meta"/"google"/"otro" — filtra conversaciones
+    por contacts_crm.platform del teléfono (ver CC_PLATFORM_BUCKET_SQL en
+    platform_attribution.py). Sin este parámetro, comportamiento 100%
+    idéntico a antes — usado por la pestaña "Tráfico WhatsApp" existente."""
+    from app.services.platform_attribution import CC_PLATFORM_BUCKET_SQL
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)
+
+    _platform_join = """
+        LEFT JOIN contacts_crm cc
+          ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = c.phone_number
+    """ if platform else ""
+    _platform_filter = f"AND {CC_PLATFORM_BUCKET_SQL} = :platform" if platform else ""
+    _params_platform = {"platform": platform} if platform else {}
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
@@ -116,11 +128,14 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
             LEFT JOIN clicked_phones cl ON cl.phone = c.phone_number
             LEFT JOIN appt_phones ap ON ap.phone = c.phone_number
             LEFT JOIN paid_phones pp ON pp.phone = c.phone_number
+            {_platform_join}
+            WHERE 1=1 {_platform_filter}
             GROUP BY c.day ORDER BY c.day
         """), {
             "price_re": _PRICE_KEYWORDS_RE, "date_re": _DATE_KEYWORDS_RE,
             "useful_min": _USEFUL_MIN_INCOMING,
             "desde": desde, "hasta_excl": hasta_excl,
+            **_params_platform,
         }).fetchall()
 
     by_day: dict = {}
@@ -156,7 +171,8 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date) -> dict:
 
 
 def get_whatsapp_conversions_detail(
-    desde: date, hasta: date, cohort_from: date | None = None, cohort_to: date | None = None
+    desde: date, hasta: date, cohort_from: date | None = None, cohort_to: date | None = None,
+    platform: str | None = None,
 ) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_whatsapp_traffic_daily — solo
     flujo_1 (WhatsApp puro), usando la misma clasificación por reserva que
@@ -172,9 +188,19 @@ def get_whatsapp_conversions_detail(
     y dejaría de calzar con el número de esa métrica. Para acotar el
     drill-down a un día (o bucket de semana/mes) puntual del gráfico, se
     usa cohort_from/cohort_to en cambio — filtran por el día de cohorte ya
-    calculado sobre el rango completo, sin tocar ese cálculo."""
+    calculado sobre el rango completo, sin tocar ese cálculo.
+
+    platform (opcional): ver get_whatsapp_traffic_daily."""
+    from app.services.platform_attribution import CC_PLATFORM_BUCKET_SQL
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)
+
+    _platform_join = """
+        LEFT JOIN contacts_crm cc
+          ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = pa.phone_norm
+    """ if platform else ""
+    _platform_filter = f"AND {CC_PLATFORM_BUCKET_SQL} = :platform" if platform else ""
+    _params_platform = {"platform": platform} if platform else {}
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
@@ -209,13 +235,16 @@ def get_whatsapp_conversions_detail(
             SELECT pa.*
             FROM paid_appts pa
             JOIN conv_first cf ON cf.phone_number = pa.phone_norm
+            {_platform_join}
             WHERE pa.flujo = 'flujo_1'
               AND ((:cohort_from)::date IS NULL OR cf.day >= (:cohort_from)::date)
               AND ((:cohort_to)::date IS NULL OR cf.day <= (:cohort_to)::date)
+              {_platform_filter}
             ORDER BY pa.created_at DESC
         """), {
             "desde": desde, "hasta_excl": hasta_excl,
             "cohort_from": cohort_from, "cohort_to": cohort_to,
+            **_params_platform,
         }).fetchall()
 
     return [

@@ -144,6 +144,29 @@ export const webTrafficApi = {
     }),
 };
 
+// Fuentes (comparación Google/Meta/Otro)
+export const sourcesApi = {
+  comparison: (desde?: string, hasta?: string) =>
+    api.get("/sources/comparison", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  crosstab: (desde?: string, hasta?: string) =>
+    api.get("/sources/crosstab", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  daily: (channel: "web" | "whatsapp", platform?: "meta" | "google" | "otro", desde?: string, hasta?: string) =>
+    api.get("/sources/daily", {
+      params: { channel, platform: platform || undefined, desde: desde || undefined, hasta: hasta || undefined },
+    }),
+  conversions: (
+    channel: "web" | "whatsapp", platform?: "meta" | "google" | "otro",
+    desde?: string, hasta?: string, cohortDesde?: string, cohortHasta?: string,
+  ) =>
+    api.get("/sources/conversions", {
+      params: {
+        channel, platform: platform || undefined,
+        desde: desde || undefined, hasta: hasta || undefined,
+        cohort_desde: cohortDesde || undefined, cohort_hasta: cohortHasta || undefined,
+      },
+    }),
+};
+
 // Signup Forms
 export const formsApi = {
   list: () => api.get("/forms"),

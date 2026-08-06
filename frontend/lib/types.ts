@@ -388,6 +388,41 @@ export interface ConversionDetailRow {
 // puro); los flujo_3 se mudaron a la lista de Web, ver ConversionDetailRow.
 export type WhatsappConversionDetailRow = ConversionDetailRow;
 
+// ── Pestaña "Fuentes" (comparación Google/Meta/Otro) ────────────────────────
+
+export type PlatformBucket = "meta" | "google" | "otro";
+
+export interface PlatformComparisonRow {
+  platform: PlatformBucket;
+  web_sessions: number;
+  web_useful_sessions: number;
+  whatsapp_conversations: number;
+  whatsapp_useful_conversations: number;
+  bookings: number; // cruce amplio por teléfono (contacts_crm.platform)
+  conversion_rate: number;
+  // Solo Meta: gasto real (meta_ads_insights) y costo por reserva — el
+  // denominador es meta_bookings_matched (subconjunto de "bookings" que
+  // además matcheó un nombre real de anuncio, mismo criterio que la
+  // pestaña Anuncios), NO "bookings" — por eso ambos números se muestran
+  // por separado, no se puede derivar cost_per_booking de bookings/spend.
+  spend: number | null;
+  cost_per_booking: number | null;
+  meta_bookings_matched: number | null;
+}
+
+export interface PlatformComparisonResponse {
+  desde: string;
+  hasta: string;
+  rows: PlatformComparisonRow[];
+}
+
+export interface FlujoPlatformCrosstabRow {
+  flujo: "flujo_1" | "flujo_2" | "flujo_3";
+  platform: PlatformBucket;
+  paid: number;
+  share_of_total_pct: number;
+}
+
 export interface OverviewStats {
   contacts: { total: number; opted_in: number };
   campaigns: { total: number; sent: number };
