@@ -40,13 +40,22 @@ def bucket_3(platform5: str | None) -> str:
 # Instagram suelen borrar el referrer, pero cuando está presente es la señal
 # más confiable), utm_source+utm_medium como respaldo. Ya reducido a los 3
 # buckets finales, no a las 5 categorías intermedias.
+#
+# \yig\y (word boundary, no substring) — los propios links de campaña de
+# HotBoat usan "ig" como utm_source corto para Instagram (ej.
+# utm_source=ig&utm_medium=social&utm_content=link_in_bio). Sin este check
+# esas sesiones caían en "otro" cuando el referrer venía vacío (navegador
+# in-app de Instagram) — verificado 2026-08-06 comparando el CASE viejo vs
+# nuevo sobre el mismo rango de 60 días: 29 de 5485 sesiones "otro" pasan a
+# "meta" (small pero real; el resto de "otro" no tiene ninguna señal en
+# absoluto — referrer y utm ambos vacíos — no es recuperable con reglas).
 SESSION_PLATFORM_BUCKET_SQL = r"""
     CASE
         WHEN referrer ~* 'instagram' THEN 'meta'
         WHEN referrer ~* '(facebook|fb\.com)' THEN 'meta'
         WHEN referrer ~* 'google' THEN 'google'
         WHEN (COALESCE(utm_source,'') || ' ' || COALESCE(utm_medium,'')) ~* '(google|adwords|gclid)' THEN 'google'
-        WHEN (COALESCE(utm_source,'') || ' ' || COALESCE(utm_medium,'')) ~* 'instagram' THEN 'meta'
+        WHEN (COALESCE(utm_source,'') || ' ' || COALESCE(utm_medium,'')) ~* '(instagram|\yig\y)' THEN 'meta'
         WHEN (COALESCE(utm_source,'') || ' ' || COALESCE(utm_medium,'')) ~* '(facebook|\yfb\y|\ymeta\y)' THEN 'meta'
         ELSE 'otro'
     END
