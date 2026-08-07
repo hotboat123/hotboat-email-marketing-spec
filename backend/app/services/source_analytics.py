@@ -33,7 +33,9 @@ from sqlalchemy import text
 
 from app.services.web_traffic_analytics import _source_engine, PHONE_FLUJO_LATERAL, _USEFUL_SESSION_SECONDS
 from app.services.whatsapp_traffic_analytics import _USEFUL_MIN_INCOMING
-from app.services.platform_attribution import SESSION_PLATFORM_BUCKET_SQL, CC_PLATFORM_BUCKET_SQL
+from app.services.platform_attribution import (
+    SESSION_PLATFORM_BUCKET_SQL, web_session_platform_lateral, cc_platform_bucket_sql,
+)
 from app.routers.ads import _bookings_by_level_id
 
 _BUCKETS = ("meta", "google", "otro")
@@ -91,6 +93,10 @@ def get_platform_comparison(desde: date, hasta: date) -> dict:
 
         # Conversaciones de WhatsApp — mismo cohorte (primer mensaje del rango)
         # y mismo umbral "útil" (>=2 entrantes) que whatsapp_traffic_analytics.py.
+        # cc_platform_bucket_sql()/web_session_platform_lateral(): cuando
+        # contacts_crm.platform no tiene nada (WhatsApp orgánico sin anuncio),
+        # respalda con la sesión web orgánica más antigua vinculada a ese
+        # teléfono (mismo vínculo que usa Flujo 3) — ver platform_attribution.py.
         wa_rows = conn.execute(text(f"""
             WITH conv AS (
                 SELECT
@@ -100,13 +106,21 @@ def get_platform_comparison(desde: date, hasta: date) -> dict:
                 WHERE created_at >= :desde AND created_at < :hasta_excl
                 GROUP BY phone_number
             )
-            SELECT {CC_PLATFORM_BUCKET_SQL} AS platform,
+            SELECT {cc_platform_bucket_sql()} AS platform,
                    COUNT(*) AS total,
                    COUNT(*) FILTER (WHERE c.n_incoming >= :useful_min) AS useful
             FROM conv c
             LEFT JOIN contacts_crm cc
               ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = c.phone_number
-            GROUP BY platform
+            {web_session_platform_lateral("c.phone_number")}
+            -- GROUP BY 1, no "GROUP BY platform" (posicional, no por alias):
+            -- contacts_crm YA TIENE una columna real llamada "platform" —
+            -- con cc joineada en scope, Postgres prefiere esa columna cruda
+            -- sobre el alias de salida, así que "GROUP BY platform" agrupaba
+            -- por cc.platform solo (ignorando el respaldo de lws.bucket) y
+            -- tiraba "column lws.bucket must appear in GROUP BY" — descubierto
+            -- 2026-08-06 al agregar el respaldo de sesión web.
+            GROUP BY 1
         """), {"desde": desde, "hasta_excl": hasta_excl, "useful_min": _USEFUL_MIN_INCOMING}).fetchall()
         for platform, total, useful in wa_rows:
             if platform in by_bucket:
@@ -117,14 +131,15 @@ def get_platform_comparison(desde: date, hasta: date) -> dict:
         # sin filtrar por flujo: acá se quiere el total real por plataforma,
         # no evitar doble conteo entre pestañas Web/WhatsApp (ver docstring).
         booking_rows = conn.execute(text(f"""
-            SELECT {CC_PLATFORM_BUCKET_SQL} AS platform, COUNT(*) AS n
+            SELECT {cc_platform_bucket_sql()} AS platform, COUNT(*) AS n
             FROM all_appointments a
             LEFT JOIN contacts_crm cc
               ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+            {web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')")}
             WHERE {_PAID_CRITERIA}
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
-            GROUP BY platform
+            GROUP BY 1
         """), {"desde": desde, "hasta": hasta}).fetchall()
         for platform, n in booking_rows:
             if platform in by_bucket:
@@ -186,16 +201,20 @@ def get_flujo_platform_crosstab(desde: date, hasta: date) -> list[dict]:
         rows = conn.execute(text(f"""
             SELECT
                 pf.flujo,
-                {CC_PLATFORM_BUCKET_SQL} AS platform,
+                {cc_platform_bucket_sql()} AS platform,
                 COUNT(*) AS total
             FROM all_appointments a
             {PHONE_FLUJO_LATERAL}
             LEFT JOIN contacts_crm cc
               ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+            {web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')")}
             WHERE {_PAID_CRITERIA}
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
-            GROUP BY pf.flujo, platform
+            -- GROUP BY 1, 2 (posicional) — ver el mismo comentario en
+            -- get_platform_comparison sobre contacts_crm.platform colisionando
+            -- con el alias "platform".
+            GROUP BY 1, 2
         """), {"desde": desde, "hasta": hasta}).fetchall()
 
     by_cell = {(f, p): 0 for f in ("flujo_1", "flujo_2", "flujo_3") for p in _BUCKETS}

@@ -77,7 +77,8 @@ SESSION_PLATFORM_BUCKET_SQL_AGG = SESSION_PLATFORM_BUCKET_SQL.replace(
 # query que use esto debe tener `contacts_crm cc` joineado por teléfono
 # normalizado (regexp_replace(telefono,'[^0-9]','','g'), mismo patrón que
 # PHONE_FLUJO_LATERAL / whatsapp_traffic_analytics.py — NO el join sin
-# normalizar que usa ads.py, más frágil).
+# normalizar que usa ads.py, más frágil). Sin respaldo de sesión web — ver
+# cc_platform_bucket_sql() más abajo para la versión CON ese respaldo.
 CC_PLATFORM_BUCKET_SQL = """
     CASE
         WHEN cc.platform IN ('facebook', 'instagram') THEN 'meta'
@@ -85,3 +86,65 @@ CC_PLATFORM_BUCKET_SQL = """
         ELSE 'otro'
     END
 """
+
+
+# Respaldo cuando contacts_crm.platform no tiene nada (el caso más común:
+# WhatsApp orgánico, nadie pagó un anuncio ni hubo checkout web con UTM) —
+# busca si ese teléfono tuvo una sesión web orgánica ANTES (mismo criterio de
+# vínculo que PHONE_FLUJO_LATERAL: booking_visitor_identity por teléfono o
+# visitor_id, excluyendo sesiones que llegaron por link del bot) y usa el
+# bucket de la señal más antigua (referrer/utm suele venir solo en el primer
+# evento registrado). Agregado 2026-08-06 a pedido del dueño: "en WhatsApp
+# podría saber cuándo la gente viene desde mi página web" — sí, exactamente
+# el mismo vínculo que ya usa Flujo 3, solo que antes no se usaba también
+# para clasificar plataforma. Medido antes de implementar: recupera ~2% del
+# bucket "otro" de WhatsApp en una ventana de 60 días — real pero chico hoy,
+# la mayoría de "otro" nunca tuvo ninguna sesión web vinculada.
+def web_session_platform_lateral(phone_expr: str, alias: str = "lws") -> str:
+    # UNION ALL de dos joins simples (session_id / visitor_id por separado),
+    # NO "ON bve.session_id = bvi.session_id OR bve.visitor_id = bvi.visitor_id"
+    # — ese OR le impedía al planner usar idx_bve_sid/idx_bve_vid y lo hacía
+    # manejar el nested loop desde booking_visitor_events (~160k filas) en vez
+    # de desde booking_visitor_identity (51 filas), una vez POR CADA teléfono
+    # de la consulta externa: get_platform_comparison tardaba 2+ minutos.
+    # Cada rama del UNION ALL es un join de 2 columnas indexadas sin OR, así
+    # que el planner arranca por bvi (filtrado por teléfono, casi siempre 0
+    # filas) y usa el índice para ir a bve solo cuando corresponde — medido
+    # después del fix: <1s. Ver idx_bvi_phone_norm en hotboat-whatsapp/
+    # app/booking/db.py (índice de expresión nuevo, aunque con solo 51 filas
+    # en booking_visitor_identity el índice en sí no era el problema).
+    return f"""
+        LEFT JOIN LATERAL (
+            SELECT bucket FROM (
+                SELECT {SESSION_PLATFORM_BUCKET_SQL} AS bucket, bve.recorded_at
+                FROM booking_visitor_identity bvi
+                JOIN booking_visitor_events bve ON bve.session_id = bvi.session_id
+                WHERE regexp_replace(bvi.phone, '[^0-9]', '', 'g') = {phone_expr}
+                  AND bve.link_token IS NULL
+                UNION ALL
+                SELECT {SESSION_PLATFORM_BUCKET_SQL} AS bucket, bve.recorded_at
+                FROM booking_visitor_identity bvi
+                JOIN booking_visitor_events bve ON bve.visitor_id = bvi.visitor_id
+                WHERE bvi.visitor_id IS NOT NULL
+                  AND regexp_replace(bvi.phone, '[^0-9]', '', 'g') = {phone_expr}
+                  AND bve.link_token IS NULL
+            ) combined
+            ORDER BY recorded_at ASC
+            LIMIT 1
+        ) {alias} ON true
+    """
+
+
+# Versión de CC_PLATFORM_BUCKET_SQL CON el respaldo de sesión web — requiere
+# que la query también tenga web_session_platform_lateral(...) joineado con
+# el mismo `alias`. Nunca puede dar un resultado PEOR que CC_PLATFORM_BUCKET_SQL
+# solo (si no hay sesión vinculada, cae exactamente al mismo 'otro' de antes).
+def cc_platform_bucket_sql(alias: str = "lws") -> str:
+    return f"""
+        CASE
+            WHEN cc.platform IN ('facebook', 'instagram') THEN 'meta'
+            WHEN cc.platform = 'google' THEN 'google'
+            WHEN {alias}.bucket IN ('meta', 'google') THEN {alias}.bucket
+            ELSE 'otro'
+        END
+    """

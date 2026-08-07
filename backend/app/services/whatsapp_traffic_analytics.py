@@ -56,15 +56,15 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | 
     CC_PLATFORM_BUCKET_SQL en platform_attribution.py). Puede ser más de
     uno. Sin este parámetro (o con los 3 buckets), comportamiento 100%
     idéntico a antes — usado por la pestaña "Tráfico WhatsApp" existente."""
-    from app.services.platform_attribution import CC_PLATFORM_BUCKET_SQL
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)
 
-    _platform_join = """
+    _platform_join = ("""
         LEFT JOIN contacts_crm cc
           ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = c.phone_number
-    """ if platforms else ""
-    _platform_filter = f"AND {CC_PLATFORM_BUCKET_SQL} = ANY(:platforms)" if platforms else ""
+    """ + web_session_platform_lateral("c.phone_number")) if platforms else ""
+    _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
 
     with engine.connect() as conn:
@@ -192,15 +192,15 @@ def get_whatsapp_conversions_detail(
     calculado sobre el rango completo, sin tocar ese cálculo.
 
     platforms (opcional): ver get_whatsapp_traffic_daily."""
-    from app.services.platform_attribution import CC_PLATFORM_BUCKET_SQL
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)
 
-    _platform_join = """
+    _platform_join = ("""
         LEFT JOIN contacts_crm cc
           ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = pa.phone_norm
-    """ if platforms else ""
-    _platform_filter = f"AND {CC_PLATFORM_BUCKET_SQL} = ANY(:platforms)" if platforms else ""
+    """ + web_session_platform_lateral("pa.phone_norm")) if platforms else ""
+    _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
 
     with engine.connect() as conn:

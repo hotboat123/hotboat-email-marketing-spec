@@ -163,7 +163,9 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
         )
     """
 
-    from app.services.platform_attribution import SESSION_PLATFORM_BUCKET_SQL_AGG, CC_PLATFORM_BUCKET_SQL
+    from app.services.platform_attribution import (
+        SESSION_PLATFORM_BUCKET_SQL_AGG, web_session_platform_lateral, cc_platform_bucket_sql,
+    )
     # session_id IN (...) con HAVING sobre la versión agregada (MAX) —
     # nunca un WHERE fila-por-fila: referrer/utm_source/utm_medium suelen
     # venir solo en la primera fila de la sesión, filtrar por fila antes de
@@ -273,11 +275,11 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
         # quedaba afuera del rango de un día puntual — el drill-down de un
         # solo día terminaba con menos filas que el número que el propio
         # gráfico mostraba para ese día.
-        _PLATFORM_JOIN = """
+        _PLATFORM_JOIN = ("""
             LEFT JOIN contacts_crm cc
               ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
-        """ if platforms else ""
-        _PLATFORM_FILTER_PAID = f"AND {CC_PLATFORM_BUCKET_SQL} = ANY(:platforms)" if platforms else ""
+        """ + web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')")) if platforms else ""
+        _PLATFORM_FILTER_PAID = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
         paid_rows = conn.execute(text(f"""
             SELECT DATE(a.created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments a
@@ -376,14 +378,14 @@ def get_web_conversions_detail(desde: date, hasta: date, platforms: list[str] | 
     reserva, flujo_3 = sí, pero después de una sesión web — ver
     PHONE_FLUJO_LATERAL) para poder mostrar el % que igual pasó por
     WhatsApp en el camino. platforms (opcional): ver get_web_traffic_daily."""
-    from app.services.platform_attribution import CC_PLATFORM_BUCKET_SQL
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
     engine = _source_engine()
 
-    _platform_join = """
+    _platform_join = ("""
         LEFT JOIN contacts_crm cc
           ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
-    """ if platforms else ""
-    _platform_filter = f"AND {CC_PLATFORM_BUCKET_SQL} = ANY(:platforms)" if platforms else ""
+    """ + web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')")) if platforms else ""
+    _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
 
     with engine.connect() as conn:
