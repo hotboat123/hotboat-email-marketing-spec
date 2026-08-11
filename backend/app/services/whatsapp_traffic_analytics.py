@@ -58,7 +58,6 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | 
     idéntico a antes — usado por la pestaña "Tráfico WhatsApp" existente."""
     from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
     engine = _source_engine()
-    hasta_excl = hasta + timedelta(days=1)
 
     _platform_join = ("""
         LEFT JOIN contacts_crm cc
@@ -77,7 +76,12 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | 
                     BOOL_OR(direction = 'incoming' AND message_text ~* :price_re) AS asked_price,
                     BOOL_OR(direction = 'incoming' AND message_text ~* :date_re) AS asked_date
                 FROM whatsapp_conversations
-                WHERE created_at >= :desde AND created_at < :hasta_excl
+                -- DATE(created_at AT TIME ZONE 'America/Santiago'), no un
+                -- corte crudo en UTC — mismo bug/fix que
+                -- web_traffic_analytics.py get_web_traffic_daily (ver esa
+                -- nota): el último día de cualquier rango perdía sus
+                -- mensajes de las últimas horas de la noche chilena.
+                WHERE DATE(created_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(created_at AT TIME ZONE 'America/Santiago') <= :hasta
                 GROUP BY phone_number
             ),
             -- Normaliza el teléfono UNA vez por lead, no una vez por
@@ -135,7 +139,7 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | 
         """), {
             "price_re": _PRICE_KEYWORDS_RE, "date_re": _DATE_KEYWORDS_RE,
             "useful_min": _USEFUL_MIN_INCOMING,
-            "desde": desde, "hasta_excl": hasta_excl,
+            "desde": desde, "hasta": hasta,
             **_params_platform,
         }).fetchall()
 
@@ -194,7 +198,6 @@ def get_whatsapp_conversions_detail(
     platforms (opcional): ver get_whatsapp_traffic_daily."""
     from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
     engine = _source_engine()
-    hasta_excl = hasta + timedelta(days=1)
 
     _platform_join = ("""
         LEFT JOIN contacts_crm cc
@@ -215,7 +218,7 @@ def get_whatsapp_conversions_detail(
                     phone_number,
                     MIN(DATE(created_at AT TIME ZONE 'America/Santiago')) AS day
                 FROM whatsapp_conversations
-                WHERE created_at >= :desde AND created_at < :hasta_excl
+                WHERE DATE(created_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(created_at AT TIME ZONE 'America/Santiago') <= :hasta
                 GROUP BY phone_number
             ),
             paid_appts AS (
@@ -243,7 +246,7 @@ def get_whatsapp_conversions_detail(
               {_platform_filter}
             ORDER BY pa.created_at DESC
         """), {
-            "desde": desde, "hasta_excl": hasta_excl,
+            "desde": desde, "hasta": hasta,
             "cohort_from": cohort_from, "cohort_to": cohort_to,
             **_params_platform,
         }).fetchall()

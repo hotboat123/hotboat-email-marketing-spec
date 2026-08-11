@@ -149,17 +149,29 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
     parámetro (o con los 3 buckets), comportamiento 100% idéntico a antes —
     usado por la pestaña "Tráfico Web" existente."""
     engine = _source_engine()
-    hasta_excl = hasta + timedelta(days=1)  # rango inclusivo del lado del cliente
+    hasta_excl = hasta + timedelta(days=1)  # solo para _popup_fills_by_day (form_submissions, naive-UTC) más abajo
 
     # Sesiones que llegaron por un link que mandó el bot de WhatsApp — se
     # excluyen de TODO lo de abajo para que "sesión web" no cuente dos
     # veces a la misma persona (una vez acá, otra en la pestaña WhatsApp
     # por teléfono). Ver nota de clasificación en el docstring del módulo.
+    #
+    # DATE(recorded_at AT TIME ZONE 'America/Santiago') en vez del filtro
+    # crudo por rango de timestamp — ese segundo criterio compara un
+    # TIMESTAMPTZ contra un DATE crudo, que Postgres
+    # interpreta en UTC, mientras que el bucketing por día en el resto de
+    # esta función SÍ ajusta a hora de Chile. El último día de CUALQUIER
+    # rango pedido perdía sus sesiones de las ~20:00-24:00 hora Chile (ya
+    # "día siguiente" en UTC) — mismo bug ya corregido para el drill-down
+    # de reservas (ver nota más abajo en paid_rows), nunca aplicado acá.
+    # Encontrado 2026-08-11 construyendo vistas SQL para comparar contra
+    # esta función y notar que el último día de cualquier rango salía más
+    # bajo acá que en una vista sin ese corte.
     _EXCLUDE_WHATSAPP_SESSIONS = """
         AND session_id NOT IN (
             SELECT session_id FROM booking_visitor_events
             WHERE link_token IS NOT NULL
-              AND recorded_at >= :desde AND recorded_at < :hasta_excl
+              AND DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
         )
     """
 
@@ -177,7 +189,7 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
     _SESSION_PLATFORM_FILTER = f"""
         AND session_id IN (
             SELECT session_id FROM booking_visitor_events
-            WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+            WHERE DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
             GROUP BY session_id
             HAVING {SESSION_PLATFORM_BUCKET_SQL_AGG} = ANY(:platforms)
         )
@@ -196,7 +208,7 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
                     MIN(DATE(recorded_at AT TIME ZONE 'America/Santiago')) AS day,
                     EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at))) > :useful_seconds AS interacted
                 FROM booking_visitor_events
-                WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+                WHERE DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
                 {_EXCLUDE_WHATSAPP_SESSIONS}
                 {_SESSION_PLATFORM_FILTER}
                 GROUP BY session_id
@@ -204,7 +216,7 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
             SELECT day, COUNT(*) AS total, COUNT(*) FILTER (WHERE interacted) AS useful
             FROM session_days
             GROUP BY day ORDER BY day
-        """), {"useful_seconds": _USEFUL_SESSION_SECONDS, "desde": desde, "hasta_excl": hasta_excl, **_params_platform}).fetchall()
+        """), {"useful_seconds": _USEFUL_SESSION_SECONDS, "desde": desde, "hasta": hasta, **_params_platform}).fetchall()
 
         # Eventos puntuales por día (cada uno cuenta sesiones DISTINTAS con
         # ese evento ese día, no el total de disparos — dos clicks en el
@@ -215,12 +227,12 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
                 event_type,
                 COUNT(DISTINCT session_id) AS n
             FROM booking_visitor_events
-            WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+            WHERE DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
               AND event_type IN ('click_whatsapp', 'click_reservar', 'view_precio', 'view_prices', 'date_selected', 'booking_completed')
               {_EXCLUDE_WHATSAPP_SESSIONS}
               {_SESSION_PLATFORM_FILTER}
             GROUP BY day, event_type
-        """), {"desde": desde, "hasta_excl": hasta_excl, **_params_platform}).fetchall()
+        """), {"desde": desde, "hasta": hasta, **_params_platform}).fetchall()
 
         # "Vio precio y se fue" — sesiones con view_precio/view_prices que
         # NUNCA llegaron a date_selected en esa misma sesión.
@@ -231,19 +243,19 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
                     MIN(DATE(recorded_at AT TIME ZONE 'America/Santiago')) AS day,
                     BOOL_OR(event_type = 'date_selected') AS advanced
                 FROM booking_visitor_events
-                WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+                WHERE DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
                   {_EXCLUDE_WHATSAPP_SESSIONS}
                   {_SESSION_PLATFORM_FILTER}
                   AND session_id IN (
                       SELECT session_id FROM booking_visitor_events
                       WHERE event_type IN ('view_precio', 'view_prices')
-                        AND recorded_at >= :desde AND recorded_at < :hasta_excl
+                        AND DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
                   )
                 GROUP BY session_id
             )
             SELECT day, COUNT(*) FILTER (WHERE NOT advanced) AS left_after_price, COUNT(*) AS saw_price
             FROM price_sessions GROUP BY day ORDER BY day
-        """), {"desde": desde, "hasta_excl": hasta_excl, **_params_platform}).fetchall()
+        """), {"desde": desde, "hasta": hasta, **_params_platform}).fetchall()
 
         # Pagos confirmados — pagos (registro real de transferencia/efectivo/
         # MercadoPago que el operador carga a mano) es la fuente real, NO
@@ -496,21 +508,20 @@ def get_session_duration_histogram(desde: date, hasta: date) -> dict:
     mostrado al dueño antes de fijar el umbral de 5s en _USEFUL_SESSION_SECONDS
     arriba) — no varía por día/semana/mes, es una foto del rango completo."""
     engine = _source_engine()
-    hasta_excl = hasta + timedelta(days=1)
 
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT
                 EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at))) AS seconds
             FROM booking_visitor_events
-            WHERE recorded_at >= :desde AND recorded_at < :hasta_excl
+            WHERE DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
               AND session_id NOT IN (
                   SELECT session_id FROM booking_visitor_events
                   WHERE link_token IS NOT NULL
-                    AND recorded_at >= :desde AND recorded_at < :hasta_excl
+                    AND DATE(recorded_at AT TIME ZONE 'America/Santiago') >= :desde AND DATE(recorded_at AT TIME ZONE 'America/Santiago') <= :hasta
               )
             GROUP BY session_id
-        """), {"desde": desde, "hasta_excl": hasta_excl}).fetchall()
+        """), {"desde": desde, "hasta": hasta}).fetchall()
 
     def _bucket_for(seconds: float) -> str:
         if seconds == 0: return "0s"
