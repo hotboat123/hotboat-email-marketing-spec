@@ -50,13 +50,25 @@ def _source_engine():
     return create_engine(url)
 
 
-def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | None = None) -> dict:
+def get_whatsapp_traffic_daily(
+    desde: date, hasta: date, platforms: list[str] | None = None, bot_variants: list[str] | None = None,
+) -> dict:
     """platforms (opcional): subconjunto de "meta"/"google"/"otro" — filtra
     conversaciones por contacts_crm.platform del teléfono (ver
     CC_PLATFORM_BUCKET_SQL en platform_attribution.py). Puede ser más de
     uno. Sin este parámetro (o con los 3 buckets), comportamiento 100%
-    idéntico a antes — usado por la pestaña "Tráfico WhatsApp" existente."""
-    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
+    idéntico a antes — usado por la pestaña "Tráfico WhatsApp" existente.
+
+    bot_variants (opcional): filtra por whatsapp_leads.bot_variant (uno o
+    varios variant_key a la vez) — qué versión del bot (control/ia_1/...)
+    llevó esa conversación. Ver BOT_VARIANT_JOIN en este módulo: usa el
+    valor ACTUAL de bot_variant en whatsapp_leads (asignado una sola vez
+    al crear el lead y normalmente estable — ver leads.py::get_or_create_lead
+    en hotboat-whatsapp), no un historial punto-en-el-tiempo — si un admin
+    reasigna manualmente la variante de un lead después de su conversación,
+    esa conversación pasa a contarse en la variante nueva. No hay tabla de
+    auditoría de cambios hoy, así que esto es lo mejor disponible."""
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join
     engine = _source_engine()
 
     _platform_join = ("""
@@ -65,6 +77,10 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | 
     """ + web_session_platform_lateral("c.phone_number")) if platforms else ""
     _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
+
+    _variant_join = bot_variant_join("c.phone_number") if bot_variants else ""
+    _variant_filter = "AND wl.bot_variant = ANY(:bot_variants)" if bot_variants else ""
+    _params_variant = {"bot_variants": list(bot_variants)} if bot_variants else {}
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
@@ -134,13 +150,15 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | 
             LEFT JOIN appt_phones ap ON ap.phone = c.phone_number
             LEFT JOIN paid_phones pp ON pp.phone = c.phone_number
             {_platform_join}
-            WHERE 1=1 {_platform_filter}
+            {_variant_join}
+            WHERE 1=1 {_platform_filter} {_variant_filter}
             GROUP BY c.day ORDER BY c.day
         """), {
             "price_re": _PRICE_KEYWORDS_RE, "date_re": _DATE_KEYWORDS_RE,
             "useful_min": _USEFUL_MIN_INCOMING,
             "desde": desde, "hasta": hasta,
             **_params_platform,
+            **_params_variant,
         }).fetchall()
 
     by_day: dict = {}
@@ -177,7 +195,7 @@ def get_whatsapp_traffic_daily(desde: date, hasta: date, platforms: list[str] | 
 
 def get_whatsapp_conversions_detail(
     desde: date, hasta: date, cohort_from: date | None = None, cohort_to: date | None = None,
-    platforms: list[str] | None = None,
+    platforms: list[str] | None = None, bot_variants: list[str] | None = None,
 ) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_whatsapp_traffic_daily — solo
     flujo_1 (WhatsApp puro), usando la misma clasificación por reserva que
@@ -195,8 +213,8 @@ def get_whatsapp_conversions_detail(
     usa cohort_from/cohort_to en cambio — filtran por el día de cohorte ya
     calculado sobre el rango completo, sin tocar ese cálculo.
 
-    platforms (opcional): ver get_whatsapp_traffic_daily."""
-    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
+    platforms/bot_variants (opcional): ver get_whatsapp_traffic_daily."""
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join
     engine = _source_engine()
 
     _platform_join = ("""
@@ -205,6 +223,10 @@ def get_whatsapp_conversions_detail(
     """ + web_session_platform_lateral("pa.phone_norm")) if platforms else ""
     _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
+
+    _variant_join = bot_variant_join("pa.phone_norm") if bot_variants else ""
+    _variant_filter = "AND wl.bot_variant = ANY(:bot_variants)" if bot_variants else ""
+    _params_variant = {"bot_variants": list(bot_variants)} if bot_variants else {}
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
@@ -240,15 +262,17 @@ def get_whatsapp_conversions_detail(
             FROM paid_appts pa
             JOIN conv_first cf ON cf.phone_number = pa.phone_norm
             {_platform_join}
+            {_variant_join}
             WHERE pa.flujo = 'flujo_1'
               AND ((:cohort_from)::date IS NULL OR cf.day >= (:cohort_from)::date)
               AND ((:cohort_to)::date IS NULL OR cf.day <= (:cohort_to)::date)
-              {_platform_filter}
+              {_platform_filter} {_variant_filter}
             ORDER BY pa.created_at DESC
         """), {
             "desde": desde, "hasta": hasta,
             "cohort_from": cohort_from, "cohort_to": cohort_to,
             **_params_platform,
+            **_params_variant,
         }).fetchall()
 
     return [
@@ -265,6 +289,35 @@ def get_whatsapp_conversions_detail(
         }
         for r in rows
     ]
+
+
+def list_bot_variants() -> list[dict]:
+    """Lista de variantes de bot para el selector de filtro de la pestaña
+    Tráfico Web — combina bot_ab_variants (catálogo actual, con label
+    legible) con los valores DISTINCT realmente usados en
+    whatsapp_leads.bot_variant, para no perder variantes históricas que ya
+    no están en el catálogo activo (encontrado 2026-08-11: 144 leads con
+    bot_variant='urgencia', una variante que ya no existe en
+    bot_ab_variants — probablemente borrada/renombrada después de
+    asignarse a esos leads)."""
+    engine = _source_engine()
+    with engine.connect() as conn:
+        catalog = conn.execute(text(
+            "SELECT variant_key, label, is_active FROM bot_ab_variants ORDER BY variant_key"
+        )).fetchall()
+        used = conn.execute(text(
+            "SELECT DISTINCT bot_variant FROM whatsapp_leads WHERE bot_variant IS NOT NULL"
+        )).fetchall()
+
+    by_key: dict[str, dict] = {
+        r.variant_key: {"variant_key": r.variant_key, "label": r.label or r.variant_key, "is_active": r.is_active}
+        for r in catalog
+    }
+    for (key,) in used:
+        if key not in by_key:
+            by_key[key] = {"variant_key": key, "label": key, "is_active": False}
+
+    return sorted(by_key.values(), key=lambda v: (not v["is_active"], v["variant_key"]))
 
 
 def _sum_totals(daily: list[dict]) -> dict:

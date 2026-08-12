@@ -135,6 +135,48 @@ def web_session_platform_lateral(phone_expr: str, alias: str = "lws") -> str:
     """
 
 
+def bot_variant_join(phone_expr: str) -> str:
+    """LEFT JOIN LATERAL a whatsapp_leads (misma base, tabla dueña de
+    bot_variant — ver app/db/leads.py::_ensure_variant_col en
+    hotboat-whatsapp) por teléfono normalizado, para filtrar/desglosar por
+    qué versión del bot (control/ia_1/...) llevó esa conversación.
+    `phone_expr` ya debe venir normalizado (solo dígitos). Comparte este
+    módulo con el resto de la atribución (plataforma) en vez de
+    whatsapp_traffic_analytics.py para que web_traffic_analytics.py pueda
+    usarlo también sin import circular entre ambos.
+
+    LATERAL + LIMIT 1 (no un LEFT JOIN plano) a propósito: whatsapp_leads
+    tiene phone_number UNIQUE en su forma CRUDA, pero no en su forma
+    normalizada — hay pares reales de filas para el mismo número, uno
+    guardado como "+56912345678" y otro como "56912345678" (probablemente
+    de una época en que no se normalizaba al guardar). Un LEFT JOIN plano
+    por teléfono normalizado hace fan-out ahí (2 filas de whatsapp_leads
+    por 1 conversación), duplicando conteos. Encontrado 2026-08-11
+    construyendo whatsapp_by_bot_variant_daily_v: el total sumado por
+    variante salía 29 conversaciones por encima del total real de
+    whatsapp_traffic_daily_v. Se prioriza la fila con bot_variant no nulo
+    (normalmente son 1 fila con valor y 1 sin él, nunca dos valores reales
+    distintos observado hoy) y de ahí la más reciente.
+
+    bot_variant refleja el valor ACTUAL de whatsapp_leads.bot_variant
+    (asignado una sola vez al crear el lead, ver _pick_active_variant en
+    leads.py — normalmente estable), no un historial punto-en-el-tiempo:
+    no existe tabla de auditoría de cambios de variante hoy, así que si un
+    admin reasigna manualmente la variante de un lead después de su
+    conversación, esa conversación pasa a contarse en la variante nueva.
+    Aceptado como limitación conocida, igual que el resto de la
+    atribución por nombre/teléfono en este archivo."""
+    return f"""
+        LEFT JOIN LATERAL (
+            SELECT wl2.bot_variant
+            FROM whatsapp_leads wl2
+            WHERE regexp_replace(wl2.phone_number, '[^0-9]', '', 'g') = {phone_expr}
+            ORDER BY (wl2.bot_variant IS NOT NULL) DESC, wl2.updated_at DESC NULLS LAST, wl2.id DESC
+            LIMIT 1
+        ) wl ON true
+    """
+
+
 # Versión de CC_PLATFORM_BUCKET_SQL CON el respaldo de sesión web — requiere
 # que la query también tenga web_session_platform_lateral(...) joineado con
 # el mismo `alias`. Nunca puede dar un resultado PEOR que CC_PLATFORM_BUCKET_SQL

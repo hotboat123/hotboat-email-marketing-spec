@@ -125,23 +125,39 @@ export const analyticsApi = {
   asuntos: () => api.get("/analytics/asuntos"),
 };
 
+// El backend acepta uno o varios variant_key separados por coma — mismo
+// mecanismo que _joinPlatforms más abajo, para el filtro de "qué versión
+// del bot (control/ia_1/...) llevó la conversación" en Tráfico Web.
+const _joinBotVariants = (variants?: string[]) =>
+  variants && variants.length > 0 ? variants.join(",") : undefined;
+
 // Tráfico de la página web (landing + sitio de reservas)
 export const webTrafficApi = {
-  daily: (desde?: string, hasta?: string) =>
-    api.get("/web-traffic/daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
+  daily: (desde?: string, hasta?: string, botVariants?: string[]) =>
+    api.get("/web-traffic/daily", {
+      params: { desde: desde || undefined, hasta: hasta || undefined, bot_variant: _joinBotVariants(botVariants) },
+    }),
   durationHistogram: (desde?: string, hasta?: string) =>
     api.get("/web-traffic/duration-histogram", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
-  whatsappDaily: (desde?: string, hasta?: string) =>
-    api.get("/web-traffic/whatsapp-daily", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
-  conversions: (desde?: string, hasta?: string) =>
-    api.get("/web-traffic/conversions", { params: { desde: desde || undefined, hasta: hasta || undefined } }),
-  whatsappConversions: (desde?: string, hasta?: string, cohortDesde?: string, cohortHasta?: string) =>
+  whatsappDaily: (desde?: string, hasta?: string, botVariants?: string[]) =>
+    api.get("/web-traffic/whatsapp-daily", {
+      params: { desde: desde || undefined, hasta: hasta || undefined, bot_variant: _joinBotVariants(botVariants) },
+    }),
+  conversions: (desde?: string, hasta?: string, botVariants?: string[]) =>
+    api.get("/web-traffic/conversions", {
+      params: { desde: desde || undefined, hasta: hasta || undefined, bot_variant: _joinBotVariants(botVariants) },
+    }),
+  whatsappConversions: (
+    desde?: string, hasta?: string, cohortDesde?: string, cohortHasta?: string, botVariants?: string[],
+  ) =>
     api.get("/web-traffic/whatsapp-conversions", {
       params: {
         desde: desde || undefined, hasta: hasta || undefined,
         cohort_desde: cohortDesde || undefined, cohort_hasta: cohortHasta || undefined,
+        bot_variant: _joinBotVariants(botVariants),
       },
     }),
+  botVariants: () => api.get("/web-traffic/bot-variants"),
 };
 
 // Fuentes (comparación Google/Meta/Otro)

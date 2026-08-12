@@ -388,6 +388,14 @@ export interface ConversionDetailRow {
 // puro); los flujo_3 se mudaron a la lista de Web, ver ConversionDetailRow.
 export type WhatsappConversionDetailRow = ConversionDetailRow;
 
+// ── Filtro por variante de bot (control/ia_1/...) en Tráfico Web ───────────
+
+export interface BotVariantOption {
+  variant_key: string;
+  label: string;
+  is_active: boolean;
+}
+
 // ── Pestaña "Fuentes" (comparación Google/Meta/Otro) ────────────────────────
 
 export type PlatformBucket = "meta" | "google" | "otro";

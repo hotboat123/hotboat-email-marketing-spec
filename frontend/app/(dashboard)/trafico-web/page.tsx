@@ -17,7 +17,7 @@ import {
 import { webTrafficApi } from "@/lib/api";
 import {
   WebTrafficResponse, WebTrafficDurationHistogram, WhatsappTrafficResponse,
-  ConversionDetailRow, WhatsappConversionDetailRow,
+  ConversionDetailRow, WhatsappConversionDetailRow, BotVariantOption,
 } from "@/lib/types";
 import {
   Granularity, ChartRow, ChartRowWA, StatCard, ChartCard, ConversionsModal,
@@ -88,6 +88,19 @@ export default function TraficoWebPage() {
   const [desde, setDesde] = useState(daysAgoISO(30));
   const [hasta, setHasta] = useState(todayISO());
   const [granularity, setGranularity] = useState<Granularity>("day");
+  // [] = sin filtro (todas las variantes). Solo afecta el conteo de "pagó" —
+  // ver bot_variants en webTrafficApi / web_traffic_analytics.py.
+  const [botVariants, setBotVariants] = useState<string[]>([]);
+
+  const { data: variantOptions } = useQuery<BotVariantOption[]>({
+    queryKey: ["bot-variants"],
+    queryFn: () => webTrafficApi.botVariants().then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+
+  function toggleVariant(key: string) {
+    setBotVariants((prev) => (prev.includes(key) ? prev.filter((v) => v !== key) : [...prev, key]));
+  }
 
   function applyPreset(p: RangePreset) {
     setPreset(p);
@@ -97,8 +110,8 @@ export default function TraficoWebPage() {
   }
 
   const { data, isLoading } = useQuery<WebTrafficResponse>({
-    queryKey: ["web-traffic-daily", desde, hasta],
-    queryFn: () => webTrafficApi.daily(desde, hasta).then((r) => r.data),
+    queryKey: ["web-traffic-daily", desde, hasta, botVariants],
+    queryFn: () => webTrafficApi.daily(desde, hasta, botVariants).then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: source === "web",
   });
@@ -111,8 +124,8 @@ export default function TraficoWebPage() {
   });
 
   const { data: waData, isLoading: waLoading } = useQuery<WhatsappTrafficResponse>({
-    queryKey: ["whatsapp-traffic-daily", desde, hasta],
-    queryFn: () => webTrafficApi.whatsappDaily(desde, hasta).then((r) => r.data),
+    queryKey: ["whatsapp-traffic-daily", desde, hasta, botVariants],
+    queryFn: () => webTrafficApi.whatsappDaily(desde, hasta, botVariants).then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: source === "whatsapp",
   });
@@ -126,17 +139,17 @@ export default function TraficoWebPage() {
   } | null>(null);
 
   const { data: webConversions, isLoading: webConversionsLoading } = useQuery<ConversionDetailRow[]>({
-    queryKey: ["web-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta],
-    queryFn: () => webTrafficApi.conversions(conversionsRange!.desde, conversionsRange!.hasta).then((r) => r.data),
+    queryKey: ["web-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta, botVariants],
+    queryFn: () => webTrafficApi.conversions(conversionsRange!.desde, conversionsRange!.hasta, botVariants).then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: !!conversionsRange && source === "web",
   });
 
   const { data: waConversions, isLoading: waConversionsLoading } = useQuery<WhatsappConversionDetailRow[]>({
-    queryKey: ["whatsapp-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta, conversionsRange?.cohortFrom, conversionsRange?.cohortTo],
+    queryKey: ["whatsapp-conversions-detail", conversionsRange?.desde, conversionsRange?.hasta, conversionsRange?.cohortFrom, conversionsRange?.cohortTo, botVariants],
     queryFn: () =>
       webTrafficApi
-        .whatsappConversions(conversionsRange!.desde, conversionsRange!.hasta, conversionsRange!.cohortFrom, conversionsRange!.cohortTo)
+        .whatsappConversions(conversionsRange!.desde, conversionsRange!.hasta, conversionsRange!.cohortFrom, conversionsRange!.cohortTo, botVariants)
         .then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled: !!conversionsRange && source === "whatsapp",
@@ -231,6 +244,36 @@ export default function TraficoWebPage() {
           </div>
         </div>
       </div>
+
+      {!!variantOptions?.length && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-6 bg-white border border-gray-200 rounded-xl px-4 py-3">
+          <span className="text-xs text-gray-400 mr-1">
+            Bot{source === "web" ? " (solo afecta a quién pagó)" : ""}
+          </span>
+          <button
+            onClick={() => setBotVariants([])}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              botVariants.length === 0 ? "bg-gray-900 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            Todos
+          </button>
+          {variantOptions.map((v) => (
+            <button
+              key={v.variant_key}
+              onClick={() => toggleVariant(v.variant_key)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                botVariants.includes(v.variant_key)
+                  ? "bg-brand-600 text-white"
+                  : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              {v.is_active && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />}
+              {v.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {source === "web" && (
       <>

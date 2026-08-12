@@ -141,13 +141,24 @@ def _source_engine():
     return create_engine(url)
 
 
-def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None = None) -> dict:
+def get_web_traffic_daily(
+    desde: date, hasta: date, platforms: list[str] | None = None, bot_variants: list[str] | None = None,
+) -> dict:
     """platforms (opcional): subconjunto de "meta"/"google"/"otro" — filtra
     sesiones por SESSION_PLATFORM_BUCKET_SQL y reservas por
     CC_PLATFORM_BUCKET_SQL (ver platform_attribution.py). Puede ser más de
     uno (ej. ["meta","google"] = Meta O Google, sin Otro). Sin este
     parámetro (o con los 3 buckets), comportamiento 100% idéntico a antes —
-    usado por la pestaña "Tráfico Web" existente."""
+    usado por la pestaña "Tráfico Web" existente.
+
+    bot_variants (opcional): filtra SOLO el conteo de "pagó" (paid_rows)
+    por whatsapp_leads.bot_variant del teléfono de la reserva — ver
+    bot_variant_join() en platform_attribution.py. No aplica a
+    sesiones/eventos: una sesión web anónima todavía no tiene teléfono, y
+    por lo tanto no tiene variante de bot asociada hasta que esa persona
+    (si acaso) le escribe al bot — solo tiene sentido filtrar el
+    subconjunto de reservas que sí llegaron a tener un teléfono vinculado
+    a un lead con esa variante (típicamente flujo_3: web → WhatsApp)."""
     engine = _source_engine()
     hasta_excl = hasta + timedelta(days=1)  # solo para _popup_fills_by_day (form_submissions, naive-UTC) más abajo
 
@@ -176,8 +187,9 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
     """
 
     from app.services.platform_attribution import (
-        SESSION_PLATFORM_BUCKET_SQL_AGG, web_session_platform_lateral, cc_platform_bucket_sql,
+        SESSION_PLATFORM_BUCKET_SQL_AGG, web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join,
     )
+    _params_variant = {"bot_variants": list(bot_variants)} if bot_variants else {}
     # session_id IN (...) con HAVING sobre la versión agregada (MAX) —
     # nunca un WHERE fila-por-fila: referrer/utm_source/utm_medium suelen
     # venir solo en la primera fila de la sesión, filtrar por fila antes de
@@ -292,11 +304,14 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
               ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
         """ + web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')")) if platforms else ""
         _PLATFORM_FILTER_PAID = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
+        _VARIANT_JOIN = bot_variant_join("regexp_replace(a.telefono, '[^0-9]', '', 'g')") if bot_variants else ""
+        _VARIANT_FILTER_PAID = "AND wl.bot_variant = ANY(:bot_variants)" if bot_variants else ""
         paid_rows = conn.execute(text(f"""
             SELECT DATE(a.created_at AT TIME ZONE 'America/Santiago') AS day, COUNT(*) AS n
             FROM all_appointments a
             {PHONE_FLUJO_LATERAL}
             {_PLATFORM_JOIN}
+            {_VARIANT_JOIN}
             WHERE (
                 (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
                 OR a.payment_status IN ('approved', 'completed')
@@ -304,9 +319,9 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
               {_EXCLUDE_FLUJO1_PHONES}
-              {_PLATFORM_FILTER_PAID}
+              {_PLATFORM_FILTER_PAID} {_VARIANT_FILTER_PAID}
             GROUP BY day ORDER BY day
-        """), {"desde": desde, "hasta": hasta, **_params_platform}).fetchall()
+        """), {"desde": desde, "hasta": hasta, **_params_platform, **_params_variant}).fetchall()
 
     # Ensamblar por día — arranca de un dict con todos los días del rango en
     # cero, así el front no tiene que rellenar huecos.
@@ -380,7 +395,9 @@ def get_web_traffic_daily(desde: date, hasta: date, platforms: list[str] | None 
     return {"desde": desde.isoformat(), "hasta": hasta.isoformat(), "daily": daily, "totals": totals}
 
 
-def get_web_conversions_detail(desde: date, hasta: date, platforms: list[str] | None = None) -> list[dict]:
+def get_web_conversions_detail(
+    desde: date, hasta: date, platforms: list[str] | None = None, bot_variants: list[str] | None = None,
+) -> list[dict]:
     """Quiénes son los "paid" que cuenta get_web_traffic_daily — mismo
     criterio de pago, de fecha (created_at en hora de Chile, no cuándo se
     pagó ni la fecha cruda en UTC — ver los dos comentarios en
@@ -389,8 +406,9 @@ def get_web_conversions_detail(desde: date, hasta: date, platforms: list[str] | 
     tarjeta. Incluye "flujo" (flujo_2 = sin WhatsApp antes de esta
     reserva, flujo_3 = sí, pero después de una sesión web — ver
     PHONE_FLUJO_LATERAL) para poder mostrar el % que igual pasó por
-    WhatsApp en el camino. platforms (opcional): ver get_web_traffic_daily."""
-    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql
+    WhatsApp en el camino. platforms/bot_variants (opcional): ver
+    get_web_traffic_daily."""
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join
     engine = _source_engine()
 
     _platform_join = ("""
@@ -399,6 +417,10 @@ def get_web_conversions_detail(desde: date, hasta: date, platforms: list[str] | 
     """ + web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')")) if platforms else ""
     _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
+
+    _variant_join = bot_variant_join("regexp_replace(a.telefono, '[^0-9]', '', 'g')") if bot_variants else ""
+    _variant_filter = "AND wl.bot_variant = ANY(:bot_variants)" if bot_variants else ""
+    _params_variant = {"bot_variants": list(bot_variants)} if bot_variants else {}
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
@@ -410,6 +432,7 @@ def get_web_conversions_detail(desde: date, hasta: date, platforms: list[str] | 
             FROM all_appointments a
             {PHONE_FLUJO_LATERAL}
             {_platform_join}
+            {_variant_join}
             WHERE (
                 (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
                 OR a.payment_status IN ('approved', 'completed')
@@ -417,9 +440,9 @@ def get_web_conversions_detail(desde: date, hasta: date, platforms: list[str] | 
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :desde
               AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :hasta
               {_EXCLUDE_FLUJO1_PHONES}
-              {_platform_filter}
+              {_platform_filter} {_variant_filter}
             ORDER BY a.created_at DESC
-        """), {"desde": desde, "hasta": hasta, **_params_platform}).fetchall()
+        """), {"desde": desde, "hasta": hasta, **_params_platform, **_params_variant}).fetchall()
 
     return [
         {
