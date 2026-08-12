@@ -249,6 +249,12 @@ export const adsApi = {
     api.get("/ads/timeseries", { params: { level, id } }),
   bookings: (level: "ad" | "adset" | "campaign", id: string, dateFrom?: string, dateTo?: string) =>
     api.get("/ads/bookings", { params: { level, id, date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
+  // "Conversión" — mismo criterio de "pagó" que Tráfico Web, ver
+  // /api/ads/conversion-summary en el backend.
+  conversionSummary: (level: "ad" | "adset" | "campaign", dateFrom?: string, dateTo?: string) =>
+    api.get("/ads/conversion-summary", { params: { level, date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
+  conversionBookings: (level: "ad" | "adset" | "campaign", id: string, dateFrom?: string, dateTo?: string) =>
+    api.get("/ads/conversion-bookings", { params: { level, id, date_from: dateFrom || undefined, date_to: dateTo || undefined } }),
 };
 
 // Correos enviados (log unificado de campañas + automatizaciones)

@@ -21,6 +21,7 @@ import {
   LineChart,
   Globe,
   Compass,
+  Target,
 } from "lucide-react";
 import { clearToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ const nav = [
   { href: "/calls",        label: "Llamadas",         icon: PhoneCall },
   { href: "/embudo",       label: "Embudo",           icon: TrendingUp },
   { href: "/anuncios",     label: "Anuncios",         icon: LineChart },
+  { href: "/conversion-anuncios", label: "Conversión Anuncios", icon: Target },
   { href: "/trafico-web",  label: "Tráfico Web",      icon: Globe },
   { href: "/fuentes",      label: "Fuentes",          icon: Compass },
   { href: "/segments",     label: "Segmentos",        icon: Filter },

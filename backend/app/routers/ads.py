@@ -209,6 +209,211 @@ def _bookings_by_level_id(conn, level: str, date_from: Optional[str], date_to: O
     return {key: sum(bookings_by_name[n] for n in names) for key, names in key_names.items()}
 
 
+# ── "Conversión" (pestaña nueva, criterio consistente con Tráfico Web) ─────────
+#
+# _bookings_by_ad_name()/_bookings_by_level_id() arriba usan a.status='confirmed'
+# + COALESCE(a.paid_at, a.created_at) — un criterio propio de esta pestaña,
+# DISTINTO del que usan Tráfico Web/Fuentes para "pagó" en todos lados:
+# (a.pagos no vacío O a.payment_status IN ('approved','completed')), fecha
+# DATE(a.created_at AT TIME ZONE 'America/Santiago'). Además el JOIN de acá
+# es `cc.phone = a.telefono` sin normalizar (más frágil que el
+# regexp_replace(...) que usa todo lo demás). Ninguno de los dos es "el
+# bug" — status='confirmed' es un conjunto distinto de pagos/payment_status
+# a propósito (reservas confirmadas != reservas pagadas) — pero el dueño
+# esperaba que "reservas" acá calzara con "pagaron" en Tráfico Web, y no
+# calzaba. Estas dos funciones son el mismo _bookings_by_ad_name()/
+# _bookings_by_level_id() de arriba, pero con el criterio de Tráfico Web,
+# para la pestaña "Conversión Anuncios" — deliberadamente NO se tocan las
+# de arriba (usadas por la pestaña Anuncios existente, que el dueño no
+# pidió cambiar).
+def _bookings_by_ad_name_correct(conn, date_from: Optional[str], date_to: Optional[str]) -> dict[str, int]:
+    date_where = ""
+    params: dict = {}
+    if date_from:
+        date_where += " AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        date_where += " AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :date_to"
+        params["date_to"] = date_to
+
+    rows = conn.execute(
+        text(f"""
+            SELECT lower(cc.ad_source) AS name, COUNT(*) AS bookings
+            FROM all_appointments a
+            JOIN contacts_crm cc
+              ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+            WHERE (
+                (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
+                OR a.payment_status IN ('approved', 'completed')
+            )
+              AND cc.ad_source IS NOT NULL AND cc.ad_source <> ''
+              {date_where}
+            GROUP BY 1
+        """),
+        params,
+    ).all()
+    return {r.name: int(r.bookings) for r in rows}
+
+
+def _bookings_by_level_id_correct(conn, level: str, date_from: Optional[str], date_to: Optional[str]) -> dict[str, int]:
+    bookings_by_name = _bookings_by_ad_name_correct(conn, date_from, date_to)
+    if not bookings_by_name:
+        return {}
+
+    ads = conn.execute(text("SELECT id, name, adset_id, campaign_id FROM meta_ads WHERE name IS NOT NULL")).all()
+    key_names: dict[str, set] = {}
+    for ad in ads:
+        name_lower = ad.name.lower()
+        if name_lower not in bookings_by_name:
+            continue
+        key = {"ad": ad.id, "adset": ad.adset_id, "campaign": ad.campaign_id}[level]
+        if key is None:
+            continue
+        key_names.setdefault(key, set()).add(name_lower)
+
+    return {key: sum(bookings_by_name[n] for n in names) for key, names in key_names.items()}
+
+
+@router.get("/conversion-summary")
+def ads_conversion_summary(
+    level: Level = Query("ad"),
+    date_from: Optional[str] = Query(None, description="YYYY-MM-DD, filtra por fecha del gasto Y de las reservas"),
+    date_to: Optional[str] = Query(None, description="YYYY-MM-DD, filtra por fecha del gasto Y de las reservas"),
+    _: User = Depends(get_current_user),
+):
+    """Igual que /summary (mismo gasto/clicks/conversaciones desde
+    meta_ads_insights), pero "reservas" usa el MISMO criterio de "pagó" que
+    Tráfico Web/Fuentes (pagos/payment_status, fecha Chile, teléfono
+    normalizado) en vez del criterio propio de la pestaña Anuncios
+    (status='confirmed') — para que el total calce con lo que ya muestra
+    Tráfico Web. Agrega conversion_rate = reservas/conversaciones."""
+    _require_level(level)
+    id_col, name_col, status_col = _LEVEL_COLS[level]
+    adset_name_sel = "s.name" if level == "ad" else "NULL"
+    adset_group = ", s.name" if level == "ad" else ""
+
+    date_where = ""
+    params: dict = {}
+    if date_from:
+        date_where += " AND i.date_start >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        date_where += " AND i.date_start <= :date_to"
+        params["date_to"] = date_to
+
+    sql = f"""
+        SELECT {id_col} AS id, {name_col} AS name, {status_col} AS status,
+               c.name AS campaign_name,
+               {adset_name_sel} AS adset_name,
+               SUM(i.spend) AS spend,
+               SUM(i.clicks) AS clicks,
+               SUM({_conversations_sql()}) AS conversations_started,
+               MIN(i.date_start) AS first_date,
+               MAX(i.date_start) AS last_date
+        {_LEVEL_JOINS[level]}
+        WHERE {id_col} IS NOT NULL {date_where}
+        GROUP BY {id_col}, {name_col}, {status_col}, c.name{adset_group}
+        ORDER BY spend DESC
+    """
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text(sql), params).all()
+            bookings_by_id = _bookings_by_level_id_correct(conn, level, date_from, date_to)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"No se pudo leer meta_ads_insights: {exc}")
+
+    return [_conversion_summary_row(r, bookings_by_id.get(r.id, 0)) for r in rows]
+
+
+def _conversion_summary_row(r, bookings: int = 0) -> dict:
+    spend = float(r.spend or 0)
+    clicks = float(r.clicks or 0)
+    conversations = float(r.conversations_started or 0)
+    return {
+        "id": r.id,
+        "name": r.name,
+        "status": r.status,
+        "campaign_name": r.campaign_name,
+        "adset_name": r.adset_name,
+        "spend": round(spend),
+        "clicks": int(clicks),
+        "cpc": round(spend / clicks, 1) if clicks else None,
+        "conversations_started": int(conversations),
+        "cost_per_conversation": round(spend / conversations, 1) if conversations else None,
+        "bookings": bookings,
+        "cost_per_booking": round(spend / bookings, 1) if bookings else None,
+        "conversion_rate": round(bookings / conversations * 100, 2) if conversations else None,
+        "first_date": r.first_date.isoformat() if r.first_date else None,
+        "last_date": r.last_date.isoformat() if r.last_date else None,
+    }
+
+
+@router.get("/conversion-bookings")
+def ads_conversion_bookings(
+    level: Level = Query("ad"),
+    id: str = Query(...),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    _: User = Depends(get_current_user),
+):
+    """Detalle de las reservas detrás de /conversion-summary — mismo criterio
+    de "pagó" que Tráfico Web, ver _bookings_by_ad_name_correct()."""
+    _require_level(level)
+    ad_names_sql = _ad_names_sql_for_level(level)
+
+    date_where = ""
+    params: dict = {"id": id}
+    if date_from:
+        date_where += " AND DATE(a.created_at AT TIME ZONE 'America/Santiago') >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        date_where += " AND DATE(a.created_at AT TIME ZONE 'America/Santiago') <= :date_to"
+        params["date_to"] = date_to
+
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            ad_names = [r[0] for r in conn.execute(text(ad_names_sql), {"id": id}).all()]
+            if not ad_names:
+                return []
+            rows = conn.execute(
+                text(f"""
+                    SELECT DISTINCT a.id, a.nombre_cliente, a.telefono, a.email,
+                           a.ingreso_total, a.fecha AS trip_date,
+                           DATE(a.created_at AT TIME ZONE 'America/Santiago') AS conversion_date,
+                           cc.ad_source
+                    FROM all_appointments a
+                    JOIN contacts_crm cc
+                      ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
+                    WHERE (
+                        (a.pagos IS NOT NULL AND jsonb_array_length(a.pagos) > 0)
+                        OR a.payment_status IN ('approved', 'completed')
+                    )
+                      AND lower(cc.ad_source) = ANY(:names)
+                      {date_where}
+                    ORDER BY conversion_date DESC
+                """),
+                {**params, "names": [n.lower() for n in ad_names]},
+            ).all()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"No se pudo leer reservas: {exc}")
+
+    return [
+        {
+            "id": r.id,
+            "name": r.nombre_cliente,
+            "phone": r.telefono,
+            "email": r.email,
+            "amount": float(r.ingreso_total) if r.ingreso_total is not None else None,
+            "trip_date": r.trip_date.isoformat() if r.trip_date else None,
+            "conversion_date": r.conversion_date.isoformat() if r.conversion_date else None,
+            "ad_source": r.ad_source,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/bookings")
 def ads_bookings(
     level: Level = Query("ad"),

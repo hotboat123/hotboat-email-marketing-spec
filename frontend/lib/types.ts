@@ -559,6 +559,14 @@ export interface AdSummary {
   last_date: string | null;
 }
 
+// Misma forma que AdSummary + conversion_rate — "bookings" acá usa el
+// mismo criterio de "pagó" que Tráfico Web (pagos/payment_status, fecha
+// Chile), no el status='confirmed' que usa AdSummary/la pestaña Anuncios
+// — ver /api/ads/conversion-summary.
+export interface AdConversionSummary extends AdSummary {
+  conversion_rate: number | null;
+}
+
 export interface AdTimeseriesPoint {
   date: string;
   spend: number;
