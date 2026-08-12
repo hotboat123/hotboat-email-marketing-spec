@@ -136,43 +136,57 @@ def web_session_platform_lateral(phone_expr: str, alias: str = "lws") -> str:
 
 
 def bot_variant_join(phone_expr: str) -> str:
-    """LEFT JOIN LATERAL a whatsapp_leads (misma base, tabla dueña de
-    bot_variant — ver app/db/leads.py::_ensure_variant_col en
-    hotboat-whatsapp) por teléfono normalizado, para filtrar/desglosar por
-    qué versión del bot (control/ia_1/...) llevó esa conversación.
-    `phone_expr` ya debe venir normalizado (solo dígitos). Comparte este
-    módulo con el resto de la atribución (plataforma) en vez de
-    whatsapp_traffic_analytics.py para que web_traffic_analytics.py pueda
-    usarlo también sin import circular entre ambos.
+    """LEFT JOIN LATERAL para filtrar/desglosar por qué versión del bot
+    (control/ia_1/...) o persona (Tom, Esteban) se hizo cargo de esa
+    conversación. `phone_expr` ya debe venir normalizado (solo dígitos).
+    Comparte este módulo con el resto de la atribución (plataforma) en vez
+    de whatsapp_traffic_analytics.py para que web_traffic_analytics.py
+    pueda usarlo también sin import circular entre ambos.
 
-    LATERAL + LIMIT 1 (no un LEFT JOIN plano) a propósito: whatsapp_leads
-    tiene phone_number UNIQUE en su forma CRUDA, pero no en su forma
-    normalizada — hay pares reales de filas para el mismo número, uno
-    guardado como "+56912345678" y otro como "56912345678" (probablemente
-    de una época en que no se normalizaba al guardar). Un LEFT JOIN plano
-    por teléfono normalizado hace fan-out ahí (2 filas de whatsapp_leads
-    por 1 conversación), duplicando conteos. Encontrado 2026-08-11
-    construyendo whatsapp_by_bot_variant_daily_v: el total sumado por
-    variante salía 29 conversaciones por encima del total real de
-    whatsapp_traffic_daily_v. Se prioriza la fila con bot_variant no nulo
-    (normalmente son 1 fila con valor y 1 sin él, nunca dos valores reales
-    distintos observado hoy) y de ahí la más reciente.
+    Cambiado 2026-08-12: antes leía whatsapp_leads.bot_variant (un único
+    valor MUTABLE, "a quién está asignado ahora mismo"), a pedido explícito
+    del dueño — "necesito que podamos medir la conversión según la persona
+    que terminó respondiendo la conversación, y no a quién se le asignó
+    inicialmente. Por ejemplo, si la conversación se le asignó a Tom, pero
+    Tom no respondió y luego de dos minutos Esteban tomó la conversación,
+    necesito que el porcentaje de conversión se le mida a Esteban". Ahora
+    usa whatsapp_conversations.bot_variant (hotboat-whatsapp, columna
+    nueva del mismo día) — un valor FIJO por mensaje, estampado en el
+    momento de cada envío: para una respuesta manual, la variante del
+    operador realmente logueado (ver POST /api/admin/chat-login +
+    /api/send-message en ese repo); para una respuesta automática, la
+    variante del lead en ese momento. Se toma el ÚLTIMO mensaje SALIENTE
+    con bot_variant no nulo — "quien terminó respondiendo" — con fallback a
+    whatsapp_leads.bot_variant (comportamiento anterior) solo para
+    conversaciones de ANTES de esa fecha, que nunca tuvieron ningún mensaje
+    estampado.
 
-    bot_variant refleja el valor ACTUAL de whatsapp_leads.bot_variant
-    (asignado una sola vez al crear el lead, ver _pick_active_variant en
-    leads.py — normalmente estable), no un historial punto-en-el-tiempo:
-    no existe tabla de auditoría de cambios de variante hoy, así que si un
-    admin reasigna manualmente la variante de un lead después de su
-    conversación, esa conversación pasa a contarse en la variante nueva.
-    Aceptado como limitación conocida, igual que el resto de la
-    atribución por nombre/teléfono en este archivo."""
+    whatsapp_conversations.phone_number ya se guarda normalizado (solo
+    dígitos) en ese repo — comparación directa, sin regexp_replace ahí."""
     return f"""
         LEFT JOIN LATERAL (
-            SELECT wl2.bot_variant
-            FROM whatsapp_leads wl2
-            WHERE regexp_replace(wl2.phone_number, '[^0-9]', '', 'g') = {phone_expr}
-            ORDER BY (wl2.bot_variant IS NOT NULL) DESC, wl2.updated_at DESC NULLS LAST, wl2.id DESC
-            LIMIT 1
+            SELECT COALESCE(
+                (
+                    SELECT wc2.bot_variant
+                    FROM whatsapp_conversations wc2
+                    WHERE wc2.phone_number = {phone_expr}
+                      AND wc2.direction = 'outgoing'
+                      AND wc2.bot_variant IS NOT NULL
+                    ORDER BY wc2.created_at DESC
+                    LIMIT 1
+                ),
+                (
+                    -- Fallback: conversación de antes de que existiera el
+                    -- estampado por mensaje — mismo criterio anti-fan-out
+                    -- que antes (whatsapp_leads.phone_number no es único en
+                    -- su forma normalizada, ver historial de este archivo).
+                    SELECT wl2.bot_variant
+                    FROM whatsapp_leads wl2
+                    WHERE regexp_replace(wl2.phone_number, '[^0-9]', '', 'g') = {phone_expr}
+                    ORDER BY (wl2.bot_variant IS NOT NULL) DESC, wl2.updated_at DESC NULLS LAST, wl2.id DESC
+                    LIMIT 1
+                )
+            ) AS bot_variant
         ) wl ON true
     """
 
