@@ -1,7 +1,8 @@
 from datetime import date, timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
-from app.core.deps import get_current_user
+from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel
+from app.core.deps import get_current_user, require_editor
 from app.models.user import User
 from app.services.web_traffic_analytics import (
     get_web_traffic_daily, get_session_duration_histogram, get_web_conversions_detail,
@@ -9,6 +10,7 @@ from app.services.web_traffic_analytics import (
 from app.services.whatsapp_traffic_analytics import (
     get_whatsapp_traffic_daily, get_whatsapp_conversions_detail, list_bot_variants,
 )
+from app.services.appointment_overrides import set_appointment_overrides
 
 router = APIRouter()
 
@@ -116,3 +118,39 @@ def whatsapp_conversions_detail(
     return get_whatsapp_conversions_detail(
         desde, hasta, cohort_desde, cohort_hasta, bot_variants=_parse_bot_variants(bot_variant),
     )
+
+
+class ConversionOverridesPayload(BaseModel):
+    # A field left OUT of the request body entirely leaves that override
+    # untouched (see exclude_unset=True below) — sending it as null clears
+    # the override back to automatic, sending a real value pins it. See
+    # set_appointment_overrides() for the vocab check.
+    fuente: Optional[str] = None
+    flujo: Optional[str] = None
+
+    model_config = {"extra": "forbid"}
+
+
+@router.patch("/conversions/{appointment_id}/overrides")
+def set_conversion_overrides(
+    appointment_id: int,
+    payload: ConversionOverridesPayload,
+    _: User = Depends(require_editor),
+):
+    """Corrige a mano la fuente y/o el flujo de una reserva puntual, desde
+    el modal "Quiénes pagaron" (ConversionsModal, compartido por las listas
+    Web y WhatsApp) — ver app/services/appointment_overrides.py. Un campo
+    omitido del body no se toca; enviarlo en null borra el override
+    (vuelve a calcularse automático)."""
+    fields = payload.model_dump(exclude_unset=True)
+    try:
+        set_appointment_overrides(
+            appointment_id,
+            fuente=fields.get("fuente", ...),
+            flujo=fields.get("flujo", ...),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True}

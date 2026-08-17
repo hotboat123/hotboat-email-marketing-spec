@@ -158,6 +158,12 @@ export const webTrafficApi = {
       },
     }),
   botVariants: () => api.get("/web-traffic/bot-variants"),
+  // Corrección manual de fuente/flujo desde ConversionsModal — omite el
+  // campo que no quieras tocar, manda null en el que quieras limpiar (que
+  // vuelva a calcularse automático) — ver ConversionOverridesPayload en
+  // el backend.
+  setConversionOverrides: (id: number, data: { fuente?: string | null; flujo?: string | null }) =>
+    api.patch(`/web-traffic/conversions/${id}/overrides`, data),
 };
 
 // Fuentes (comparación Google/Meta/Otro)

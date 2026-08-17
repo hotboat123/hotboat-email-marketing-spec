@@ -213,14 +213,22 @@ def get_whatsapp_conversions_detail(
     usa cohort_from/cohort_to en cambio — filtran por el día de cohorte ya
     calculado sobre el rango completo, sin tocar ese cálculo.
 
-    platforms/bot_variants (opcional): ver get_whatsapp_traffic_daily."""
-    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join
-    engine = _source_engine()
+    platforms/bot_variants (opcional): ver get_whatsapp_traffic_daily.
 
-    _platform_join = ("""
+    Incluye también "id" y "fuente" (meta/google/otro), y ahora sí "flujo"
+    (siempre 'flujo_1' salvo override — antes esta lista no lo mandaba,
+    ver el comentario en ConversionDetailRow) — las tres editables a mano
+    desde el modal, mismo mecanismo que get_web_conversions_detail (ver
+    app/services/appointment_overrides.py)."""
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join, CC_PLATFORM_BUCKET_SQL
+    from app.services.appointment_overrides import _ensure_override_columns
+    engine = _source_engine()
+    _ensure_override_columns(engine)
+
+    _platform_join = """
         LEFT JOIN contacts_crm cc
           ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = pa.phone_norm
-    """ + web_session_platform_lateral("pa.phone_norm")) if platforms else ""
+    """ + (web_session_platform_lateral("pa.phone_norm") if platforms else "")
     _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
 
@@ -249,7 +257,7 @@ def get_whatsapp_conversions_detail(
                     a.servicio, a.fecha, a.hora, a.ingreso_total,
                     regexp_replace(a.telefono, '[^0-9]', '', 'g') AS phone_norm,
                     a.created_at,
-                    pf.flujo
+                    pf.flujo, a.flujo_override, a.fuente_override
                 FROM all_appointments a
                 {PHONE_FLUJO_LATERAL}
                 WHERE a.telefono IS NOT NULL
@@ -258,7 +266,7 @@ def get_whatsapp_conversions_detail(
                       OR a.payment_status IN ('approved', 'completed')
                   )
             )
-            SELECT pa.*
+            SELECT pa.*, {CC_PLATFORM_BUCKET_SQL} AS fuente_computada
             FROM paid_appts pa
             JOIN conv_first cf ON cf.phone_number = pa.phone_norm
             {_platform_join}
@@ -277,6 +285,7 @@ def get_whatsapp_conversions_detail(
 
     return [
         {
+            "id": r.id,
             "booking_ref": r.appointment_id or f"AA-{r.id}",
             "name": r.nombre_cliente,
             "email": r.email,
@@ -286,6 +295,8 @@ def get_whatsapp_conversions_detail(
             "hora": str(r.hora)[:5] if r.hora else None,
             "monto": float(r.ingreso_total) if r.ingreso_total else None,
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "flujo": r.flujo_override or r.flujo or "flujo_1",
+            "fuente": r.fuente_override or r.fuente_computada,
         }
         for r in rows
     ]

@@ -408,13 +408,15 @@ def get_web_conversions_detail(
     PHONE_FLUJO_LATERAL) para poder mostrar el % que igual pasó por
     WhatsApp en el camino. platforms/bot_variants (opcional): ver
     get_web_traffic_daily."""
-    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join
+    from app.services.platform_attribution import web_session_platform_lateral, cc_platform_bucket_sql, bot_variant_join, CC_PLATFORM_BUCKET_SQL
+    from app.services.appointment_overrides import _ensure_override_columns
     engine = _source_engine()
+    _ensure_override_columns(engine)
 
-    _platform_join = ("""
+    _platform_join = """
         LEFT JOIN contacts_crm cc
           ON regexp_replace(cc.phone, '[^0-9]', '', 'g') = regexp_replace(a.telefono, '[^0-9]', '', 'g')
-    """ + web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')")) if platforms else ""
+    """ + (web_session_platform_lateral("regexp_replace(a.telefono, '[^0-9]', '', 'g')") if platforms else "")
     _platform_filter = f"AND {cc_platform_bucket_sql()} = ANY(:platforms)" if platforms else ""
     _params_platform = {"platforms": list(platforms)} if platforms else {}
 
@@ -428,7 +430,8 @@ def get_web_conversions_detail(
                 a.id, a.appointment_id, a.nombre_cliente, a.email, a.telefono,
                 a.servicio, a.fecha, a.hora, a.ingreso_total,
                 a.created_at,
-                pf.flujo
+                pf.flujo, a.flujo_override, a.fuente_override,
+                {CC_PLATFORM_BUCKET_SQL} AS fuente_computada
             FROM all_appointments a
             {PHONE_FLUJO_LATERAL}
             {_platform_join}
@@ -446,6 +449,7 @@ def get_web_conversions_detail(
 
     return [
         {
+            "id": r.id,
             "booking_ref": r.appointment_id or f"AA-{r.id}",
             "name": r.nombre_cliente,
             "email": r.email,
@@ -455,7 +459,8 @@ def get_web_conversions_detail(
             "hora": str(r.hora)[:5] if r.hora else None,
             "monto": float(r.ingreso_total) if r.ingreso_total else None,
             "created_at": r.created_at.isoformat() if r.created_at else None,
-            "flujo": r.flujo or "flujo_2",
+            "flujo": r.flujo_override or r.flujo or "flujo_2",
+            "fuente": r.fuente_override or r.fuente_computada,
         }
         for r in rows
     ]

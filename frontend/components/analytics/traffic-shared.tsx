@@ -5,12 +5,14 @@
 // cual de trafico-web/page.tsx (sin cambio de comportamiento), para no
 // duplicar ~150 líneas entre las dos páginas.
 
+import { useEffect, useState } from "react";
 import { startOfWeek, startOfMonth, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { X, Loader2 } from "lucide-react";
 import {
   ConversionDetailRow, WebTrafficDay, WhatsappTrafficDay,
 } from "@/lib/types";
+import { webTrafficApi } from "@/lib/api";
 
 export type Granularity = "day" | "week" | "month";
 
@@ -184,8 +186,15 @@ export function makeClickableDot<T extends { desde: string; hasta: string; label
 }
 
 export const FLUJO_LABEL: Record<string, { text: string; color: string }> = {
+  flujo_1: { text: "Flujo 1 · Solo WhatsApp", color: "bg-emerald-50 text-emerald-700" },
   flujo_2: { text: "Flujo 2 · Solo web", color: "bg-gray-50 text-gray-600" },
   flujo_3: { text: "Flujo 3 · Web → WhatsApp", color: "bg-blue-50 text-blue-700" },
+};
+
+export const FUENTE_LABEL: Record<string, { text: string; color: string }> = {
+  meta: { text: "Meta", color: "bg-blue-50 text-blue-700" },
+  google: { text: "Google", color: "bg-amber-50 text-amber-700" },
+  otro: { text: "Otro", color: "bg-gray-50 text-gray-600" },
 };
 
 export function money(n: number | null) {
@@ -196,6 +205,65 @@ export function fmtDateTime(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
+
+// Select inline con el mismo look que el badge de antes — cambiar el
+// valor guarda de inmediato (PATCH .../overrides) con update optimista y
+// rollback si falla. `field` decide qué mitad del payload se manda (el
+// otro campo queda sin tocar, ver ConversionOverridesPayload).
+function OverrideSelect({
+  row,
+  field,
+  labels,
+  onSaved,
+}: {
+  row: ConversionDetailRow;
+  field: "fuente" | "flujo";
+  labels: Record<string, { text: string; color: string }>;
+  onSaved: (id: number, field: "fuente" | "flujo", value: string) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const value = row[field] ?? "";
+  const color = value ? (labels[value]?.color ?? "bg-gray-100 text-gray-600") : "bg-gray-50 text-gray-400";
+
+  const handleChange = async (newValue: string) => {
+    const previous = value;
+    onSaved(row.id, field, newValue); // update optimista
+    setSaving(true);
+    setError(null);
+    try {
+      await webTrafficApi.setConversionOverrides(row.id, { [field]: newValue });
+    } catch (e) {
+      onSaved(row.id, field, previous); // rollback
+      setError(e instanceof Error ? e.message : "No se pudo guardar");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <select
+        value={value}
+        disabled={saving}
+        onChange={(e) => handleChange(e.target.value)}
+        className={`text-[11px] font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer disabled:opacity-50 disabled:cursor-wait ${color}`}
+      >
+        {Object.entries(labels).map(([key, { text }]) => (
+          <option key={key} value={key}>{text}</option>
+        ))}
+      </select>
+      {saving && <Loader2 size={11} className="animate-spin text-gray-400" />}
+      {error && <span title={error} className="text-red-500 text-xs cursor-help">⚠</span>}
+    </span>
+  );
+}
+
+const FLUJO_SELECT_LABELS: Record<string, { text: string; color: string }> = {
+  flujo_1: { text: "Flujo 1", color: FLUJO_LABEL.flujo_1.color },
+  flujo_2: { text: "Flujo 2", color: FLUJO_LABEL.flujo_2.color },
+  flujo_3: { text: "Flujo 3", color: FLUJO_LABEL.flujo_3.color },
+};
 
 export function ConversionsModal({
   title,
@@ -208,11 +276,20 @@ export function ConversionsModal({
   rows: ConversionDetailRow[];
   isLoading: boolean;
 }) {
-  // El campo "flujo" solo viene en la lista de Web (flujo_2/flujo_3) — la
-  // de WhatsApp ya no lo manda, porque solo incluye flujo_1 (ver
-  // ConversionDetailRow.flujo). Mostrar la columna según qué trajo el
-  // backend, no según qué pestaña está activa.
-  const hasFlujo = rows.some((r) => r.flujo);
+  // Copia local editable — rows es la prop que llega del fetch del padre;
+  // acá se refleja el update optimista de cada edición sin esperar a que
+  // el padre vuelva a pedir todo de nuevo.
+  const [localRows, setLocalRows] = useState(rows);
+  useEffect(() => setLocalRows(rows), [rows]);
+
+  const handleSaved = (id: number, field: "fuente" | "flujo", value: string) => {
+    setLocalRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  };
+
+  // El campo "flujo" ahora viene en ambas listas (Web: flujo_2/flujo_3,
+  // WhatsApp: flujo_1) — esto queda true casi siempre, pero se calcula
+  // igual por si alguna lista llega vacía.
+  const hasFlujo = localRows.some((r) => r.flujo);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-6 overflow-y-auto" onClick={onClose}>
@@ -223,16 +300,16 @@ export function ConversionsModal({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="text-sm font-semibold text-gray-800">{title}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{rows.length} reserva{rows.length !== 1 ? "s" : ""} pagada{rows.length !== 1 ? "s" : ""}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{localRows.length} reserva{localRows.length !== 1 ? "s" : ""} pagada{localRows.length !== 1 ? "s" : ""}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1">
             <X size={18} />
           </button>
         </div>
 
-        {hasFlujo && rows.length > 0 && (
+        {hasFlujo && localRows.length > 0 && (
           <div className="px-5 py-2.5 bg-blue-50/60 border-b border-blue-100 text-xs text-blue-800">
-            <strong>Flujo 3</strong> = tenía una sesión web orgánica (no llegó por un link del bot de WhatsApp) <em>antes</em> de su primer mensaje de WhatsApp — se cuenta como venta web porque la web fue la entrada real. <strong>Flujo 2</strong> = nunca escribió por WhatsApp.
+            <strong>Flujo 3</strong> = tenía una sesión web orgánica (no llegó por un link del bot de WhatsApp) <em>antes</em> de su primer mensaje de WhatsApp — se cuenta como venta web porque la web fue la entrada real. <strong>Flujo 2</strong> = nunca escribió por WhatsApp. <strong>Fuente</strong> y <strong>Flujo</strong> se pueden corregir a mano — el cambio queda guardado de inmediato.
           </div>
         )}
 
@@ -241,7 +318,7 @@ export function ConversionsModal({
             <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
               <Loader2 size={18} className="animate-spin" /> Cargando…
             </div>
-          ) : rows.length === 0 ? (
+          ) : localRows.length === 0 ? (
             <div className="py-16 text-center text-gray-400 text-sm">Sin reservas pagadas en este rango.</div>
           ) : (
             <table className="w-full text-sm">
@@ -252,12 +329,13 @@ export function ConversionsModal({
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reserva</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Monto</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reservó</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fuente</th>
                   {hasFlujo && <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Flujo</th>}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.booking_ref} className="border-b border-gray-50 hover:bg-gray-50">
+                {localRows.map((r) => (
+                  <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-4 py-2.5 text-gray-800 font-medium">{r.name || "—"}</td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">
                       {r.phone && <div>{r.phone}</div>}
@@ -269,13 +347,12 @@ export function ConversionsModal({
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-800 tabular-nums">{money(r.monto)}</td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{fmtDateTime(r.created_at)}</td>
+                    <td className="px-4 py-2.5">
+                      <OverrideSelect row={r} field="fuente" labels={FUENTE_LABEL} onSaved={handleSaved} />
+                    </td>
                     {hasFlujo && (
                       <td className="px-4 py-2.5">
-                        {r.flujo && (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${FLUJO_LABEL[r.flujo]?.color ?? "bg-gray-100 text-gray-600"}`}>
-                            {FLUJO_LABEL[r.flujo]?.text ?? r.flujo}
-                          </span>
-                        )}
+                        <OverrideSelect row={r} field="flujo" labels={FLUJO_SELECT_LABELS} onSaved={handleSaved} />
                       </td>
                     )}
                   </tr>

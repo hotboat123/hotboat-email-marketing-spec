@@ -370,6 +370,7 @@ export interface WhatsappTrafficResponse {
 }
 
 export interface ConversionDetailRow {
+  id: number; // all_appointments.id — clave para PATCH .../overrides
   booking_ref: string;
   name: string | null;
   email: string | null;
@@ -379,9 +380,14 @@ export interface ConversionDetailRow {
   hora: string | null;
   monto: number | null;
   created_at: string | null; // cuándo se creó la reserva — no cuándo se pagó
-  // Solo en la lista de Web: flujo_2 = nunca escribió por WhatsApp, flujo_3 =
-  // sí, pero después de una sesión web (por eso se cuenta acá y no en WhatsApp).
-  flujo?: "flujo_2" | "flujo_3";
+  // flujo_1 = WhatsApp puro (solo viene así en la lista de WhatsApp),
+  // flujo_2 = nunca escribió por WhatsApp, flujo_3 = sí, pero después de
+  // una sesión web (por eso se cuenta en Web y no en WhatsApp). Editable a
+  // mano — ver ConversionsModal.
+  flujo?: "flujo_1" | "flujo_2" | "flujo_3";
+  // De dónde vino el tráfico — bucket_3() en el backend (platform_attribution.py).
+  // Editable a mano, igual que flujo.
+  fuente?: "meta" | "google" | "otro";
 }
 
 // Ya no trae "flujo" — la lista de WhatsApp solo incluye flujo_1 (WhatsApp
