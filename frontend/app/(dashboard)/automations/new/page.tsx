@@ -44,6 +44,14 @@ const TRIGGERS: { value: AutomationTrigger; label: string; description: string; 
       "Cada envío genera un cupón nuevo y único para esa persona. Sus dos plazos (días para usar el código, días de plazo para la fecha de la reserva) se cuentan desde el día del envío del mail, no desde el \"N días antes\" ni desde el cumpleaños en sí.",
     fields: <></>,
   },
+  {
+    value: "companion_birthday",
+    label: "Cumpleaños de acompañante",
+    description:
+      "Se dispara N días antes del cumpleaños de un acompañante conocido (alguien que firmó los términos y condiciones en la misma reserva que este contacto). Le sugiere regalarle una experiencia HotBoat, por si no tiene nada pensado — no genera cupón. " +
+      "Solo funciona para pares de acompañantes detectados automáticamente a partir de las firmas de T&C; reservas donde todos los firmantes pusieron el mismo mail o la misma fecha de nacimiento se descartan como fuente (no se puede confiar en esos datos).",
+    fields: <></>,
+  },
 ];
 
 const TRIGGER_MAP = Object.fromEntries(TRIGGERS.map((t) => [t.value, t]));
@@ -92,6 +100,8 @@ function ConfigFields({
           {field("coupon_booking_window_days", "Plazo para la fecha de la reserva (días)", 1, 30)}
         </>
       );
+    case "companion_birthday":
+      return <>{field("days_before", "Enviar N días antes del cumpleaños del acompañante", 0, 7)}</>;
     default:
       return null;
   }
@@ -127,6 +137,9 @@ export default function NewAutomationPage() {
         case "reactivation":
           configForType.inactivity_days = config.inactivity_days ?? 90;
           configForType.cooldown_days = config.cooldown_days ?? 180;
+          break;
+        case "companion_birthday":
+          configForType.days_before = config.days_before ?? 7;
           break;
       }
       return automationsApi.create({

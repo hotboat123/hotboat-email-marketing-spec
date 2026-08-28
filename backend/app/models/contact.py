@@ -45,6 +45,14 @@ class Contact(SQLModel, table=True):
     # column is directly bound to the admin's free-text property editor in
     # the contact profile UI, which would mangle a nested object.
     ultima_reserva_hotboat: Optional[Any] = Field(default=None, sa_column=Column(JSON))
+    # System-computed list of known companions (other adult T&C signers from
+    # the same booking) with their birthday, so the companion_birthday
+    # automation can suggest a gift to them ahead of this contact's
+    # companion's birthday. Same reasoning as ultima_reserva_hotboat above —
+    # kept out of custom_fields. Each item: {"name", "email", "date"}.
+    # Populated by _check_tc_signatures() / enrich_contacts_from_signatures.py,
+    # never by the admin UI.
+    companion_birthdays: Optional[Any] = Field(default=None, sa_column=Column(JSON))
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -108,6 +116,7 @@ class ContactRead(SQLModel):
     notes: Optional[str] = None
     custom_fields: Optional[dict] = None
     ultima_reserva_hotboat: Optional[dict] = None
+    companion_birthdays: Optional[list] = None
     created_at: datetime
     updated_at: datetime
 

@@ -145,6 +145,9 @@ def test_automation(
         "num_ninos": 1,
         "ingreso_total": "$50.000",
         "pay_url": f"{settings.WOO_URL}/es/checkout/order-pay/0/?pay_for_order=true&key=test_preview",
+        # companion_birthday
+        "companion_name": "Amigo de Prueba",
+        "companion_birthday": today,
     }
 
     html = _inject_footer(JTemplate(tpl.html_content).render(**sample_vars), settings.NOTIFY_EMAIL)

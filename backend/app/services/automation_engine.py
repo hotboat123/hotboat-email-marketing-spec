@@ -1,7 +1,7 @@
 """
 Automation engine — runs every 15 minutes in a background thread.
-Implements 6 trigger types: abandoned_booking, welcome, post_visit, reactivation,
-tc_signature, birthday.
+Implements 7 trigger types: abandoned_booking, welcome, post_visit, reactivation,
+tc_signature, birthday, companion_birthday.
 """
 import calendar
 import logging
@@ -576,6 +576,45 @@ def _check_birthday(auto: Automation, session: Session) -> None:
         })
 
 
+def _check_companion_birthday(auto: Automation, session: Session) -> None:
+    """Fire N days before the birthday of a known companion (another adult
+    T&C signer from a shared HotBoat booking — see companion_birthdays on
+    Contact, populated by _check_tc_signatures). Suggests a gift to the
+    companion, not a coupon for the contact's own next visit — no coupon is
+    minted here, unlike _check_birthday. Same month/day + Feb-29 matching as
+    _check_birthday, applied per companion_birthdays entry instead of
+    Contact.birthday."""
+    config = auto.trigger_config or {}
+    days_before = int(config.get("days_before", 7))
+    target = (datetime.utcnow() + timedelta(days=days_before)).date()
+
+    contacts = session.exec(
+        select(Contact).where(
+            Contact.companion_birthdays != None,
+            Contact.opted_in == True,
+        )
+    ).all()
+
+    for contact in contacts:
+        for comp in (contact.companion_birthdays or []):
+            try:
+                comp_date = date.fromisoformat(comp["date"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            month, day = comp_date.month, comp_date.day
+            if month == 2 and day == 29 and not calendar.isleap(target.year):
+                day = 28
+            if (month, day) != (target.month, target.day):
+                continue
+            trigger_key = f"companion_birthday:{contact.id}:{comp['email']}:{target.year}"
+            if _already_sent(session, auto.id, trigger_key):
+                continue
+            _send_email(session, auto, contact, trigger_key, extra_vars={
+                "companion_name": comp["name"],
+                "companion_birthday": comp["date"],
+            })
+
+
 def _normalize_categoria_cliente(cat: str) -> str | None:
     """Normaliza categoria_clientes (all_appointments) a familia / pareja / amigos."""
     c = (cat or "").strip().lower()
@@ -656,6 +695,72 @@ def _resolve_appointment_from_booking_ref(booking_ref: str, src_engine):
             pass
 
     return None
+
+
+def _fetch_booking_signatures(booking_ref: str, src_engine) -> list:
+    """All accepted T&C signatures for one booking_ref (every passenger,
+    not just the one currently being processed) — used to build the
+    companion_birthdays cross-links for companion_birthday."""
+    with src_engine.connect() as conn:
+        return conn.execute(
+            text("""
+                SELECT passenger_name, passenger_email, passenger_birthday
+                FROM hotboat_signatures
+                WHERE booking_ref = :ref AND accepted_tc = true
+            """),
+            {"ref": booking_ref},
+        ).fetchall()
+
+
+def _companion_group_valid(sigs: list) -> bool:
+    """False when the signatures for a booking look like one person filled
+    the T&C form for every passenger instead of each signer filling their
+    own — either the same email appears more than once, or every signer who
+    has a birthday shares the exact same one. In either case none of these
+    signers are usable as real companions for each other (the whole booking
+    is skipped as a companion source; each signer's OWN contact/birthday is
+    untouched and still handled normally by _check_birthday)."""
+    emails = [(s.passenger_email or "").strip().lower() for s in sigs if s.passenger_email]
+    if len(emails) != len(set(emails)):
+        return False
+    birthdays = [s.passenger_birthday for s in sigs if s.passenger_birthday]
+    if len(birthdays) >= 2 and len(set(birthdays)) == 1:
+        return False
+    return True
+
+
+def _companion_entries_for(self_email: str, sigs: list) -> list[dict]:
+    """companion_birthdays entries to add for self_email, from the other
+    signers in `sigs` (assumed already passed _companion_group_valid)."""
+    out = []
+    seen = set()
+    for s in sigs:
+        other_email = (s.passenger_email or "").strip().lower()
+        if not other_email or other_email == self_email or not s.passenger_birthday:
+            continue
+        if other_email in seen:
+            continue
+        seen.add(other_email)
+        out.append({
+            "name": (s.passenger_name or "").strip() or other_email,
+            "email": other_email,
+            "date": str(s.passenger_birthday),
+        })
+    return out
+
+
+def _merge_companion_birthdays(existing: list | None, new_entries: list[dict]) -> tuple[list, bool]:
+    """Merge new_entries into existing (deduped by email). Returns
+    (merged_list, changed)."""
+    merged = list(existing or [])
+    known_emails = {c.get("email") for c in merged}
+    changed = False
+    for entry in new_entries:
+        if entry["email"] not in known_emails:
+            merged.append(entry)
+            known_emails.add(entry["email"])
+            changed = True
+    return merged, changed
 
 
 def _check_tc_signatures(auto: Automation, session: Session) -> None:
@@ -809,6 +914,20 @@ def _check_tc_signatures(auto: Automation, session: Session) -> None:
             session.add(contact)
             session.flush()  # get contact.id
 
+        # ── Cross-link companions (for companion_birthday) ──────────────────
+        try:
+            sibling_sigs = _fetch_booking_signatures(sig.booking_ref, src)
+            if _companion_group_valid(sibling_sigs):
+                new_entries = _companion_entries_for(email, sibling_sigs)
+                if new_entries:
+                    merged, changed = _merge_companion_birthdays(contact.companion_birthdays, new_entries)
+                    if changed:
+                        contact.companion_birthdays = merged
+                        contact.updated_at = now_dt
+                        session.add(contact)
+        except Exception as exc:
+            logger.warning("Automation %d tc_signature: companion cross-link failed for sig %d: %s", auto.id, sig.id, exc)
+
         # ── Record run (dedup guard) ───────────────────────────────────────
         run = AutomationRun(
             automation_id=auto.id,
@@ -841,6 +960,7 @@ HANDLERS = {
     "reactivation": _check_reactivation,
     "tc_signature": _check_tc_signatures,
     "birthday": _check_birthday,
+    "companion_birthday": _check_companion_birthday,
 }
 
 

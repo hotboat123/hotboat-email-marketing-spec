@@ -12,6 +12,14 @@ que la automatizacion en produccion (app/services/automation_engine.py), pero
 corre sobre las 139 firmas historicas sin la ventana de tiempo de 48h de esa
 automatizacion, para que ninguna quede sin cruzar.
 
+Ademas cruza cada firmante con los DEMAS firmantes de su misma reserva para
+poblar contacts.companion_birthdays (cumpleanos de acompanantes conocidos,
+para la automatizacion companion_birthday) -- salvo que la reserva tenga
+emails duplicados entre firmantes o todos compartan la misma fecha de
+nacimiento, senal de que una sola persona lleno el formulario por todos (ver
+_companion_group_valid en automation_engine.py); esas reservas se saltan
+como fuente de acompanantes y quedan marcadas en el log.
+
 Seguro de re-ejecutar: solo agrega informacion, nunca borra datos existentes.
 
 Uso:
@@ -19,6 +27,8 @@ Uso:
   python enrich_contacts_from_signatures.py --dry      # solo muestra cambios
 """
 import os, sys
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:mcxQvhpGaatBzcZNCbVqnGWGBjQpCNYJ@turntable.proxy.rlwy.net:48129/railway")
 os.environ.setdefault("SECRET_KEY", "d7d21f70d39dddea51376ab9c5d7f420c19a92d9322d2eb23e72faf97466892e")
@@ -26,14 +36,20 @@ os.environ.setdefault("RESEND_API_KEY", "x")
 
 DRY = "--dry" in sys.argv
 
+import time
+from collections import defaultdict
 from datetime import datetime
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 from app.models.contact import Contact
 from app.services.automation_engine import (
     _resolve_appointment_from_booking_ref,
     _normalize_categoria_cliente,
     _normalize_tipo_cliente,
+    _companion_group_valid,
+    _companion_entries_for,
+    _merge_companion_birthdays,
 )
 
 DB_URL = os.environ["DATABASE_URL"]
@@ -53,14 +69,51 @@ with engine.connect() as conn:
 
 print(f"Firmas a procesar: {len(sigs)}")
 
+by_booking = defaultdict(list)
+for sig in sigs:
+    by_booking[sig.booking_ref].append(sig)
+
+skipped_bookings = {ref for ref, group in by_booking.items() if not _companion_group_valid(group)}
+if skipped_bookings:
+    print(f"Reservas saltadas como fuente de acompanantes (email o fecha duplicados): {len(skipped_bookings)}")
+    for ref in sorted(skipped_bookings):
+        print(f"  [SKIP companions] booking_ref={ref}")
+
 created = updated = skipped = not_matched = 0
+companions_added = 0
+
+
+def _commit_with_retry(session, attempts=3):
+    """The live production automation engine writes to the same `contacts`
+    table continuously (every 60s) — a long batch transaction here can
+    deadlock against it. Commit in small batches (see below) and retry once
+    or twice on a transient Postgres deadlock instead of losing the whole
+    run's progress."""
+    for attempt in range(1, attempts + 1):
+        try:
+            session.commit()
+            return
+        except OperationalError as exc:
+            session.rollback()
+            if attempt == attempts or "deadlock" not in str(exc).lower():
+                raise
+            print(f"  [retry] deadlock on commit, attempt {attempt}/{attempts} — retrying...")
+            time.sleep(2 * attempt)
+
 
 with Session(engine) as session:
-    for sig in sigs:
+    for i, sig in enumerate(sigs):
         email = (sig.passenger_email or "").strip().lower()
         if not email or "@" not in email:
             skipped += 1
             continue
+
+        sibling_sigs = by_booking[sig.booking_ref]
+        new_companions = (
+            _companion_entries_for(email, sibling_sigs)
+            if sig.booking_ref not in skipped_bookings
+            else []
+        )
 
         appt = _resolve_appointment_from_booking_ref(sig.booking_ref, engine)
         if not appt:
@@ -119,12 +172,22 @@ with Session(engine) as session:
             if tipo_cliente and not cf.get("tipo_cliente"):
                 cf["tipo_cliente"] = tipo_cliente; changed = True
 
+            merged_companions, companions_changed = _merge_companion_birthdays(
+                existing.companion_birthdays, new_companions
+            )
+            if companions_changed:
+                changed = True
+                companions_added += len(merged_companions) - len(existing.companion_birthdays or [])
+
             if changed:
                 if DRY:
                     print(f"  [DRY update] {email} -> location={location} como_supieron={como_supieron} "
-                          f"categoria={categoria_cliente} tipo={tipo_cliente}")
+                          f"categoria={categoria_cliente} tipo={tipo_cliente} "
+                          f"+companions={[c['name'] for c in new_companions] if companions_changed else []}")
                 else:
                     existing.custom_fields = cf
+                    if companions_changed:
+                        existing.companion_birthdays = merged_companions
                     existing.updated_at = now_dt
                     session.add(existing)
                 updated += 1
@@ -139,9 +202,13 @@ with Session(engine) as session:
             if tipo_cliente:
                 cf["tipo_cliente"] = tipo_cliente
 
+            if new_companions:
+                companions_added += len(new_companions)
+
             if DRY:
                 print(f"  [DRY create] {email} name={name} location={location} "
-                      f"como_supieron={como_supieron} categoria={categoria_cliente} tipo={tipo_cliente}")
+                      f"como_supieron={como_supieron} categoria={categoria_cliente} tipo={tipo_cliente} "
+                      f"companions={[c['name'] for c in new_companions]}")
             else:
                 contact = Contact(
                     email=email,
@@ -152,6 +219,7 @@ with Session(engine) as session:
                     origin_utm="Formulario T&C",
                     location=location,
                     custom_fields=cf or None,
+                    companion_birthdays=new_companions or None,
                     opted_in=True,
                     opted_in_at=now_dt,
                     veces_hotboat=1 if appt else 0,
@@ -165,10 +233,15 @@ with Session(engine) as session:
                 session.add(contact)
             created += 1
 
+        if not DRY and (i + 1) % 20 == 0:
+            _commit_with_retry(session)
+
     if not DRY:
-        session.commit()
+        _commit_with_retry(session)
 
 print()
 print(f"Resultado: creados={created}  actualizados={updated}  sin_cambios={skipped}  sin_reserva_cruzada={not_matched}")
+print(f"Acompanantes agregados (companion_birthdays): {companions_added}  "
+      f"reservas saltadas por email/fecha duplicados: {len(skipped_bookings)}")
 if DRY:
     print("(DRY RUN - no se escribio nada)")
