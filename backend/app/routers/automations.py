@@ -151,9 +151,10 @@ def test_automation(
     }
 
     html = _inject_footer(JTemplate(tpl.html_content).render(**sample_vars), settings.NOTIFY_EMAIL)
+    subject = f"[TEST] {JTemplate(a.subject).render(**sample_vars)}"
     result = send_email(
         to=settings.NOTIFY_EMAIL,
-        subject=f"[TEST] {a.subject}",
+        subject=subject,
         html=html,
         from_address=default_from_address(),
         headers=_unsub_headers(settings.NOTIFY_EMAIL),
@@ -174,7 +175,7 @@ def test_automation(
         resend_id=result.get("message_id"),
         executed_at=datetime.utcnow(),
         html_content=html,
-        rendered_subject=f"[TEST] {a.subject}",
+        rendered_subject=subject,
     ))
     session.commit()
 
