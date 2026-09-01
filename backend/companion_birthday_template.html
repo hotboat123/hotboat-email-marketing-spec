@@ -90,7 +90,7 @@
                     <span style="display:inline-block;width:28px;height:28px;border-radius:50%;background-color:#235e58;color:#ffffff;font-size:13px;font-weight:700;text-align:center;line-height:28px;">3</span>
                   </td>
                   <td style="padding-left:12px;">
-                    <p style="margin:0;font-size:16px;font-weight:700;color:#235e58;">Fácil de coordinar — gift card</p>
+                    <p style="margin:0;font-size:16px;font-weight:700;color:#235e58;">Gift card personalizada</p>
                     <p style="margin:4px 0 0;font-size:15px;color:#4a5568;line-height:1.6;">
                       Nosotros te ayudamos a cuadrar la fecha con {{companion_name|default("tu amigo")}} sin arruinar la sorpresa — o, si prefieres, regálale una gift card con 2 años de validez para que elija su propia fecha.
                     </p>
@@ -101,13 +101,26 @@
               <!-- Separador -->
               <hr style="border:none;border-top:2px solid #d6f0ee;margin:0 0 28px;">
 
+              <!-- Cupón destacado -->
+              <table cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:28px;">
+                <tr>
+                  <td style="background-color:#f0faf9;border-left:4px solid #2f857c;border-radius:0 8px 8px 0;padding:20px 24px;">
+                    <p style="margin:0 0 6px;font-size:13px;font-weight:700;letter-spacing:1.5px;color:#2f857c;text-transform:uppercase;">15% de descuento en su gift card</p>
+                    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#235e58;">Código "{{coupon_code|default("REGALO15")}}"</p>
+                    <p style="margin:0;font-size:15px;color:#4a5568;line-height:1.6;">
+                      Válido por {{coupon_valid_days|default(30)}} días, para la gift card personalizada de {{companion_name|default("tu amigo")}} o para reservar un paseo directo.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
               <!-- CTA -->
               <table cellpadding="0" cellspacing="0" style="margin:8px 0 32px;">
                 <tr>
                   <td align="center" style="background-color:#235e58;border-radius:8px;padding:16px 40px;">
-                    <a href="https://wa.me/56975780920?text=Hola!%20Quiero%20regalarle%20una%20experiencia%20HotBoat%20a%20{{companion_name|default("tu amigo")}}%20por%20su%20cumplea%C3%B1os"
+                    <a href="https://whatsapp.hotboat.cl/booking?gift=1&coupon={{coupon_code|default("REGALO15")}}"
                        style="color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;letter-spacing:0.5px;">
-                      Regalarle una experiencia &#x2192;
+                      Comprar su gift card con 15% dto. &#x2192;
                     </a>
                   </td>
                 </tr>

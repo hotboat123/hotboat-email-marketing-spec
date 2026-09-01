@@ -576,16 +576,61 @@ def _check_birthday(auto: Automation, session: Session) -> None:
         })
 
 
+def _create_companion_gift_coupon(comp_name: str, redeem_days: int) -> str | None:
+    """Mint a one-time 15%-off coupon in hotboat-whatsapp's shared `coupons`
+    table (same physical Postgres as _create_birthday_coupon) for the
+    companion_birthday suggestion. Unlike the birthday coupon, this one has
+    no booking_date_from/to window — it's meant primarily for a gift-card
+    purchase (which has no booking date yet, see gift_cards_router.py in
+    hotboat-whatsapp), though it also works for a normal dated booking since
+    coupons aren't scoped to one flow. Returns None (never raises) if the
+    source DB is unreachable — caller treats that as "try again next tick"."""
+    today = date.today()
+    redeem_by = today + timedelta(days=redeem_days)
+    try:
+        engine = _source_engine()
+        with engine.connect() as conn:
+            code = None
+            for _ in range(10):
+                candidate = "REGALO-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                taken = conn.execute(
+                    text("SELECT 1 FROM coupons WHERE UPPER(code) = UPPER(:c)"), {"c": candidate}
+                ).first()
+                if not taken:
+                    code = candidate
+                    break
+            if not code:
+                logger.warning("Companion gift coupon: couldn't find a free code for %r after 10 tries", comp_name)
+                return None
+            conn.execute(text("""
+                INSERT INTO coupons (code, name, discount_percent, extra_description,
+                                      max_uses, expires_at, is_active)
+                VALUES (:code, :name, 15, :extra, 1, :expires_at, TRUE)
+            """), {
+                "code": code,
+                "name": f"Regalo cumpleaños — {comp_name}",
+                "extra": "",
+                "expires_at": redeem_by,
+            })
+            conn.commit()
+            return code
+    except Exception as exc:
+        logger.warning("Companion gift coupon creation failed for %r: %s", comp_name, exc)
+        return None
+
+
 def _check_companion_birthday(auto: Automation, session: Session) -> None:
     """Fire N days before the birthday of a known companion (another adult
     T&C signer from a shared HotBoat booking — see companion_birthdays on
     Contact, populated by _check_tc_signatures). Suggests a gift to the
-    companion, not a coupon for the contact's own next visit — no coupon is
-    minted here, unlike _check_birthday. Same month/day + Feb-29 matching as
-    _check_birthday, applied per companion_birthdays entry instead of
-    Contact.birthday."""
+    companion and mints a one-time 15%-off coupon for it (see
+    _create_companion_gift_coupon) right before sending — same skip-if-
+    unreachable behavior as _check_birthday's coupon. Same month/day +
+    Feb-29 matching as _check_birthday, applied per companion_birthdays
+    entry instead of Contact.birthday."""
     config = auto.trigger_config or {}
     days_before = int(config.get("days_before", 7))
+    coupon_valid_days = int(config.get("coupon_valid_days", 30))
     target = (datetime.utcnow() + timedelta(days=days_before)).date()
 
     contacts = session.exec(
@@ -609,10 +654,15 @@ def _check_companion_birthday(auto: Automation, session: Session) -> None:
             trigger_key = f"companion_birthday:{contact.id}:{comp['email']}:{target.year}"
             if _already_sent(session, auto.id, trigger_key):
                 continue
+            coupon_code = _create_companion_gift_coupon(comp["name"], coupon_valid_days)
+            if not coupon_code:
+                continue  # source DB unreachable right now — retry on a later tick
             _send_email(session, auto, contact, trigger_key, extra_vars={
                 "companion_name": comp["name"],
                 "companion_birthday": comp["date"],
                 "days_before": days_before,
+                "coupon_code": coupon_code,
+                "coupon_valid_days": coupon_valid_days,
             })
 
 
