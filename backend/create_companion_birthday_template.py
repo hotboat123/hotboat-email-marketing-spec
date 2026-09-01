@@ -29,8 +29,8 @@ with open(os.path.join(os.path.dirname(__file__), "companion_birthday_template.h
     HTML = f.read()
 
 NAME = "Cumpleaños de acompañante — Sugerencia de regalo"
-SUBJECT_DEFAULT = "El cumpleaños de {{companion_name}} se acerca 🎁"
-PREVIEW = "Fuiste con {{companion_name}} a HotBoat — regálale otra vuelta."
+SUBJECT_DEFAULT = "Faltan {{days_before}} días para el cumpleaños de {{companion_name}} 🎁"
+PREVIEW = "Fuiste con {{companion_name}} a HotBoat — sorpréndelo con esta experiencia."
 
 with Session(engine) as session:
     existing = session.exec(select(Template).where(Template.name == NAME)).first()

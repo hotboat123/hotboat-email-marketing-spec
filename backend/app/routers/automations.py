@@ -148,6 +148,7 @@ def test_automation(
         # companion_birthday
         "companion_name": "Amigo de Prueba",
         "companion_birthday": today,
+        "days_before": 7,
     }
 
     html = _inject_footer(JTemplate(tpl.html_content).render(**sample_vars), settings.NOTIFY_EMAIL)

@@ -612,6 +612,7 @@ def _check_companion_birthday(auto: Automation, session: Session) -> None:
             _send_email(session, auto, contact, trigger_key, extra_vars={
                 "companion_name": comp["name"],
                 "companion_birthday": comp["date"],
+                "days_before": days_before,
             })
 
 
