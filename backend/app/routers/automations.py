@@ -144,7 +144,7 @@ def test_automation(
         "num_adultos": 2,
         "num_ninos": 1,
         "ingreso_total": "$50.000",
-        "pay_url": f"{settings.WOO_URL}/es/checkout/order-pay/0/?pay_for_order=true&key=test_preview",
+        "pay_url": f"{settings.WOO_URL}/es/checkout/order-pay/0/?pay_for_order=true&amp;key=test_preview",
         # companion_birthday
         "companion_name": "Amigo de Prueba",
         "companion_birthday": today,

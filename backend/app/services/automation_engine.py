@@ -58,7 +58,11 @@ def _build_booking_deeplink(fecha_str: str, hora_str: str, num_people: int | Non
         params.append(f"extras={extras_param}")
     if has_flex:
         params.append("flex=1")
-    return f"{_BOOKING_BASE_URL}/booking?" + "&".join(params)
+    # &amp;, not & — this string lands straight in an href="{{pay_url}}"
+    # attribute (see update_abandoned_tpl.py); a raw & there is invalid HTML
+    # that some link-rewriting parsers (e.g. SES click tracking) choke on,
+    # silently dropping everything after the first param.
+    return f"{_BOOKING_BASE_URL}/booking?" + "&amp;".join(params)
 
 
 def _source_engine():
