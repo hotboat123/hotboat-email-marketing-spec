@@ -797,7 +797,7 @@ def _companion_entries_for(self_email: str, sigs: list) -> list[dict]:
             continue
         seen.add(other_email)
         out.append({
-            "name": (s.passenger_name or "").strip() or other_email,
+            "name": _fmt_nombre(s.passenger_name, other_email),
             "email": other_email,
             "date": str(s.passenger_birthday),
         })
