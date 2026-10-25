@@ -329,14 +329,40 @@ def _check_abandoned_followup(auto: Automation, session: Session) -> None:
         try:
             with src.connect() as conn:
                 row = conn.execute(
-                    text("SELECT status FROM all_appointments WHERE id = :id"),
+                    text("SELECT status, email FROM all_appointments WHERE id = :id"),
                     {"id": booking_id},
                 ).first()
         except Exception as exc:
             logger.error("Automation %d: cannot read source DB: %s", auto.id, exc)
             continue
         if row and row.status == "confirmed":
-            continue  # ya pagó — no molestar con el descuento
+            continue  # ya pagó esa misma reserva — no molestar con el descuento
+
+        # También saltar si esta persona ya tiene OTRA reserva futura
+        # confirmada (p.ej. Tomás se la crea manualmente por WhatsApp
+        # después de que abandonó el pago web) — la fila original
+        # (booking_id) sigue en pending_payment/cancelled, pero mandarle
+        # igual el 15% de descuento no tiene sentido si ya reservó por
+        # otra vía. Se busca por email, no por booking_id.
+        email_to_check = (row.email if row else None) or run.contact_email
+        if email_to_check:
+            try:
+                with src.connect() as conn:
+                    has_other_future = conn.execute(
+                        text("""
+                            SELECT 1 FROM all_appointments
+                            WHERE LOWER(email) = LOWER(:email)
+                              AND status = 'confirmed'
+                              AND fecha >= CURRENT_DATE
+                            LIMIT 1
+                        """),
+                        {"email": email_to_check},
+                    ).first()
+            except Exception as exc:
+                logger.error("Automation %d: cannot read source DB: %s", auto.id, exc)
+                continue
+            if has_other_future:
+                continue  # ya tiene otra reserva futura confirmada — no molestar con el descuento
 
         contact = session.exec(select(Contact).where(Contact.email == run.contact_email)).first()
         if not contact or not contact.opted_in:
