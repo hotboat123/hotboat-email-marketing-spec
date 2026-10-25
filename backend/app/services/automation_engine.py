@@ -11,6 +11,7 @@ import string
 import threading
 import time
 from datetime import date, datetime, timedelta
+from typing import Optional
 from urllib.parse import quote
 
 from jinja2 import Template as JTemplate
@@ -283,6 +284,46 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
         _send_email(session, auto, contact, trigger_key, extra_vars=extra_vars)
 
 
+def _notify_abandoned_discount_sent(contact: Contact, coupon_code: str, coupon_discount_percent: int) -> None:
+    """Avisa a NOTIFY_EMAIL cada vez que se manda el mail de descuento por carrito abandonado."""
+    if not settings.NOTIFY_EMAIL:
+        return
+    name = contact.name or contact.email
+    result = send_email(
+        to=settings.NOTIFY_EMAIL,
+        subject=f"🎁 Descuento de {coupon_discount_percent}% enviado: {name}",
+        html=(
+            f"<p>Se envió el mail de descuento por carrito abandonado a "
+            f"<strong>{name}</strong> ({contact.email}).</p>"
+            f"<p>Cupón: <strong>{coupon_code}</strong> ({coupon_discount_percent}% de descuento).</p>"
+        ),
+        from_address=default_from_address(),
+        trigger="abandoned_discount_sent_notification",
+    )
+    if not result["sent"]:
+        logger.warning("No se pudo enviar notificación de descuento enviado (%s): %s", contact.email, result["reason"])
+
+
+def _notify_abandoned_discount_skipped(email: str, name: Optional[str]) -> None:
+    """Avisa a NOTIFY_EMAIL cuando se cancela el mail de descuento porque la persona ya tiene otra reserva futura confirmada."""
+    if not settings.NOTIFY_EMAIL:
+        return
+    label = name or email
+    result = send_email(
+        to=settings.NOTIFY_EMAIL,
+        subject=f"🚫 Descuento NO enviado (ya reservó): {label}",
+        html=(
+            f"<p>No se envió el mail de descuento por carrito abandonado a "
+            f"<strong>{label}</strong> ({email}) porque ya tiene otra reserva "
+            f"futura confirmada (probablemente creada manualmente).</p>"
+        ),
+        from_address=default_from_address(),
+        trigger="abandoned_discount_skipped_notification",
+    )
+    if not result["sent"]:
+        logger.warning("No se pudo enviar notificación de descuento omitido (%s): %s", email, result["reason"])
+
+
 def _check_abandoned_followup(auto: Automation, session: Session) -> None:
     """
     Segundo paso de la secuencia de carrito abandonado: si el mail 1
@@ -338,6 +379,8 @@ def _check_abandoned_followup(auto: Automation, session: Session) -> None:
         if row and row.status == "confirmed":
             continue  # ya pagó esa misma reserva — no molestar con el descuento
 
+        contact = session.exec(select(Contact).where(Contact.email == run.contact_email)).first()
+
         # También saltar si esta persona ya tiene OTRA reserva futura
         # confirmada (p.ej. Tomás se la crea manualmente por WhatsApp
         # después de que abandonó el pago web) — la fila original
@@ -362,9 +405,11 @@ def _check_abandoned_followup(auto: Automation, session: Session) -> None:
                 logger.error("Automation %d: cannot read source DB: %s", auto.id, exc)
                 continue
             if has_other_future:
+                _notify_abandoned_discount_skipped(
+                    email_to_check, contact.name if contact else None,
+                )
                 continue  # ya tiene otra reserva futura confirmada — no molestar con el descuento
 
-        contact = session.exec(select(Contact).where(Contact.email == run.contact_email)).first()
         if not contact or not contact.opted_in:
             continue
 
@@ -380,6 +425,7 @@ def _check_abandoned_followup(auto: Automation, session: Session) -> None:
             "coupon_code": coupon_code,
             "coupon_discount_percent": coupon_discount_percent,
         })
+        _notify_abandoned_discount_sent(contact, coupon_code, coupon_discount_percent)
 
 
 _BATCH_ORIGINS = {"Formulario T&C", "Sincronización HotBoat", ""}
