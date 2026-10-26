@@ -324,6 +324,21 @@ def _notify_abandoned_discount_skipped(email: str, name: Optional[str]) -> None:
         logger.warning("No se pudo enviar notificación de descuento omitido (%s): %s", email, result["reason"])
 
 
+def _mark_skipped(session: Session, automation_id: int, contact_email: str, trigger_key: str) -> None:
+    """Persiste un AutomationRun status='skipped' para este trigger_key, para
+    que un tick posterior lo vea en _already_sent() y no lo vuelva a evaluar
+    (ni, en el caso de "ya reservó", lo vuelva a notificar) mientras siga
+    cayendo dentro de la ventana de 20 minutos del paso 1."""
+    session.add(AutomationRun(
+        automation_id=automation_id,
+        contact_email=contact_email,
+        trigger_key=trigger_key,
+        status="skipped",
+        triggered_at=datetime.utcnow(),
+    ))
+    session.commit()
+
+
 def _check_abandoned_followup(auto: Automation, session: Session) -> None:
     """
     Segundo paso de la secuencia de carrito abandonado: si el mail 1
@@ -377,6 +392,7 @@ def _check_abandoned_followup(auto: Automation, session: Session) -> None:
             logger.error("Automation %d: cannot read source DB: %s", auto.id, exc)
             continue
         if row and row.status == "confirmed":
+            _mark_skipped(session, auto.id, run.contact_email, trigger_key)
             continue  # ya pagó esa misma reserva — no molestar con el descuento
 
         contact = session.exec(select(Contact).where(Contact.email == run.contact_email)).first()
@@ -408,6 +424,7 @@ def _check_abandoned_followup(auto: Automation, session: Session) -> None:
                 _notify_abandoned_discount_skipped(
                     email_to_check, contact.name if contact else None,
                 )
+                _mark_skipped(session, auto.id, run.contact_email, trigger_key)
                 continue  # ya tiene otra reserva futura confirmada — no molestar con el descuento
 
         if not contact or not contact.opted_in:
