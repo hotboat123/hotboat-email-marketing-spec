@@ -285,43 +285,13 @@ def _check_abandoned_booking(auto: Automation, session: Session) -> None:
 
 
 def _notify_abandoned_discount_sent(contact: Contact, coupon_code: str, coupon_discount_percent: int) -> None:
-    """Avisa a NOTIFY_EMAIL cada vez que se manda el mail de descuento por carrito abandonado."""
-    if not settings.NOTIFY_EMAIL:
-        return
-    name = contact.name or contact.email
-    result = send_email(
-        to=settings.NOTIFY_EMAIL,
-        subject=f"🎁 Descuento de {coupon_discount_percent}% enviado: {name}",
-        html=(
-            f"<p>Se envió el mail de descuento por carrito abandonado a "
-            f"<strong>{name}</strong> ({contact.email}).</p>"
-            f"<p>Cupón: <strong>{coupon_code}</strong> ({coupon_discount_percent}% de descuento).</p>"
-        ),
-        from_address=default_from_address(),
-        trigger="abandoned_discount_sent_notification",
-    )
-    if not result["sent"]:
-        logger.warning("No se pudo enviar notificación de descuento enviado (%s): %s", contact.email, result["reason"])
+    """Desactivado a pedido de Tomás (2026-10-31): dejó de querer el aviso por cada envío."""
+    return
 
 
 def _notify_abandoned_discount_skipped(email: str, name: Optional[str]) -> None:
-    """Avisa a NOTIFY_EMAIL cuando se cancela el mail de descuento porque la persona ya tiene otra reserva futura confirmada."""
-    if not settings.NOTIFY_EMAIL:
-        return
-    label = name or email
-    result = send_email(
-        to=settings.NOTIFY_EMAIL,
-        subject=f"🚫 Descuento NO enviado (ya reservó): {label}",
-        html=(
-            f"<p>No se envió el mail de descuento por carrito abandonado a "
-            f"<strong>{label}</strong> ({email}) porque ya tiene otra reserva "
-            f"futura confirmada (probablemente creada manualmente).</p>"
-        ),
-        from_address=default_from_address(),
-        trigger="abandoned_discount_skipped_notification",
-    )
-    if not result["sent"]:
-        logger.warning("No se pudo enviar notificación de descuento omitido (%s): %s", email, result["reason"])
+    """Desactivado a pedido de Tomás (2026-10-31): dejó de querer el aviso por cada omisión."""
+    return
 
 
 def _mark_skipped(session: Session, automation_id: int, contact_email: str, trigger_key: str) -> None:
